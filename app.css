@@ -1,0 +1,505 @@
+/* ==================================================================
+   Proctor v2 — student client
+
+   Hand-written rather than Tailwind on purpose: the Tailwind play CDN
+   compiles CSS in the browser at runtime, which is a ~400KB script and a
+   render-blocking dependency in the middle of an exam on school wifi.
+   This file is ~10KB and cached.
+
+   Layout rules that exist for phones specifically:
+     - no position:fixed anywhere; a fixed element ends up floating over
+       the answer field when the iOS keyboard opens
+     - inputs at 17px; below 16px iOS Safari zooms on focus and never
+       zooms back
+     - 100dvh so the mobile URL bar does not clip the page
+   ================================================================== */
+
+@layer tokens, base, layout, components, motion;
+
+/* ---------------------------------------------------------------- */
+@layer tokens {
+  :root {
+    color-scheme: light;
+
+    --bg:            #FBFAF9;
+    --surface:       #FFFFFF;
+    --surface-2:     #F4F2F0;
+    --surface-3:     #EAE6E2;
+
+    --line:          #E8E4E0;
+    --line-strong:   #D5CFC9;
+
+    --fg:            #1A1715;
+    --fg-2:          #56504B;
+    --fg-3:          #8A827B;
+
+    --accent:        #9B2C2C;
+    --on-accent:     #FFFFFF;
+    --accent-ink:    #9B2C2C;   /* accent as text/border on the page ground */
+    --accent-tint:   #FAEDEB;
+
+    --ok:            #256B4C;
+    --ok-tint:       #E4EFE9;
+    --warn:          #8A6413;
+    --warn-tint:     #F7EFDB;
+    --bad:           #99302D;
+    --bad-tint:      #F9E7E4;
+
+    --focus:         #1B5EA8;
+
+    --shadow-1: 0 1px 2px rgb(28 22 18 / .05), 0 1px 3px rgb(28 22 18 / .04);
+    --shadow-2: 0 2px 4px rgb(28 22 18 / .05), 0 12px 28px -14px rgb(28 22 18 / .22);
+
+    --r:    14px;
+    --r-sm: 11px;
+
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+            Arial, sans-serif;
+  }
+
+  /* Viewers on "system" — no attribute stamped. Guarded so an explicit
+     light choice still beats a dark OS. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; }
+
+  /* The dark palette, declared once and applied by both selectors below.
+     Nothing is ever defined ONLY inside a media query — that is how a
+     themed page ends up rendering one theme's text on the other's ground. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:          #121112;
+      --surface:     #1A1819;
+      --surface-2:   #232022;
+      --surface-3:   #2E2A2C;
+
+      --line:        #2B2729;
+      --line-strong: #423C3E;
+
+      --fg:          #F0ECE8;
+      --fg-2:        #B4ACA6;
+      --fg-3:        #857D77;
+
+      --accent:      #F0A197;
+      --on-accent:   #2A1310;
+      --accent-ink:  #F0A197;
+      --accent-tint: #2A1B19;
+
+      --ok:          #77BE9B;
+      --ok-tint:     #17231E;
+      --warn:        #D9B76F;
+      --warn-tint:   #241F17;
+      --bad:         #EE968A;
+      --bad-tint:    #291A18;
+
+      --focus:       #7FB2E8;
+
+      --shadow-1: 0 1px 2px rgb(0 0 0 / .4);
+      --shadow-2: 0 2px 4px rgb(0 0 0 / .3), 0 12px 30px -14px rgb(0 0 0 / .7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg:          #121112;
+    --surface:     #1A1819;
+    --surface-2:   #232022;
+    --surface-3:   #2E2A2C;
+
+    --line:        #2B2729;
+    --line-strong: #423C3E;
+
+    --fg:          #F0ECE8;
+    --fg-2:        #B4ACA6;
+    --fg-3:        #857D77;
+
+    --accent:      #F0A197;
+    --on-accent:   #2A1310;
+    --accent-ink:  #F0A197;
+    --accent-tint: #2A1B19;
+
+    --ok:          #77BE9B;
+    --ok-tint:     #17231E;
+    --warn:        #D9B76F;
+    --warn-tint:   #241F17;
+    --bad:         #EE968A;
+    --bad-tint:    #291A18;
+
+    --focus:       #7FB2E8;
+
+    --shadow-1: 0 1px 2px rgb(0 0 0 / .4);
+    --shadow-2: 0 2px 4px rgb(0 0 0 / .3), 0 12px 30px -14px rgb(0 0 0 / .7);
+  }
+}
+
+/* ---------------------------------------------------------------- */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  /* `hidden` must outrank any display rule in later layers, or every
+     screen renders stacked on top of the others. */
+  [hidden] { display: none !important; }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-block-size: 100vh;
+    min-block-size: 100dvh;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.55;
+    overscroll-behavior-y: contain;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button, input, label, .opt { touch-action: manipulation; }
+  button, input { font: inherit; color: inherit; }
+
+  h1, h2, p, dl, dd, ul { margin: 0; }
+  ul { padding-inline-start: 1.2em; }
+
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+@layer layout {
+  .timerbar {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 12;
+    block-size: 4px;
+    background: var(--surface-3);
+  }
+  .timerbar > i {
+    display: block;
+    block-size: 100%;
+    inline-size: 100%;
+    background: var(--ok);
+    transform-origin: left center;
+    transition: transform 1s linear, background-color .45s ease;
+  }
+  .timerbar.mid > i { background: var(--warn); }
+  .timerbar.low > i { background: var(--bad); }
+
+  .bar {
+    position: sticky;
+    inset-block-start: 4px;
+    z-index: 11;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    padding-block-start: calc(10px + env(safe-area-inset-top));
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px);
+    border-block-end: 1px solid var(--line);
+  }
+  .bar .grow { margin-inline-start: auto; }
+
+  .shell {
+    inline-size: min(100% - 28px, 620px);
+    margin-inline: auto;
+    padding-block: 20px calc(56px + env(safe-area-inset-bottom));
+  }
+
+  .stack   { display: flex; flex-direction: column; gap: 10px; }
+  .stack-s { display: flex; flex-direction: column; gap: 6px; }
+}
+
+/* ---------------------------------------------------------------- */
+@layer components {
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    box-shadow: var(--shadow-1);
+  }
+  .card.center { align-items: center; text-align: center; padding-block: 48px; }
+
+  .h1 {
+    font-size: clamp(1.35rem, 5.5vw, 1.6rem);
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: -.018em;
+    text-wrap: balance;
+  }
+  .eyebrow {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--fg-3);
+  }
+  .muted { color: var(--fg-2); }
+  .small { font-size: 14.5px; }
+  .err   { color: var(--bad); font-weight: 500; }
+  .hr    { block-size: 1px; background: var(--line); border: 0; inline-size: 100%; }
+
+  .pill {
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--fg-2);
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .pill.mid { background: var(--warn-tint); color: var(--warn); }
+  .pill.low { background: var(--bad-tint);  color: var(--bad); }
+
+  .brand { font-size: 14.5px; font-weight: 700; color: var(--fg-2); }
+
+  .icon-btn {
+    inline-size: 38px; block-size: 38px;
+    display: grid; place-items: center;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+  .icon-btn:active { background: var(--surface-3); }
+  .icon-btn svg { inline-size: 19px; block-size: 19px; display: block; }
+  .icon-btn .i-moon { display: none; }
+  :root[data-theme="dark"] .icon-btn .i-sun  { display: none; }
+  :root[data-theme="dark"] .icon-btn .i-moon { display: block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .icon-btn .i-sun  { display: none; }
+    :root:not([data-theme="light"]) .icon-btn .i-moon { display: block; }
+  }
+
+  /* ---- buttons ---- */
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    inline-size: 100%;
+    min-block-size: 54px;
+    padding: 15px 18px;
+    border: 1.5px solid transparent;
+    border-radius: var(--r-sm);
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter .12s ease, background-color .12s ease;
+  }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn-primary { background: var(--accent); color: var(--on-accent); }
+  .btn-primary:active:not(:disabled) { filter: brightness(.92); }
+  .btn-ghost { background: transparent; color: var(--fg-2); border-color: var(--line-strong); }
+  .btn-ghost:active { background: var(--surface-2); }
+  .btn-google { background: var(--surface); color: var(--fg); border-color: var(--line-strong); }
+  .btn-google:active { background: var(--surface-2); }
+  .btn-google svg { inline-size: 20px; block-size: 20px; }
+
+  .actions { display: flex; flex-direction: column; gap: 10px; }
+  @media (width >= 430px) {
+    .actions { flex-direction: row; }
+    .actions .btn-primary { flex: 2; }
+    .actions .btn-ghost   { flex: 1; }
+  }
+
+  /* ---- question ---- */
+  .qtext {
+    font-size: clamp(1.15rem, 4.6vw, 1.3rem);
+    line-height: 1.42;
+    font-weight: 500;
+    letter-spacing: -.006em;
+    white-space: pre-wrap;      /* honours line breaks written into the sheet */
+    overflow-wrap: anywhere;
+  }
+
+  /* Choices are FULL ROWS with the text visible. v1 rendered letter-only
+     pills with the option text in a title attribute — invisible on touch. */
+  .opts { display: flex; flex-direction: column; gap: 10px; }
+  .opt {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    inline-size: 100%;
+    min-block-size: 58px;
+    padding: 15px 46px 15px 15px;
+    text-align: start;
+    background: var(--surface);
+    border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: border-color .13s ease, background-color .13s ease;
+  }
+  .opt:active { background: var(--surface-2); }
+  .opt[aria-checked="true"] {
+    border-color: var(--accent-ink);
+    background: var(--accent-tint);
+    box-shadow: inset 0 0 0 1px var(--accent-ink);
+  }
+  .opt .k {
+    flex: 0 0 29px;
+    block-size: 29px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: var(--surface-2);
+    color: var(--fg-2);
+    font-size: 13px;
+    font-weight: 700;
+    transition: background-color .13s ease, color .13s ease;
+  }
+  .opt[aria-checked="true"] .k { background: var(--accent); color: var(--on-accent); }
+  .opt .t { flex: 1; line-height: 1.38; overflow-wrap: anywhere; }
+
+  /* A tick as well as colour — selection must not be signalled by hue alone. */
+  .opt .chk {
+    position: absolute;
+    inset-inline-end: 15px;
+    inset-block-start: 50%;
+    inline-size: 17px; block-size: 17px;
+    margin-block-start: -8.5px;
+    color: var(--accent-ink);
+    opacity: 0;
+    transform: scale(.6);
+    transition: opacity .13s ease, transform .13s ease;
+  }
+  .opt[aria-checked="true"] .chk { opacity: 1; transform: scale(1); }
+
+  .field {
+    inline-size: 100%;
+    min-block-size: 58px;
+    padding: 16px 15px;
+    font-size: 17px;              /* < 16px makes iOS zoom on focus */
+    line-height: 1.4;
+    background: var(--surface);
+    border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-sm);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--focus);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent);
+  }
+  .field::placeholder { color: var(--fg-3); }
+  .lbl { font-size: 14.5px; font-weight: 600; color: var(--fg-2); }
+
+  /* ---- exam picker ---- */
+  .pick {
+    display: flex; flex-direction: column; gap: 3px;
+    inline-size: 100%;
+    min-block-size: 58px;
+    padding: 15px;
+    text-align: start;
+    background: var(--surface);
+    border: 1.5px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: border-color .13s ease, background-color .13s ease;
+  }
+  .pick[aria-pressed="true"] {
+    border-color: var(--accent-ink);
+    background: var(--accent-tint);
+    box-shadow: inset 0 0 0 1px var(--accent-ink);
+  }
+  .pick .c { font-weight: 700; letter-spacing: .04em; }
+  .pick .n { font-size: 14.5px; color: var(--fg-2); }
+
+  /* ---- misc ---- */
+  .facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 18px;
+    padding: 16px;
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+    font-size: 15px;
+  }
+  .facts dt { color: var(--fg-3); }
+  .facts dd { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .rules { color: var(--fg-2); font-size: 15px; }
+  .rules li { margin-block-end: 7px; }
+  .rules li::marker { color: var(--fg-3); }
+
+  .who {
+    padding: 18px;
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    font-size: clamp(1.15rem, 5vw, 1.35rem);
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .score { display: flex; align-items: baseline; justify-content: center; gap: 10px; padding-block: 10px 2px; }
+  .score b {
+    font-size: clamp(3rem, 15vw, 4.2rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -.035em;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent-ink);
+  }
+  .score span { font-size: 1.15rem; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+
+  .review { display: flex; flex-direction: column; gap: 10px; }
+  .rev {
+    padding: 14px 15px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-inline-start: 3px solid var(--bad);
+    border-radius: var(--r-sm);
+    font-size: 15px;
+  }
+  .rev.ok { border-inline-start-color: var(--ok); }
+  .rev .q { font-weight: 600; margin-block-end: 6px; overflow-wrap: anywhere; }
+  .rev .a { color: var(--fg-2); }
+  .rev .a b { color: var(--fg); font-weight: 600; }
+
+  .spinner {
+    inline-size: 30px; block-size: 30px;
+    border: 3px solid var(--line);
+    border-block-start-color: var(--accent-ink);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+@layer motion {
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* A new question must visibly replace the old one — two similar
+     questions in a row are easy to miss on a small screen. */
+  @keyframes swap {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .swap { animation: swap .22s ease both; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
+    .timerbar > i { transition: none; }
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) { animation: none !important; }
+  }
+}
