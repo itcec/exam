@@ -166,6 +166,16 @@ if (auth) {
   });
 }
 
+/** Must stay in step with TYPE_LABEL in Config.gs. */
+const TYPE_NAME = {
+  MC: 'Multiple choice',
+  TF: 'True or false',
+  ID: 'Identification',
+  EN: 'Enumeration',
+  MA: 'Matching',
+  WB: 'Word bank'
+};
+
 /* ---------------- state ---------------- */
 
 const S = {
@@ -198,9 +208,11 @@ async function boot() {
 
   $('whoEmail').textContent = r.email;
   if (r.lastName || r.firstName) {
-    $('whoName').textContent = [r.lastName, r.firstName].filter(Boolean).join(', ') +
-      (r.section ? '  ·  Section ' + r.section : '');
+    $('whoName').textContent = [r.lastName, r.firstName].filter(Boolean).join(', ');
     $('whoName').hidden = false;
+    const bits = [r.year, r.course, r.section ? 'Section ' + r.section : '']
+      .filter(Boolean).join('  ·  ');
+    if (bits) $('whoEmail').textContent = bits + '\n' + r.email;
   }
 
   if (r.blocked) {
@@ -218,7 +230,55 @@ async function boot() {
   }
 
   renderExams(r.exams);
+  renderHistory(r.history);
   show('scStart');
+}
+
+/**
+ * Exams already sat. The server decides whether a score may be shown — it
+ * holds one back while the student could still sit the exam again.
+ */
+function renderHistory(list) {
+  const wrap = $('historyWrap');
+  wrap.replaceChildren();
+  if (!list?.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+
+  const head = document.createElement('p');
+  head.className = 'eyebrow';
+  head.textContent = 'Already taken';
+  wrap.append(head);
+
+  const box = document.createElement('div');
+  box.className = 'stack';
+
+  for (const h of list) {
+    const row = document.createElement('div');
+    row.className = 'past';
+
+    const left = document.createElement('div');
+    const t = document.createElement('div');
+    t.className = 'past-t';
+    t.textContent = h.title || h.code;
+    const d = document.createElement('div');
+    d.className = 'past-d';
+    d.textContent = [h.date, h.attempt > 1 ? 'try ' + h.attempt : '']
+      .filter(Boolean).join('  ·  ');
+    left.append(t, d);
+
+    const badge = document.createElement('span');
+    if (h.showScore) {
+      badge.className = 'past-s';
+      badge.textContent = h.score + ' / ' + h.total;
+    } else {
+      badge.className = 'past-s pending';
+      badge.textContent = h.pending ? 'Not released' : 'Submitted';
+    }
+
+    row.append(left, badge);
+    box.append(row);
+  }
+  wrap.append(box);
 }
 
 function renderExams(exams) {
@@ -239,6 +299,18 @@ function renderExams(exams) {
     const c = document.createElement('span'); c.className = 'c'; c.textContent = e.code;
     const n = document.createElement('span'); n.className = 'n'; n.textContent = e.title;
     b.append(c, n);
+
+    const bits = [];
+    if (e.questions) bits.push(e.questions + ' question' + (e.questions === 1 ? '' : 's'));
+    if (e.triesLeft > 1) bits.push(e.triesLeft + ' tries left');
+    if (e.closesAt) bits.push('closes ' + e.closesAt);
+    if (bits.length) {
+      const m = document.createElement('span');
+      m.className = 'n';
+      m.style.opacity = '.8';
+      m.textContent = bits.join('  ·  ');
+      b.append(m);
+    }
     b.onclick = () => {
       S.picked = e.code;
       $('codeInput').value = '';
@@ -385,8 +457,7 @@ function render() {
   sk.hidden = !S.deferred.length && !S.secondPass;
   sk.textContent = S.secondPass ? 'Skipped questions' : `Skipped ${S.deferred.length}`;
 
-  $('qMeta').textContent = (S.secondPass ? 'Skipped · ' : '') +
-    (q.type === 'MC' ? 'Multiple choice' : q.type === 'TF' ? 'True or false' : 'Identification');
+  $('qMeta').textContent = (S.secondPass ? 'Skipped · ' : '') + (TYPE_NAME[q.type] || 'Question');
   $('qText').textContent = q.question;
 
   const host = $('qInput');
@@ -438,6 +509,90 @@ function render() {
       box.append(b);
     });
     host.append(box);
+
+  } else if (q.type === 'EN') {
+    // One item per line. The count is shown so nobody has to guess how many
+    // the question wants.
+    const hint = document.createElement('p');
+    hint.className = 'muted small';
+    hint.textContent = q.expect
+      ? `List ${q.expect} — one per line. Order does not matter.`
+      : 'One per line. Order does not matter.';
+
+    const ta = document.createElement('textarea');
+    ta.className = 'field';
+    ta.id = 'ansField';
+    ta.rows = Math.min(8, Math.max(3, q.expect || 4));
+    ta.spellcheck = false;
+    ta.placeholder = 'One answer per line';
+    host.append(hint, ta);
+
+  } else if (q.type === 'MA') {
+    // Each left item gets a dropdown of every option. A plain select is the
+    // right control on a phone — it opens the native picker.
+    const box = document.createElement('div');
+    box.className = 'opts';
+
+    q.choices.forEach((left, i) => {
+      const row = document.createElement('div');
+      row.className = 'pair';
+
+      const lab = document.createElement('span');
+      lab.className = 'pair-l';
+      lab.textContent = left;
+
+      const sel = document.createElement('select');
+      sel.className = 'field pair-s';
+      sel.dataset.left = left;
+      sel.id = 'match_' + i;
+
+      const none = document.createElement('option');
+      none.value = '';
+      none.textContent = 'Choose…';
+      sel.append(none);
+
+      (q.options || []).forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt;
+        o.textContent = opt;
+        sel.append(o);
+      });
+
+      row.append(lab, sel);
+      box.append(row);
+    });
+    host.append(box);
+
+  } else if (q.type === 'WB') {
+    // The pool as tappable chips, plus a field — tapping fills it in, but
+    // typing still works for anyone who prefers the keyboard.
+    const inp = document.createElement('input');
+    inp.className = 'field';
+    inp.id = 'ansField';
+    inp.type = 'text';
+    inp.autocomplete = 'off';
+    inp.spellcheck = false;
+    inp.placeholder = 'Tap a word below, or type it';
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); answer(); }
+    });
+
+    const bank = document.createElement('div');
+    bank.className = 'bank';
+    q.choices.forEach(word => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.textContent = word;
+      chip.onclick = () => {
+        inp.value = word;
+        for (const c of bank.children) c.classList.remove('on');
+        chip.classList.add('on');
+      };
+      bank.append(chip);
+    });
+    host.append(inp, bank);
+
   } else {
     const inp = document.createElement('input');
     inp.className = 'field';
@@ -466,8 +621,21 @@ function render() {
 }
 
 function readAnswer() {
+  const q = current();
+
+  // Matching submits an object keyed by the left-hand item, which is what
+  // the server grades against.
+  if (q && q.type === 'MA') {
+    const picks = {};
+    $('qInput').querySelectorAll('select[data-left]').forEach(s => {
+      if (s.value) picks[s.dataset.left] = s.value;
+    });
+    return Object.keys(picks).length ? picks : '';
+  }
+
   const sel = $('qInput').querySelector('.opt[aria-checked="true"]');
   if (sel) return sel.dataset.value;
+
   const f = $('ansField');
   return f ? f.value.trim() : '';
 }
@@ -620,6 +788,8 @@ function done(r) {
 
   const wrap = $('reviewWrap');
   wrap.replaceChildren();
+  const revCard = $('reviewCard');
+  if (revCard) revCard.hidden = !(r.detail && r.detail.length);
   if (r.detail?.length) {
     const head = document.createElement('p');
     head.className = 'eyebrow';
@@ -628,12 +798,19 @@ function done(r) {
     list.className = 'review';
 
     for (const d of r.detail) {
+      const part = !d.correct && d.credit > 0;
       const box = document.createElement('div');
-      box.className = 'rev' + (d.correct ? ' ok' : '');
+      box.className = 'rev' + (d.correct ? ' ok' : part ? ' part' : '');
 
       const q = document.createElement('div');
       q.className = 'q';
       q.textContent = `${d.no}. ${d.question}`;
+      if (d.detail) {
+        const got = document.createElement('span');
+        got.className = 'part-tag';
+        got.textContent = d.detail;
+        q.append(' ', got);
+      }
 
       const a = document.createElement('div');
       a.className = 'a';
