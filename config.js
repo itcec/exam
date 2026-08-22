@@ -16,7 +16,7 @@ export const FIREBASE_CONFIG = {
 };
 
 /* Apps Script ▸ Deploy ▸ New deployment ▸ Web app ▸ the /exec URL. */
-export const API_URL = 'https://script.google.com/macros/s/PASTE_DEPLOYMENT_ID/exec';
+export const API_URL = 'https://script.google.com/macros/s/AKfycby_lX3Mt9uGY9xYCwsFoRdg5D6upDI5ebs9icgPmQ93-NZlSLSUVWVZHW3VUR29FnWN/exec';
 
 /* Shown on the sign-in screen. Purely cosmetic. */
 export const SCHOOL_NAME = 'Information Technology';
