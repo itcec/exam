@@ -47,7 +47,7 @@
 <main class="shell">
 
   <section id="scLoading">
-    <div class="card center">
+    <div class="card center solo">
       <div class="spinner" aria-hidden="true"></div>
       <p class="muted" id="loadingText">Starting up…</p>
     </div>
@@ -55,7 +55,7 @@
 
   <section id="scSignIn" hidden>
     <div class="card">
-      <p class="eyebrow" id="schoolName">Online Exam</p>
+      <p class= solo"eyebrow" id="schoolName">Online Exam</p>
       <h1 class="h1">Sign in to start</h1>
       <p class="muted">Use the Google account your school gave you. Your score is
         recorded under that account.</p>
@@ -74,38 +74,43 @@
 
   <section id="scFatal" hidden>
     <div class="card">
-      <h1 class="h1" id="fatalTitle">Something went wrong</h1>
+      <h1 class= solo"h1" id="fatalTitle">Something went wrong</h1>
       <p id="fatalText" class="muted"></p>
       <button class="btn btn-ghost" id="btnReload" type="button">Reload</button>
     </div>
   </section>
 
   <section id="scStart" hidden>
-    <div class="card">
-      <div class="stack-s">
-        <p class="eyebrow">Signed in as</p>
-        <p id="whoEmail" style="font-weight:600;word-break:break-all"></p>
-        <p id="whoName" class="muted" hidden></p>
-      </div>
-      <hr class="hr">
-      <div class="stack-s">
-        <span class="lbl">Choose your exam</span>
+    <div class="bento">
+      <div class="card cell-major">
+        <div class="stack-s">
+          <p class="eyebrow">Available now</p>
+          <h1 class="h1">Choose your exam</h1>
+        </div>
         <div class="stack" id="examList"></div>
+        <div class="stack-s">
+          <label class="lbl" for="codeInput">Or type the code</label>
+          <input class="field" id="codeInput" type="text" autocomplete="off"
+                 autocapitalize="characters" spellcheck="false" placeholder="e.g. PRELIM1">
+        </div>
+        <p class="err" id="startErr" hidden></p>
+        <button class="btn btn-primary" id="btnContinue" type="button">Continue</button>
       </div>
-      <div class="stack-s">
-        <label class="lbl" for="codeInput">Or type the exam code</label>
-        <input class="field" id="codeInput" type="text" autocomplete="off"
-               autocapitalize="characters" spellcheck="false" placeholder="e.g. TEST001">
+
+      <div class="card tight cell-minor">
+        <p class="eyebrow">Signed in as</p>
+        <p id="whoName" class="h1" hidden></p>
+        <p id="whoEmail" class="muted small" style="word-break:break-all"></p>
+        <button class="btn btn-ghost" id="btnSignOut" type="button">Sign out</button>
       </div>
-      <p class="err" id="startErr" hidden></p>
-      <button class="btn btn-primary" id="btnContinue" type="button">Continue</button>
-      <button class="btn btn-ghost" id="btnSignOut" type="button">Sign out</button>
+
+      <div class="card tight cell-minor" id="historyWrap" hidden></div>
     </div>
   </section>
 
   <section id="scIdentity" hidden>
     <div class="card">
-      <h1 class="h1">Is this you?</h1>
+      <h1 class= solo"h1">Is this you?</h1>
       <p class="muted">We found this name on the class list. Confirm it so your
         score is recorded under the right student.</p>
       <div class="who" id="whoCandidate"></div>
@@ -117,7 +122,7 @@
 
   <section id="scBrief" hidden>
     <div class="card">
-      <h1 class="h1" id="briefTitle">Exam</h1>
+      <h1 class= solo"h1" id="briefTitle">Exam</h1>
       <dl class="facts" id="briefFacts"></dl>
       <ul class="rules">
         <li>Answer each question, or tap <b>Skip</b> to come back to it.</li>
@@ -132,14 +137,14 @@
 
   <section id="scResume" hidden>
     <div class="card">
-      <h1 class="h1">You have an exam in progress</h1>
+      <h1 class= solo"h1">You have an exam in progress</h1>
       <p class="muted" id="resumeText"></p>
       <button class="btn btn-primary" id="btnResume" type="button">Continue where I left off</button>
     </div>
   </section>
 
   <section id="scExam" hidden>
-    <div class="card" id="qCard">
+    <div class="card solo" id="qCard">
       <p class="eyebrow" id="qMeta">Question</p>
       <div class="qtext" id="qText"></div>
       <div id="qInput"></div>
@@ -151,7 +156,7 @@
   </section>
 
   <section id="scSending" hidden>
-    <div class="card center">
+    <div class="card center solo">
       <div class="spinner" aria-hidden="true"></div>
       <p id="sendText">Submitting your answers…</p>
       <p class="muted small" id="sendSub">Keep this page open.</p>
@@ -160,14 +165,18 @@
   </section>
 
   <section id="scDone" hidden>
-    <div class="card">
-      <p class="eyebrow">Submitted</p>
-      <h1 class="h1" id="doneTitle">Exam complete</h1>
-      <div class="score" id="scoreBox" hidden>
-        <b id="scoreNum">0</b><span id="scoreDen"></span>
+    <div class="bento">
+      <div class="card cell-minor center">
+        <p class="eyebrow">Submitted</p>
+        <div class="score" id="scoreBox" hidden>
+          <b id="scoreNum">0</b><span id="scoreDen"></span>
+        </div>
+        <h1 class="h1" id="doneTitle">Exam complete</h1>
+        <p class="muted small" id="doneNote"></p>
       </div>
-      <p class="muted" id="doneNote"></p>
-      <div id="reviewWrap"></div>
+      <div class="card cell-major" id="reviewCard">
+        <div id="reviewWrap"></div>
+      </div>
     </div>
   </section>
 
