@@ -198,21 +198,25 @@
 
 /* ---------------------------------------------------------------- */
 @layer mesh {
-  /* Soft glows behind everything, so the glass has something worth
-     blurring. Fixed to the viewport but decorative and non-interactive, so
-     it can never end up over the keyboard. */
+  /* Soft glows behind everything, with gentle aurora drift */
   body::before {
     content: "";
     position: fixed;
-    inset: 0;
+    inset: -30%;
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(circle at 15% 12%, var(--mesh-1) 0%, transparent 46%),
-      radial-gradient(circle at 86% 84%, var(--mesh-2) 0%, transparent 44%),
-      radial-gradient(circle at 62% 32%, var(--mesh-3) 0%, transparent 52%),
+      radial-gradient(circle at 20% 15%, var(--mesh-1) 0%, transparent 48%),
+      radial-gradient(circle at 80% 80%, var(--mesh-2) 0%, transparent 46%),
+      radial-gradient(circle at 65% 35%, var(--mesh-3) 0%, transparent 54%),
       var(--bg-deep);
+    animation: auroraDrift 28s ease-in-out infinite alternate;
   }
+}
+@keyframes auroraDrift {
+  0%   { transform: scale(1) translate(0, 0); }
+  50%  { transform: scale(1.08) translate(-2%, 3%); }
+  100% { transform: scale(1.02) translate(3%, -2%); }
 }
 
 /* ---------------------------------------------------------------- */
@@ -221,7 +225,7 @@
     position: sticky;
     inset-block-start: 0;
     z-index: 12;
-    block-size: 3px;
+    block-size: 4px;
     background: var(--sunk);
   }
   .timerbar > i {
@@ -231,14 +235,15 @@
     background: var(--ok);
     transform-origin: left center;
     transition: transform 1s linear, background-color .45s ease;
+    box-shadow: 0 0 8px var(--ok);
   }
-  .timerbar.mid > i { background: var(--warn); }
-  .timerbar.low > i { background: var(--bad); }
+  .timerbar.mid > i { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+  .timerbar.low > i { background: var(--bad); box-shadow: 0 0 12px var(--bad); }
 
   /* Sticky, never fixed. */
   .bar {
     position: sticky;
-    inset-block-start: 3px;
+    inset-block-start: 4px;
     z-index: 11;
     display: flex;
     align-items: center;
@@ -246,8 +251,8 @@
     padding: 12px 18px;
     padding-block-start: calc(12px + env(safe-area-inset-top));
     background: var(--glass);
-    backdrop-filter: blur(var(--blur)) saturate(1.5);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.5);
+    backdrop-filter: blur(var(--blur)) saturate(1.6);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.6);
     border-block-end: 1px solid var(--edge);
   }
   .bar .grow { margin-inline-start: auto; }
@@ -564,77 +569,151 @@
     font-weight: 600;
   }
 
-  /* ---- exam picker ---- */
-  .pick {
-    display: flex; flex-direction: column; gap: 4px;
-    inline-size: 100%;
-    min-block-size: 58px;
-    padding: 16px;
-    text-align: start;
+  /* ---- stepper dot tracker ---- */
+  .stepper-dots {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 6px 14px;
+    margin-block-end: 16px;
     background: var(--glass-2);
     border: 1px solid var(--edge);
-    border-radius: var(--r-md);
+    border-radius: 999px;
+  }
+  .stepper-dot {
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 50%;
+    background: var(--edge-hi);
+    transition: all .28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .stepper-dot.active {
+    inline-size: 22px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+  }
+  .stepper-dot.done {
+    background: var(--ok);
+    box-shadow: 0 0 6px var(--ok);
+  }
+  .stepper-dot.skipped {
+    background: var(--warn);
+  }
+
+  /* ---- Apple Wallet style exam picker ---- */
+  .pick {
+    display: flex; flex-direction: column; gap: 6px;
+    inline-size: 100%;
+    min-block-size: 64px;
+    padding: 18px 20px;
+    text-align: start;
+    background: var(--glass-hi);
+    border: 1px solid var(--edge);
+    border-radius: var(--r-lg);
     cursor: pointer;
     color: inherit;
-    transition: all .25s cubic-bezier(.4, 0, .2, 1);
+    box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    transition: all .28s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
-  .pick:hover { border-color: var(--edge-hi); transform: translateY(-2px); }
+  .pick:hover {
+    border-color: var(--accent-line);
+    transform: translateY(-3px) scale(1.01);
+    box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--accent-line);
+  }
   .pick[aria-pressed="true"] {
     background: var(--accent-soft);
-    border-color: var(--accent-line);
+    border-color: var(--accent);
+    box-shadow: 0 8px 24px -4px var(--accent-line), 0 0 0 2px var(--accent);
+  }
+  .pick .pick-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
   .pick .c {
-    font-size: 0.75rem; font-weight: 700;
-    letter-spacing: .06em; text-transform: uppercase;
+    font-size: 0.8125rem; font-weight: 800;
+    letter-spacing: .08em; text-transform: uppercase;
     color: var(--accent);
   }
-  .pick .n { font-size: 0.9375rem; color: var(--fg); font-weight: 500; }
-  .pick .n + .n { font-size: 0.8125rem; color: var(--fg-3); font-weight: 400; }
-
-  /* ---- misc ---- */
-  .facts {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 10px 20px;
-    padding: 18px;
-    border-radius: var(--r-md);
-    background: var(--glass-2);
-    border: 1px solid var(--edge);
-    font-size: 0.9375rem;
+  .pick .n { font-size: 1rem; color: var(--fg-hero); font-weight: 600; line-height: 1.35; }
+  .pick .pick-meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-block-start: 4px;
   }
-  .facts dt {
-    font-size: 0.75rem; font-weight: 600;
-    letter-spacing: .05em; text-transform: uppercase;
-    color: var(--fg-3);
-    align-self: center;
-  }
-  .facts dd { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg); }
-
-  .rules { color: var(--fg-2); font-size: 0.9375rem; }
-  .rules li { margin-block-end: 8px; }
-  .rules li::marker { color: var(--fg-3); }
-
-  .who {
-    padding: 22px;
-    border-radius: var(--r-md);
-    background: var(--glass-2);
-    border: 1px solid var(--edge);
-    font-size: clamp(1.15rem, 5vw, 1.35rem);
-    font-weight: 700;
-    letter-spacing: -.02em;
-    text-align: center;
+  .pick-tag {
+    padding: 3px 10px; border-radius: 999px;
+    background: var(--glass-2); border: 1px solid var(--edge);
+    font-size: 0.75rem; font-weight: 600; color: var(--fg-3);
   }
 
-  .score { display: flex; align-items: baseline; justify-content: center; gap: 12px; padding-block: 8px 2px; }
-  .score b {
-    font-size: clamp(2.5rem, 15vw, 3.25rem);
+  /* ---- Radial Score Gauge ---- */
+  .score-radial-wrap {
+    position: relative;
+    inline-size: 140px;
+    block-size: 140px;
+    margin: 8px auto 12px;
+  }
+  .score-radial-svg {
+    inline-size: 100%;
+    block-size: 100%;
+    transform: rotate(-90deg);
+  }
+  .score-radial-track {
+    fill: none;
+    stroke: var(--sunk);
+    stroke-width: 10;
+  }
+  .score-radial-bar {
+    fill: none;
+    stroke: var(--ok);
+    stroke-width: 10;
+    stroke-linecap: round;
+    stroke-dasharray: 326.72;
+    stroke-dashoffset: 326.72;
+    transition: stroke-dashoffset 1.4s cubic-bezier(0.2, 0.8, 0.2, 1), stroke .4s ease;
+    filter: drop-shadow(0 0 8px var(--ok));
+  }
+  .score-radial-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .score-radial-val {
+    font-size: 1.75rem;
     font-weight: 800;
-    line-height: 1;
-    letter-spacing: -.035em;
-    font-variant-numeric: tabular-nums;
+    letter-spacing: -.03em;
     color: var(--fg-hero);
+    line-height: 1;
   }
-  .score span { font-size: 0.9375rem; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+  .score-radial-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--fg-3);
+    letter-spacing: .04em;
+    margin-block-start: 4px;
+  }
+
+  /* ---- Fullscreen Confetti Canvas ---- */
+  .fx-canvas {
+    position: fixed;
+    inset: 0;
+    inline-size: 100vw;
+    block-size: 100vh;
+    z-index: 999;
+    pointer-events: none;
+  }
+
+  /* ---- low-time pulsing card aura ---- */
+  @keyframes lowTimeGlow {
+    0%, 100% { box-shadow: var(--shadow); border-color: var(--edge); }
+    50% { box-shadow: 0 0 28px 6px rgba(239, 68, 68, 0.35); border-color: rgba(239, 68, 68, 0.75); }
+  }
+  .card.urgent-time {
+    animation: lowTimeGlow 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
 
   .review { display: flex; flex-direction: column; gap: 10px; }
   .rev {
