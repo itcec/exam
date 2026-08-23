@@ -47,14 +47,30 @@ function setTheme(t) {
   labelTheme();
 }
 
+/**
+ * Runs a DOM change as a cross-fade where the browser supports one.
+ *
+ * A view transition is skipped whenever the page is not being painted — a
+ * backgrounded tab, or a second tap arriving before the first has finished.
+ * The update still runs; it is only the transition's promises that reject.
+ * They are caught here, because a skipped animation is not an error and has
+ * no business showing up in a student's console.
+ */
+function crossFade(update) {
+  if (!document.startViewTransition ||
+      matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    update();
+    return;
+  }
+  const t = document.startViewTransition(update);
+  t.ready?.catch(() => {});
+  t.finished?.catch(() => {});
+  t.updateCallbackDone?.catch(() => {});
+}
+
 $('btnTheme').onclick = () => {
   const next = activeTheme() === 'dark' ? 'light' : 'dark';
-  // A cross-fade rather than a hard flip, where the browser supports it.
-  if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.startViewTransition(() => setTheme(next));
-  } else {
-    setTheme(next);
-  }
+  crossFade(() => setTheme(next));
 };
 labelTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -64,8 +80,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 /* ---------------- screens ---------------- */
 
 const SCREENS = ['scLoading', 'scSignIn', 'scFatal', 'scRegister', 'scPick',
-                 'scNotListed', 'scStart', 'scBrief', 'scResume', 'scExam',
-                 'scSending', 'scDone'];
+                 'scNotListed', 'scStart', 'scHistory', 'scAccount',
+                 'scBrief', 'scResume', 'scExam', 'scSending', 'scDone'];
 
 function show(id) {
   SCREENS.forEach(s => { $(s).hidden = (s !== id); });
@@ -74,6 +90,7 @@ function show(id) {
   $('pillProgress').hidden = !inExam;
   $('timerBar').hidden = !inExam;
   if (!inExam) { $('pillSkipped').hidden = true; $('pillTimer').hidden = true; }
+  syncBar(id);          // declared below; function declarations hoist
   scrollTo(0, 0);
 }
 
@@ -282,15 +299,13 @@ async function boot() {
  */
 function renderHistory(list) {
   const wrap = $('historyWrap');
+  const empty = $('historyEmpty');
   wrap.replaceChildren();
-  if (!list?.length) { wrap.hidden = true; return; }
+  if (!list?.length) { wrap.hidden = true; empty.hidden = false; return; }
   wrap.hidden = false;
+  empty.hidden = true;
 
-  const head = document.createElement('p');
-  head.className = 'eyebrow';
-  head.textContent = 'Already taken';
-  wrap.append(head);
-
+  // No heading of its own any more — the History screen carries one.
   const box = document.createElement('div');
   box.className = 'stack';
 
@@ -1235,68 +1250,63 @@ document.addEventListener('focusin', e => {
 
 /* ---- app bar navigation ----
 
-   Map each logical "tab" to the set of screen IDs it owns.
-   Screens not listed here hide the bar entirely (loading, error, onboarding). */
+   Which tab lights up for which screen, and which screens have no bar at
+   all. The bar is hidden wherever leaving the screen would lose something:
+   mid-exam, mid-submit, and through the one-time sign-up, where there is no
+   roster identity yet and Home would have nothing on it. */
 
 const TAB_SCREENS = {
   home:    ['scStart'],
-  exams:   ['scBrief', 'scResume', 'scSending', 'scDone'],
-  history: ['scHistory'],      // future dedicated screen; for now same as home
-  account: ['scRegister', 'scPick', 'scNotListed']
+  exams:   ['scBrief', 'scResume', 'scDone'],
+  history: ['scHistory'],
+  account: ['scAccount']
 };
 
-// Reverse map: screenId → tab name
+/** screenId → tab name. */
 const SCREEN_TAB = {};
 for (const [tab, screens] of Object.entries(TAB_SCREENS)) {
   for (const sc of screens) SCREEN_TAB[sc] = tab;
 }
 
-// Screens where the bar should be completely hidden
-const BAR_HIDDEN_SCREENS = new Set(['scLoading', 'scSignIn', 'scFatal', 'scExam']);
+const BAR_HIDDEN_SCREENS = new Set([
+  'scLoading', 'scSignIn', 'scFatal',      // machine and error states
+  'scExam', 'scSending',                   // walking away costs the attempt
+  'scRegister', 'scPick', 'scNotListed'    // finish signing up first
+]);
 
-/**
- * Set the active tab button. Pass null to deactivate all (bar hidden).
- */
-function setTab(name) {
-  document.querySelectorAll('.appbar-tab').forEach(btn => {
-    btn.setAttribute('aria-selected', btn.dataset.tab === name ? 'true' : 'false');
-  });
+/** Lights the tab that owns this screen, and hides the bar where it belongs. */
+function syncBar(id) {
+  const bar = $('appBar');
+  if (!bar) return;
+
+  if (BAR_HIDDEN_SCREENS.has(id)) { bar.hidden = true; return; }
+
+  bar.hidden = false;
+  const active = SCREEN_TAB[id] || null;
+  for (const btn of bar.querySelectorAll('.appbar-tab')) {
+    btn.setAttribute('aria-selected', btn.dataset.tab === active ? 'true' : 'false');
+  }
 }
 
 /**
- * Wrap the existing show() so the bar and active tab update on every
- * screen transition automatically.
+ * Where a tab goes when it is tapped.
+ *
+ * Exams has no home of its own — it is a flow, not a place. Tapping it
+ * returns to the last exam screen if one is still live, and otherwise falls
+ * back to the picker rather than showing an empty shell.
  */
-const _originalShow = show;   // eslint-disable-line no-undef
-// Reassign show in the module scope so all existing callers see the wrapper.
-// (show is already defined earlier in this file as a regular function.)
-window._pShowBar = function pShowBar(id) {
-  _originalShow(id);          // run the original screen flip
-  const barEl = $('appBar');
-  if (!barEl) return;
+function tabTarget(tab) {
+  if (tab !== 'exams') return TAB_SCREENS[tab]?.[0] || 'scStart';
+  if (S.finished && S.token) return 'scDone';
+  return 'scStart';
+}
 
-  if (BAR_HIDDEN_SCREENS.has(id)) {
-    barEl.hidden = true;
-    return;
-  }
-
-  barEl.hidden = false;
-  const tab = SCREEN_TAB[id] || null;
-  setTab(tab);
-};
-
-// Tab button click handlers
-document.querySelectorAll('.appbar-tab').forEach(btn => {
+for (const btn of document.querySelectorAll('.appbar-tab')) {
   btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    // Navigate to the first screen owned by this tab
-    const target = TAB_SCREENS[tab]?.[0];
-    if (!target) return;
-    // scHistory: if no dedicated history screen yet, go to scStart
-    const dest = target === 'scHistory' ? 'scStart' : target;
-    window._pShowBar(dest);
+    const dest = tabTarget(btn.dataset.tab);
+    crossFade(() => show(dest));   // same treatment the theme toggle gets
   });
-});
+}
 
 /* ---- iOS keyboard detection ----
 
