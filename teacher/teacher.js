@@ -807,58 +807,646 @@ async function loadExamResults(code) {
 }
 
 /* ================================================================
-   Add Questions Modal Logic
+   2-Step Exam Builder Logic (Blueprint + Questions Verification)
    ================================================================ */
 
-if ($('btnOpenAddQuestions')) {
-  $('btnOpenAddQuestions').onclick = () => {
-    if (!_currentDetailExamCode) return;
-    $('addQModalTitle').textContent = `Add / Import Questions (${_currentDetailExamCode})`;
-    $('addQPaste').value = '';
-    $('addQOut').replaceChildren();
-    $('btnDoAddQuestions').disabled = true;
-    openModal($('addQuestionsModal'), $('addQPaste'));
+const BUILDER_TYPES = [
+  { key: 'MC', name: 'Multiple choice' },
+  { key: 'TF', name: 'True or false' },
+  { key: 'ID', name: 'Identification' },
+  { key: 'EN', name: 'Enumeration' },
+  { key: 'MA', name: 'Matching' },
+  { key: 'WB', name: 'Word bank' }
+];
+
+const BUILDER_FORMATS = {
+  MC: ['Put choices inside question starting at "a.": a. b. c. d.',
+       'The ANSWER is only the letter.',
+       'Example: What is an apple? a. red b. circle c. food d. magic | c'],
+  TF: ['Statement that is clearly true or clearly false.',
+       'The ANSWER is TRUE or FALSE.',
+       'Example: Water boils at 100C at sea level. | TRUE'],
+  ID: ['Plain question and plain answer.',
+       'Separate alternative acceptable answers with a semicolon.',
+       'Example: Name the capital of Japan. | Tokyo; Tokyo, Japan'],
+  EN: ['Question asking for a list. Put items in the ANSWER separated by semicolons.',
+       'Example: Name the four OOP principles. | encapsulation; inheritance; polymorphism; abstraction'],
+  MA: ['Give ONLY the pairs, one per line: item = match',
+       'Example: Encapsulation = Data hiding'],
+  WB: ['First the word bank under heading WORD BANK (one per line).',
+       'Then questions using ____ for blank, format: QUESTION | ANSWER',
+       'Example: Hiding internal data is called ____. | encapsulation']
+};
+
+const BUILDER_LEVELS = {
+  easy: ['Direct recall, close to source material. Student answers without complex deduction.'],
+  average: ['Concepts phrased in original words. Understanding required, 1 concept per question.'],
+  hard: ['Applied scenario, multi-step reasoning, plausible distractors for MC options.']
+};
+
+const BUILDER_INPUT_HINT = {
+  MC: 'One question per line, answer after a <b>Tab</b> or <code>|</code>.',
+  TF: 'One statement per line, answer <b>TRUE</b> or <b>FALSE</b>.',
+  ID: 'One question per line. Several acceptable answers? Separate with <code>;</code>',
+  EN: 'One question per line. Items in the answer separated by <code>;</code>',
+  MA: 'One pair per line, written <code>item = match</code>. Becomes one question.',
+  WB: 'Fill in the bank above, then one question per line using <code>____</code> for the blank.'
+};
+
+const builderPlan = {};
+BUILDER_TYPES.forEach(t => {
+  if (t.key === 'MA') {
+    builderPlan[t.key] = { on: false, count: 5, mins: 1, secs: 30, level: 'average', order: 'shuffled' };
+  } else {
+    builderPlan[t.key] = { on: false, count: 10, mins: 0, secs: 45, level: 'average', order: 'shuffled' };
+  }
+});
+
+function activeBuilderTypes() {
+  return BUILDER_TYPES.filter(t => builderPlan[t.key].on);
+}
+
+function currentBuilderTimerMode() {
+  const sel = $('tExamTimerModeSelect');
+  return sel ? sel.value : 'whole-exam';
+}
+
+function builderSecondsOf(k) {
+  const p = builderPlan[k];
+  const t = (parseInt(p.mins, 10) || 0) * 60 + (parseInt(p.secs, 10) || 0);
+  return t > 0 ? t : '';
+}
+
+function builderClock(k) {
+  const t = builderSecondsOf(k);
+  if (!t) return 'exam default';
+  const m = Math.floor(t / 60), s = t % 60;
+  return m ? m + 'm ' + (s ? s + 's' : '') : s + 's';
+}
+
+function buildBuilderStep1() {
+  const host = $('tTypeList');
+  if (!host) return;
+  host.replaceChildren();
+  const mode = currentBuilderTimerMode();
+
+  BUILDER_TYPES.forEach(t => {
+    const p = builderPlan[t.key];
+    const wrap = document.createElement('div');
+    wrap.className = 'type' + (p.on ? ' on' : '');
+    const timerSum = mode === 'whole-exam' ? '' : (mode === 'per-section' ? ' · Sec: ' + builderClock(t.key) : ' · ' + builderClock(t.key) + '/q');
+    const timerInputsHtml = mode === 'whole-exam' ? '' :
+      `<div class="two" style="margin-bottom:8px;">
+        <div class="fld"><span class="lbl-s">${mode === 'per-section' ? 'Section Mins' : 'Minutes/Q'}</span>
+          <input class="field" type="number" min="0" max="60" value="${p.mins}" data-f="mins" data-k="${t.key}"></div>
+        <div class="fld"><span class="lbl-s">${mode === 'per-section' ? 'Section Secs' : 'Seconds/Q'}</span>
+          <input class="field" type="number" min="0" max="59" value="${p.secs}" data-f="secs" data-k="${t.key}"></div>
+      </div>`;
+
+    wrap.innerHTML = `
+      <label class="head">
+        <input type="checkbox" ${p.on ? 'checked' : ''} data-k="${t.key}">
+        <span class="nm">${t.name}</span>
+        <span class="sum">${p.on ? p.count + timerSum : 'off'}</span>
+      </label>
+      <div class="body" ${p.on ? '' : 'hidden'}>
+        <div class="fld"><span class="lbl-s">How many questions</span>
+          <input class="field" type="number" min="1" max="100" value="${p.count}" data-f="count" data-k="${t.key}"></div>
+        ${timerInputsHtml}
+        <div class="two">
+          <div class="fld"><span class="lbl-s">Difficulty</span>
+            <select class="field" data-f="level" data-k="${t.key}">
+              <option value="easy">Easy</option>
+              <option value="average">Average</option>
+              <option value="hard">Hard</option>
+            </select></div>
+          <div class="fld"><span class="lbl-s">Order</span>
+            <select class="field" data-f="order" data-k="${t.key}">
+              <option value="shuffled">Shuffled</option>
+              <option value="logical">Logical</option>
+            </select></div>
+        </div>
+      </div>
+    `;
+    host.appendChild(wrap);
+
+    const selLvl = wrap.querySelector('select[data-f=level]');
+    if (selLvl) selLvl.value = p.level;
+    const selOrd = wrap.querySelector('select[data-f=order]');
+    if (selOrd) selOrd.value = p.order;
+  });
+
+  refreshBuilderTally();
+}
+
+function onBuilderPlanChange(e) {
+  const t = e.target;
+  const k = t.getAttribute('data-k');
+  if (!k) return;
+
+  if (t.type === 'checkbox') {
+    builderPlan[k].on = t.checked;
+    const box = t.closest('.type');
+    if (box) {
+      box.classList.toggle('on', t.checked);
+      const bdy = box.querySelector('.body');
+      if (bdy) bdy.hidden = !t.checked;
+    }
+  } else {
+    const field = t.getAttribute('data-f');
+    if (field) builderPlan[k][field] = t.value;
+  }
+
+  const checkbox = document.querySelector(`.type input[data-k="${k}"]`);
+  if (checkbox) {
+    const row = checkbox.closest('.type');
+    const mode = currentBuilderTimerMode();
+    const timerSum = mode === 'whole-exam' ? '' : (mode === 'per-section' ? ' · Sec: ' + builderClock(k) : ' · ' + builderClock(k) + '/q');
+    const sumEl = row ? row.querySelector('.sum') : null;
+    if (sumEl) sumEl.textContent = builderPlan[k].on ? builderPlan[k].count + timerSum : 'off';
+  }
+  refreshBuilderTally();
+}
+
+function refreshBuilderTally() {
+  const on = activeBuilderTypes();
+  const total = on.reduce((n, t) => n + (parseInt(builderPlan[t.key].count, 10) || 0), 0);
+  const tallyEl = $('tTally');
+  if (tallyEl) {
+    tallyEl.innerHTML = on.length
+      ? `<b>${total}</b> questions across <b>${on.length}</b> kind${on.length === 1 ? '' : 's'} — ` +
+        on.map(t => `${builderPlan[t.key].count} ${t.name.toLowerCase()}`).join(', ')
+      : 'No question types switched on yet.';
+  }
+  if ($('btnTNextStep')) $('btnTNextStep').disabled = !on.length;
+}
+
+if ($('tTypeList')) {
+  $('tTypeList').addEventListener('change', onBuilderPlanChange);
+  $('tTypeList').addEventListener('input', onBuilderPlanChange);
+}
+
+if ($('tExamTimerModeSelect')) {
+  $('tExamTimerModeSelect').addEventListener('change', () => {
+    const mode = currentBuilderTimerMode();
+    const hints = {
+      'whole-exam': 'Questions will be delivered continuously on one page. Total exam duration is set in Step 2.',
+      'per-section': 'Questions are delivered section by section. Each section gets its own timer and a dramatic transition screen.',
+      'per-question': 'Questions are delivered 1 by 1 with an individual countdown timer per question.'
+    };
+    if ($('tTimerModeHint')) $('tTimerModeHint').textContent = hints[mode] || '';
+    buildBuilderStep1();
+  });
+}
+
+function buildMasterPrompt() {
+  const on = activeBuilderTypes();
+  if (!on.length) return '';
+  const total = on.reduce((n, t) => n + (parseInt(builderPlan[t.key].count, 10) || 0), 0);
+
+  const out = [
+    `You are an expert exam creator. Please generate a complete ${total}-question exam based on the specifications below.`,
+    '',
+    '==================================================',
+    'CONTENT INSTRUCTION:',
+    '1. If lesson material / text is attached or pasted at the bottom under "THE CONTENTS ARE:", generate all questions strictly from that content.',
+    '2. If NO content is attached and no prior context exists in our conversation, reply by asking:',
+    '   "Where is your lesson content, or would you like me to generate the exam based on the material you shared earlier?"',
+    '3. Base every question on the source material. Do not invent unverified facts.',
+    '==================================================',
+    '',
+    'EXAM STRUCTURE & FORMAT SPECIFICATIONS:',
+    'Produce each section under its labeled delimiter header, ready to be parsed into .txt files:',
+    ''
+  ];
+
+  on.forEach((t, idx) => {
+    const k = t.key;
+    const p = builderPlan[k];
+    const count = parseInt(p.count, 10) || 10;
+    const lvlDesc = (BUILDER_LEVELS[p.level] || BUILDER_LEVELS.average).join(' ');
+
+    out.push(`${idx + 1}. SECTION: ${t.name.toUpperCase()}`);
+    out.push(`   - Delimiter Header: === ${t.name.toUpperCase()} ===`);
+    out.push(`   - Target Count: exactly ${count} question(s)`);
+    out.push(`   - Difficulty: ${p.level.toUpperCase()} (${lvlDesc})`);
+    out.push('   - Format Rules:');
+    BUILDER_FORMATS[k].forEach(f => { out.push('     * ' + f); });
+    out.push('');
+  });
+
+  out.push(
+    'RULES YOU MUST FOLLOW:',
+    '1. Separate each section with its header: === SECTION NAME ===',
+    '2. Keep each question on ONE single line. No line breaks inside a question.',
+    '3. Do NOT add question numbers (like "1.") at the start of question lines.',
+    '4. Separate Question from Answer using a pipe | or Tab.',
+    '5. For Multiple Choice, options MUST start at "a." in sequence: a. b. c. d.',
+    '6. Output ONLY the raw section headers and questions. No introductory or closing remarks.',
+    '',
+    '─────────────────────────────',
+    'THE CONTENTS ARE:',
+    '[PASTE YOUR LESSON OR REVIEW MATERIAL HERE]'
+  );
+
+  return out.join('\n');
+}
+
+function buildSingleTypePrompt(k) {
+  const p = builderPlan[k];
+  const tObj = BUILDER_TYPES.find(t => t.key === k);
+  const name = tObj ? tObj.name : k;
+  const n = parseInt(p.count, 10) || 10;
+
+  const out = [
+    'Make an exam from the material at the end of this message.',
+    '',
+    `QUESTION TYPE:  ${name}`,
+    `HOW MANY:       ${n}`,
+    `DIFFICULTY:     ${p.level.toUpperCase()}`,
+    '',
+    'FORMAT:'
+  ];
+  BUILDER_FORMATS[k].forEach(f => { out.push('  ' + f); });
+  out.push(
+    '',
+    'RULES:',
+    '1. Keep each question on ONE line. Do not number rows.',
+    '2. Separate question and answer with a TAB or |.',
+    '3. If no content is attached, ask: "Where is your lesson content, or would you like me to generate questions based on material provided earlier?"',
+    '',
+    '─────────────────────────────',
+    'THE CONTENTS ARE:'
+  );
+  return out.join('\n');
+}
+
+function copyPromptText(text, btn, okLabel = '✓ Copied!') {
+  const done = () => {
+    const was = btn.textContent;
+    btn.textContent = okLabel;
+    setTimeout(() => { btn.textContent = was; }, 2400);
   };
+  try {
+    navigator.clipboard.writeText(text).then(done, () => {
+      const t = document.createElement('textarea');
+      t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); done(); } catch {}
+      document.body.removeChild(t);
+    });
+  } catch {
+    btn.textContent = 'Select & copy';
+  }
 }
-if ($('btnCloseAddQuestions')) {
-  $('btnCloseAddQuestions').onclick = () => closeModal($('addQuestionsModal'));
-}
-if ($('btnCheckAddQuestions')) {
-  $('btnCheckAddQuestions').onclick = async () => {
-    const paste = $('addQPaste').value.trim();
-    if (!paste) { toast('Please paste question text.', 'bad'); return; }
-    const btn = $('btnCheckAddQuestions');
-    btn.disabled = true; btn.textContent = 'Checking…';
-    try {
-      const r = await api('teacherCheckQuestions', { idToken: await idToken(), code: _currentDetailExamCode, paste });
-      if (!r.ok) {
-        $('addQOut').innerHTML = `<p class="err small" style="margin-top:6px;">${esc(r.message || 'Check failed')}</p>`;
+
+function extractWordBankFromText(content) {
+  if (!content) return { pool: '', questions: '' };
+  const text = content.replace(/\r\n/g, '\n').trim();
+  const poolWords = [];
+  let qLines = [];
+
+  const qHeaderIdx = text.search(/(?:===\s*QUESTIONS\s*===|\[QUESTIONS\]|\bQUESTIONS:?)/i);
+
+  if (qHeaderIdx !== -1) {
+    const bankPart = text.slice(0, qHeaderIdx).replace(/(?:===\s*WORD\s*BANK\s*===|\[WORD\s*BANK\]|\bWORD\s*BANK:?|\bBANK:?)/gi, '').trim();
+    const qPart = text.slice(qHeaderIdx).replace(/(?:===\s*QUESTIONS\s*===|\[QUESTIONS\]|\bQUESTIONS:?)/gi, '').trim();
+
+    bankPart.split('\n').forEach(line => {
+      line = line.replace(/^[-*•\d.)]\s*/, '').trim();
+      if (!line) return;
+      if (line.includes(',')) line.split(',').forEach(w => { if (w.trim()) poolWords.push(w.trim()); });
+      else if (line.includes(';')) line.split(';').forEach(w => { if (w.trim()) poolWords.push(w.trim()); });
+      else poolWords.push(line);
+    });
+    qLines = qPart.split('\n').map(l => l.trim()).filter(Boolean);
+  } else {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    let inBank = false;
+    lines.forEach(line => {
+      if (/^(?:===\s*WORD\s*BANK\s*===|\[WORD\s*BANK\]|\bWORD\s*BANK:?|\bBANK:?)/i.test(line)) {
+        inBank = true;
+        const rest = line.replace(/^(?:===\s*WORD\s*BANK\s*===|\[WORD\s*BANK\]|\bWORD\s*BANK:?|\bBANK:?)/i, '').trim();
+        if (rest) {
+          rest.split(/[,;\n]/).forEach(w => {
+            const clean = w.replace(/^[-*•\d.)]\s*/, '').trim();
+            if (clean) poolWords.push(clean);
+          });
+        }
         return;
       }
-      const lines = [`✓ ${r.count} usable question(s) found.`];
-      if (r.preview) lines.push('', r.preview);
-      if (r.problems?.length) {
-        lines.push('', `${r.problems.length} issue(s) detected:`);
-        r.problems.slice(0, 5).forEach(p => lines.push(`  line ${p.line}: ${p.why}`));
+      if (line.includes('____') || line.includes('|') || line.includes('\t')) {
+        inBank = false;
+        qLines.push(line);
+        const sep = line.includes('\t') ? '\t' : '|';
+        const parts = line.split(sep);
+        if (parts.length > 1) {
+          const ans = parts.slice(1).join(sep).trim();
+          if (ans) poolWords.push(ans);
+        }
+      } else if (inBank) {
+        line.split(/[,;]/).forEach(w => {
+          const clean = w.replace(/^[-*•\d.)]\s*/, '').trim();
+          if (clean) poolWords.push(clean);
+        });
+      } else {
+        if (line.length < 60 && !line.includes('|')) {
+          poolWords.push(line.replace(/^[-*•\d.)]\s*/, '').trim());
+        }
       }
-      $('addQOut').textContent = lines.join('\n');
-      $('addQOut').style.whiteSpace = 'pre-line';
-      $('btnDoAddQuestions').disabled = !r.count;
-    } catch (err) {
-      $('addQOut').innerHTML = `<p class="err small" style="margin-top:6px;">${esc(err.message)}</p>`;
-    } finally {
-      btn.disabled = false; btn.textContent = '🔍 Check & Verify';
+    });
+  }
+
+  const uniquePool = [];
+  const seen = {};
+  poolWords.forEach(w => {
+    const k = w.toLowerCase();
+    if (!seen[k] && w) {
+      seen[k] = true;
+      uniquePool.push(w);
+    }
+  });
+
+  return {
+    pool: uniquePool.join('\n'),
+    questions: qLines.join('\n')
+  };
+}
+
+function autoSplitMasterPaste(raw) {
+  if (!raw || !raw.trim()) return 0;
+  const text = raw.replace(/\r\n/g, '\n');
+
+  const sectionPatterns = [
+    { key: 'MC', pattern: /(?:===\s*(?:MULTIPLE\s*CHOICE|MC)\s*===|\[\s*(?:MULTIPLE\s*CHOICE|MC)\s*\])/i },
+    { key: 'TF', pattern: /(?:===\s*(?:TRUE\s*(?:OR|\/)\s*FALSE|TF)\s*===|\[\s*(?:TRUE\s*(?:OR|\/)\s*FALSE|TF)\s*\])/i },
+    { key: 'ID', pattern: /(?:===\s*(?:IDENTIFICATION|ID)\s*===|\[\s*(?:IDENTIFICATION|ID)\s*\])/i },
+    { key: 'EN', pattern: /(?:===\s*(?:ENUMERATION|EN)\s*===|\[\s*(?:ENUMERATION|EN)\s*\])/i },
+    { key: 'MA', pattern: /(?:===\s*(?:MATCHING|MA)\s*===|\[\s*(?:MATCHING|MA)\s*\])/i },
+    { key: 'WB', pattern: /(?:===\s*(?:WORD\s*BANK|WB)\s*===|\[\s*(?:WORD\s*BANK|WB)\s*\])/i }
+  ];
+
+  const matches = [];
+  sectionPatterns.forEach(sp => {
+    const regex = new RegExp(sp.pattern.source, 'gi');
+    let m;
+    while ((m = regex.exec(text)) !== null) {
+      matches.push({ key: sp.key, index: m.index, length: m[0].length });
+    }
+  });
+
+  matches.sort((a, b) => a.index - b.index);
+
+  if (!matches.length) {
+    const on = activeBuilderTypes();
+    if (on.length === 1) {
+      const singleKey = on[0].key;
+      const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+      if (singleKey === 'WB') {
+        const wb = extractWordBankFromText(clean);
+        if ($('tPool_WB')) $('tPool_WB').value = wb.pool;
+        if ($('tSrc_WB')) $('tSrc_WB').value = wb.questions || clean;
+      } else {
+        if ($('tSrc_' + singleKey)) $('tSrc_' + singleKey).value = clean;
+      }
+      return 1;
+    }
+    return 0;
+  }
+
+  matches.forEach((m, i) => {
+    const start = m.index + m.length;
+    const end = (i + 1 < matches.length) ? matches[i + 1].index : text.length;
+    let content = text.slice(start, end).trim();
+    content = content.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+
+    if (m.key === 'WB') {
+      const wb = extractWordBankFromText(content);
+      if ($('tPool_WB')) $('tPool_WB').value = wb.pool;
+      if ($('tSrc_WB')) $('tSrc_WB').value = wb.questions || content;
+    } else {
+      const field = $('tSrc_' + m.key);
+      if (field) field.value = content;
+    }
+  });
+
+  return matches.length;
+}
+
+function buildBuilderStep2() {
+  const mode = currentBuilderTimerMode();
+  if ($('tWholeExamTimerCard')) {
+    $('tWholeExamTimerCard').hidden = (mode !== 'whole-exam');
+  }
+
+  const mp = buildMasterPrompt();
+  if ($('tMasterPromptPreview')) $('tMasterPromptPreview').textContent = mp;
+  if ($('btnTCopyMaster')) {
+    $('btnTCopyMaster').onclick = () => copyPromptText(mp, $('btnTCopyMaster'), '✓ Copied Master Prompt!');
+  }
+
+  if ($('btnTAutoSplit')) {
+    $('btnTAutoSplit').onclick = () => {
+      const raw = $('tMasterPasteInput') ? $('tMasterPasteInput').value : '';
+      const count = autoSplitMasterPaste(raw);
+      const msg = $('tAutoSplitMsg');
+      if (msg) {
+        if (count > 0) {
+          msg.innerHTML = `<div class="msg ok" style="padding:6px 10px; border-radius:6px; background:var(--ok-soft); color:var(--ok); font-size:0.75rem;">✓ Distributed into ${count} question section(s). Check sections below.</div>`;
+          activeBuilderTypes().forEach(t => {
+            const btn = document.querySelector(`[data-check="${t.key}"]`);
+            if (btn && $('tSrc_' + t.key) && $('tSrc_' + t.key).value.trim()) {
+              checkBuilderSection(t.key, btn);
+            }
+          });
+        } else {
+          msg.innerHTML = `<div class="msg warn" style="padding:6px 10px; border-radius:6px; background:var(--warn-soft); color:var(--warn); font-size:0.75rem;">No section headers (=== SECTION ===) found. You can paste directly into each box below.</div>`;
+        }
+      }
+    };
+  }
+
+  const host = $('tPanels');
+  if (!host) return;
+  host.replaceChildren();
+
+  activeBuilderTypes().forEach(t => {
+    const k = t.key, p = builderPlan[k];
+    const pan = document.createElement('div');
+    pan.className = 'panel';
+    pan.id = 'tPan_' + k;
+
+    const timerInfo = mode === 'per-section' ? ` (${builderClock(k)} section timer)` : '';
+    const wbFieldHtml = (k === 'WB')
+      ? `<div class="fld" style="margin-bottom:8px;">
+          <span class="lbl-s">Word bank pool (one per line, or comma-separated)</span>
+          <textarea class="field mono" id="tPool_WB" rows="3" placeholder="word1&#10;word2&#10;word3"></textarea>
+        </div>`
+      : '';
+
+    pan.innerHTML = `
+      <div class="head">
+        <span class="nm">${t.name}${timerInfo}</span>
+        <span class="badge" id="tBadge_${k}" style="background:var(--glass-hi); border:1px solid var(--edge); padding:2px 8px; border-radius:999px; font-size:0.6875rem;">0 of ${p.count}</span>
+        <button class="btn btn-ghost btn-sm mini" type="button" data-prompt="${k}">📋 Prompt</button>
+      </div>
+      <div class="body">
+        <p class="muted small" style="margin-bottom:6px;">${BUILDER_INPUT_HINT[k] || ''}</p>
+        ${wbFieldHtml}
+        <textarea class="field mono" id="tSrc_${k}" rows="5" placeholder="Paste questions here..."></textarea>
+        <div class="actions" style="margin-top:8px;">
+          <button class="btn btn-outline btn-sm" type="button" data-check="${k}">🔍 Check syntax</button>
+        </div>
+        <div id="tOut_${k}" style="margin-top:6px;"></div>
+      </div>
+    `;
+
+    host.appendChild(pan);
+
+    const btnPrompt = pan.querySelector(`[data-prompt="${k}"]`);
+    if (btnPrompt) {
+      btnPrompt.onclick = () => copyPromptText(buildSingleTypePrompt(k), btnPrompt, '✓ Copied!');
+    }
+
+    const btnCheck = pan.querySelector(`[data-check="${k}"]`);
+    if (btnCheck) {
+      btnCheck.onclick = () => checkBuilderSection(k, btnCheck);
+    }
+  });
+
+  updateTotalAddButton();
+}
+
+function checkBuilderSection(k, btn) {
+  const field = $('tSrc_' + k);
+  if (!field) return;
+  const raw = field.value.trim();
+  const out = $('tOut_' + k);
+  const badge = $('tBadge_' + k);
+  const pan = $('tPan_' + k);
+  const target = parseInt(builderPlan[k].count, 10) || 10;
+
+  if (!raw) {
+    if (out) out.replaceChildren();
+    if (badge) badge.textContent = `0 of ${target}`;
+    if (pan) pan.classList.remove('done');
+    updateTotalAddButton();
+    return;
+  }
+
+  // Count lines / pairs
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  let count = lines.length;
+  if (k === 'MA') count = 1; // 1 matching set
+
+  if (badge) badge.textContent = `${count} of ${target}`;
+  if (pan) pan.classList.toggle('done', count >= 1);
+  if (out) {
+    out.innerHTML = `<div class="msg ok" style="padding:6px 10px; border-radius:6px; background:var(--ok-soft); color:var(--ok); font-size:0.75rem;">✓ ${count} question(s) parsed and ready.</div>`;
+  }
+  updateTotalAddButton();
+}
+
+function collectAllBuilderQuestions() {
+  const parts = [];
+  const mode = currentBuilderTimerMode();
+
+  activeBuilderTypes().forEach(t => {
+    const k = t.key;
+    const field = $('tSrc_' + k);
+    if (!field) return;
+    const text = field.value.trim();
+    if (!text) return;
+
+    if (k === 'WB') {
+      const pool = $('tPool_WB') ? $('tPool_WB').value.trim() : '';
+      if (pool) parts.push(`=== WORD BANK ===\n${pool}`);
+      parts.push(`=== QUESTIONS ===\n${text}`);
+    } else {
+      parts.push(`=== ${t.name.toUpperCase()} ===\n${text}`);
+    }
+  });
+
+  return parts.join('\n\n');
+}
+
+function updateTotalAddButton() {
+  const on = activeBuilderTypes();
+  const hasAny = on.some(t => {
+    const f = $('tSrc_' + t.key);
+    return f && f.value.trim().length > 0;
+  });
+  if ($('btnTAddAll')) $('btnTAddAll').disabled = !hasAny;
+}
+
+/* Step 1 -> Step 2 Navigation */
+if ($('btnTNextStep')) {
+  $('btnTNextStep').onclick = () => {
+    $('tStep1').hidden = true;
+    $('tStep2').hidden = false;
+    if ($('tCr1')) { $('tCr1').classList.remove('on'); $('tCr1').classList.add('done'); }
+    if ($('tCr2')) $('tCr2').classList.add('on');
+    buildBuilderStep2();
+  };
+}
+
+if ($('btnTBackStep')) {
+  $('btnTBackStep').onclick = () => {
+    $('tStep2').hidden = true;
+    $('tStep1').hidden = false;
+    if ($('tCr2')) $('tCr2').classList.remove('on');
+    if ($('tCr1')) { $('tCr1').classList.remove('done'); $('tCr1').classList.add('on'); }
+  };
+}
+
+if ($('tCr1')) {
+  $('tCr1').onclick = () => {
+    if (!$('tStep2').hidden) {
+      $('tStep2').hidden = true;
+      $('tStep1').hidden = false;
+      if ($('tCr2')) $('tCr2').classList.remove('on');
+      if ($('tCr1')) { $('tCr1').classList.remove('done'); $('tCr1').classList.add('on'); }
     }
   };
 }
-if ($('btnDoAddQuestions')) {
-  $('btnDoAddQuestions').onclick = async () => {
-    const paste = $('addQPaste').value.trim();
-    const mode = $('addQMode').value;
-    const btn = $('btnDoAddQuestions');
+
+/* Open/Close Add Questions Modal */
+if ($('btnOpenAddQuestions')) {
+  $('btnOpenAddQuestions').onclick = () => {
+    if (!_currentDetailExamCode) return;
+    $('addQModalTitle').textContent = `Exam builder (${_currentDetailExamCode})`;
+    $('tStep1').hidden = false;
+    $('tStep2').hidden = true;
+    if ($('tCr1')) { $('tCr1').classList.remove('done'); $('tCr1').classList.add('on'); }
+    if ($('tCr2')) $('tCr2').classList.remove('on');
+    buildBuilderStep1();
+    openModal($('addQuestionsModal'), $('tExamTimerModeSelect'));
+  };
+}
+
+if ($('btnCloseAddQuestions')) {
+  $('btnCloseAddQuestions').onclick = () => closeModal($('addQuestionsModal'));
+}
+
+/* Submit Questions */
+if ($('btnTAddAll')) {
+  $('btnTAddAll').onclick = async () => {
+    const paste = collectAllBuilderQuestions();
+    const mode = $('tAddQMode') ? $('tAddQMode').value : 'append';
+    const timerMode = currentBuilderTimerMode();
+    const wholeMins = $('tWholeExamMinsInput') ? parseInt($('tWholeExamMinsInput').value, 10) || 30 : 30;
+
+    const btn = $('btnTAddAll');
     btn.disabled = true; btn.textContent = 'Importing…';
     try {
-      const r = await api('teacherAddQuestions', { idToken: await idToken(), code: _currentDetailExamCode, paste, mode });
+      const r = await api('teacherAddQuestions', {
+        idToken: await idToken(),
+        code: _currentDetailExamCode,
+        paste,
+        mode,
+        timerMode,
+        wholeExamMins: wholeMins
+      });
       if (!r.ok) { toast(r.message || 'Import failed', 'bad'); return; }
       closeModal($('addQuestionsModal'));
       toast(`Successfully imported ${r.added} question(s) into ${_currentDetailExamCode}!`, 'ok');
@@ -872,7 +1460,7 @@ if ($('btnDoAddQuestions')) {
     } catch (err) {
       toast(err.message, 'bad');
     } finally {
-      btn.disabled = false; btn.textContent = 'Import into Exam';
+      btn.disabled = false; btn.textContent = 'Add to exam';
     }
   };
 }
