@@ -26,6 +26,8 @@ export const SCHOOL_NAME = 'Information Technology';
    so the real check is ALLOWED_EMAIL_DOMAINS in the Apps Script
    properties. Leave blank to show all accounts. */
 export const HOSTED_DOMAIN = '';
+
+
 /* ------------------------------------------------------------------
    Checks the values above before the app tries to use them.
 
@@ -36,11 +38,11 @@ export const HOSTED_DOMAIN = '';
    and would advertise how the site is wired.
    ------------------------------------------------------------------ */
 export function validateConfig() {
-  if (!FIREBASE_CONFIG.apiKey)     return 'missing:apiKey';
-  if (!FIREBASE_CONFIG.authDomain) return 'missing:authDomain';
-  if (!FIREBASE_CONFIG.projectId)  return 'missing:projectId';
-  if (!FIREBASE_CONFIG.appId)      return 'missing:appId';
-  if (!API_URL || API_URL.indexOf('YOUR_ID') !== -1) return 'missing:apiUrl';
-  if (!/^https:\/\/script\.google\.com\/.*\/exec$/.test(API_URL)) return 'bad:apiUrl';
-  return null;   // all good
+   if (!FIREBASE_CONFIG.apiKey) return 'missing:apiKey';
+   if (!FIREBASE_CONFIG.authDomain) return 'missing:authDomain';
+   if (!FIREBASE_CONFIG.projectId) return 'missing:projectId';
+   if (!FIREBASE_CONFIG.appId) return 'missing:appId';
+   if (!API_URL || API_URL.indexOf('YOUR_ID') !== -1) return 'missing:apiUrl';
+   if (!/^https:\/\/script\.google\.com\/.*\/exec$/.test(API_URL)) return 'bad:apiUrl';
+   return null;   // all good
 }
