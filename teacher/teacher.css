@@ -197,6 +197,22 @@
 }
 
 @layer mesh {
+  .neat-bg-canvas {
+    position: fixed;
+    inset: 0;
+    inline-size: 100vw;
+    block-size: 100vh;
+    z-index: -2;
+    pointer-events: none;
+    opacity: 0.95;
+    transition: opacity 0.5s ease;
+  }
+
+  [data-theme="dark"] .neat-bg-canvas {
+    opacity: 0.38;
+    filter: brightness(0.7) contrast(1.1);
+  }
+
   body::before {
     content: '';
     position: fixed;
@@ -207,7 +223,7 @@
       radial-gradient(circle at 12% 12%, var(--mesh-1) 0%, transparent 48%),
       radial-gradient(circle at 85% 82%, var(--mesh-2) 0%, transparent 46%),
       radial-gradient(circle at 58% 38%, var(--mesh-3) 0%, transparent 54%),
-      var(--bg-deep);
+      transparent;
     animation: teacherAurora 28s ease-in-out infinite alternate;
   }
 }
