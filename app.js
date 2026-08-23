@@ -89,14 +89,21 @@ const SCREEN_NAME = {
 };
 
 function show(id) {
-  const changed = !$(id) || $(id).hidden;
-  SCREENS.forEach(s => { $(s).hidden = (s !== id); });
+  const target = $(id);
+  const changed = !target || target.hidden;
+  SCREENS.forEach(s => {
+    const el = $(s);
+    if (el) el.hidden = (s !== id);
+  });
   const inExam = id === 'scExam';
-  $('brand').hidden = inExam;
-  $('pillProgress').hidden = !inExam;
-  $('timerBar').hidden = !inExam;
+  if ($('brand')) $('brand').hidden = inExam;
+  if ($('pillProgress')) $('pillProgress').hidden = !inExam;
+  if ($('timerBar')) $('timerBar').hidden = !inExam;
   if ($('btnExit')) $('btnExit').hidden = !inExam;
-  if (!inExam) { $('pillSkipped').hidden = true; $('pillTimer').hidden = true; }
+  if (!inExam) {
+    if ($('pillSkipped')) $('pillSkipped').hidden = true;
+    if ($('pillTimer')) $('pillTimer').hidden = true;
+  }
   syncBar(id);          // declared below; function declarations hoist
   scrollTo(0, 0);
 
@@ -104,7 +111,7 @@ function show(id) {
   // Toggling [hidden] moves nobody's focus and says nothing, so a screen
   // reader user would otherwise have no idea the page had changed at all.
   if (SCREEN_NAME[id]) announce(SCREEN_NAME[id]);
-  if (id !== 'scExam') revealIn($(id));
+  if (id !== 'scExam' && target) revealIn(target);
 }
 
 function fatal(title, msg) {
@@ -417,44 +424,52 @@ function showRegister(r) {
   show('scRegister');
 }
 
-$('btnRegOut').onclick = () => signOut(auth).then(() => location.reload());
+if ($('btnRegOut')) $('btnRegOut').onclick = () => signOut(auth).then(() => location.reload());
 
-$('btnRegister').onclick = async () => {
-  const profile = {
-    lastName:  $('regLast').value.trim(),
-    firstName: $('regFirst').value.trim(),
-    year:      $('regYear').value,
-    course:    $('regCourse').value,
-    section:   $('regSection').value
-  };
+if ($('btnRegister')) {
+  $('btnRegister').onclick = async () => {
+    const profile = {
+      lastName:  $('regLast')?.value?.trim() || '',
+      firstName: $('regFirst')?.value?.trim() || '',
+      year:      $('regYear')?.value || '',
+      course:    $('regCourse')?.value || '',
+      section:   $('regSection')?.value || ''
+    };
 
-  const err = $('regErr');
-  if (Object.values(profile).some(v => !v)) {
-    err.textContent = 'Please fill in every box before continuing.';
-    err.hidden = false;
-    return;
-  }
-  err.hidden = true;
-
-  const b = $('btnRegister');
-  b.disabled = true; b.textContent = 'Looking…';
-  try {
-    const res = await api('search', { idToken: await idToken(), profile });
-    if (!res.ok) {
-      err.textContent = res.message || 'Could not check the class list.';
-      err.hidden = false;
+    const err = $('regErr');
+    if (Object.values(profile).some(v => !v)) {
+      if (err) {
+        err.textContent = 'Please fill in every box before continuing.';
+        err.hidden = false;
+      }
       return;
     }
-    signUp = profile;
-    if (!res.candidates.length) { showNotListed(profile); return; }
-    showPick(res.candidates);
-  } catch {
-    err.textContent = 'Could not reach the server. Check your connection and try again.';
-    err.hidden = false;
-  } finally {
-    b.disabled = false; b.textContent = 'Find my name';
-  }
-};
+    if (err) err.hidden = true;
+
+    const b = $('btnRegister');
+    b.disabled = true; b.textContent = 'Looking…';
+    try {
+      const res = await api('search', { idToken: await idToken(), profile });
+      if (!res.ok) {
+        if (err) {
+          err.textContent = res.message || 'Could not check the class list.';
+          err.hidden = false;
+        }
+        return;
+      }
+      signUp = profile;
+      if (!res.candidates.length) { showNotListed(profile); return; }
+      showPick(res.candidates);
+    } catch {
+      if (err) {
+        err.textContent = 'Could not reach the server. Check your connection and try again.';
+        err.hidden = false;
+      }
+    } finally {
+      b.disabled = false; b.textContent = 'Find my name';
+    }
+  };
+}
 
 /* ---------------- picking your name ---------------- */
 
@@ -466,7 +481,7 @@ function pickErr(msg) { flagError($('pickErr'), msg); }
  */
 function showPick(candidates) {
   const wrap = $('pickList');
-  wrap.replaceChildren();
+  if (wrap) wrap.replaceChildren();
   pickErr('');
 
   for (const c of candidates) {
@@ -485,13 +500,14 @@ function showPick(candidates) {
 
     b.append(n, m);
     b.onclick = () => claim(c);
-    wrap.append(b);
+    if (wrap) wrap.append(b);
   }
   show('scPick');
 }
 
 async function claim(candidate) {
-  const buttons = [...$('pickList').children];
+  const wrap = $('pickList');
+  const buttons = wrap ? [...wrap.children] : [];
   const release = () => buttons.forEach(b => { b.disabled = false; });
 
   buttons.forEach(b => { b.disabled = true; });
@@ -508,7 +524,7 @@ async function claim(candidate) {
       release();
       return;
     }
-    $('loadingText').textContent = 'Loading your exams…';
+    if ($('loadingText')) $('loadingText').textContent = 'Loading your exams…';
     show('scLoading');
     boot();                       // straight through to the dashboard
   } catch {
@@ -517,7 +533,7 @@ async function claim(candidate) {
   }
 }
 
-$('btnPickBack').onclick = () => { pickErr(''); show('scRegister'); };
+if ($('btnPickBack')) $('btnPickBack').onclick = () => { pickErr(''); show('scRegister'); };
 
 /**
  * Nothing matched. There is no self-add — an unlisted student is the
@@ -525,17 +541,19 @@ $('btnPickBack').onclick = () => { pickErr(''); show('scRegister'); };
  * from putting themselves on the class list.
  */
 function showNotListed(profile) {
-  $('notListedWhy').textContent =
-    `No one close to "${profile.lastName}, ${profile.firstName}" is on the ` +
-    `${profile.course} section ${profile.section} list. Check your spelling ` +
-    `and your section first — a typo in either one hides your name.`;
-  $('notListedName').textContent = `${profile.lastName}, ${profile.firstName}`;
-  $('notListedEmail').textContent = S.email || '';
+  if ($('notListedWhy')) {
+    $('notListedWhy').textContent =
+      `No one close to "${profile.lastName}, ${profile.firstName}" is on the ` +
+      `${profile.course} section ${profile.section} list. Check your spelling ` +
+      `and your section first — a typo in either one hides your name.`;
+  }
+  if ($('notListedName')) $('notListedName').textContent = `${profile.lastName}, ${profile.firstName}`;
+  if ($('notListedEmail')) $('notListedEmail').textContent = S.email || '';
   show('scNotListed');
 }
 
-$('btnNotListedBack').onclick = () => show('scRegister');
-$('btnNotListedOut').onclick = () => signOut(auth).then(() => location.reload());
+if ($('btnNotListedBack')) $('btnNotListedBack').onclick = () => show('scRegister');
+if ($('btnNotListedOut')) $('btnNotListedOut').onclick = () => signOut(auth).then(() => location.reload());
 
 function renderExams(exams) {
   const wrap = $('examList');
