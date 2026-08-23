@@ -37,8 +37,9 @@ const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
 const activeTheme = () => document.documentElement.dataset.theme || (prefersDark() ? 'dark' : 'light');
 
 function labelTheme() {
-  $('btnTheme').setAttribute('aria-label',
-    activeTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  const lbl = activeTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  if ($('btnTheme')) $('btnTheme').setAttribute('aria-label', lbl);
+  if ($('menuTheme')) $('menuTheme').setAttribute('aria-label', lbl);
 }
 
 function setTheme(t) {
