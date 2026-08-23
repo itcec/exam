@@ -26,27 +26,6 @@ export const SCHOOL_NAME = 'Information Technology';
    so the real check is ALLOWED_EMAIL_DOMAINS in the Apps Script
    properties. Leave blank to show all accounts. */
 export const HOSTED_DOMAIN = '';
-
-/* ------------------------------------------------------------------
-   validateConfig()
-
-   Call this before touching Firebase. Returns a short error code string
-   if something is missing, or null if everything looks set.
-
-   The error code is intentionally terse — it is only meant for the browser
-   DevTools console so a teacher can self-diagnose. Students are shown a
-   generic message and never see this code.
-   ------------------------------------------------------------------ */
-export function validateConfig() {
-  if (!FIREBASE_CONFIG.apiKey)     return 'missing:apiKey';
-  if (!FIREBASE_CONFIG.authDomain) return 'missing:authDomain';
-  if (!FIREBASE_CONFIG.projectId)  return 'missing:projectId';
-  if (!FIREBASE_CONFIG.appId)      return 'missing:appId';
-  if (!API_URL)                    return 'missing:apiUrl';
-  if (API_URL.includes('YOUR_ID')) return 'placeholder:apiUrl';
-  return null;
-}
-
 /* ------------------------------------------------------------------
    Checks the values above before the app tries to use them.
 
