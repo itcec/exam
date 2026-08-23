@@ -12,22 +12,10 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
 import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig } from './config.js';
-
-/* ---- config guard (runs before Firebase) ---- */
-(function () {
-  const err = validateConfig();
-  if (!err) return;
-  // Students see a generic message — no technical hint about what's missing.
-  document.getElementById('fatalTitle').textContent = 'The exam site is unavailable';
-  document.getElementById('fatalText').textContent =
-    'The exam site is missing an important setting. ' +
-    'Please ask your teacher about this matter.';
-  document.querySelectorAll('section').forEach(s => { s.hidden = true; });
-  document.getElementById('scFatal').hidden = false;
-  // The specific code only appears in DevTools so a teacher can self-diagnose.
-  console.error('[Proctor] config error: ' + err + ' — fill in docs/config.js');
-  throw new Error(err);
-}());
+import {
+  initFx, play, haptic, feedback, announce, confetti, revealIn,
+  openModal, closeModal, mountSoundToggle, reducedMotion
+} from './fx.js';
 
 const $ = id => document.getElementById(id);
 
@@ -77,122 +65,14 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (!document.documentElement.dataset.theme) labelTheme();
 });
 
-/* ---------------- sound fx & haptics (Web Audio API) ---------------- */
+/* ---------------- interaction layer ----------------
 
-let _audioCtx = null;
-function getAudioCtx() {
-  if (!_audioCtx) {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (AudioCtx) _audioCtx = new AudioCtx();
-  }
-  if (_audioCtx && _audioCtx.state === 'suspended') _audioCtx.resume();
-  return _audioCtx;
-}
+   Sound, haptics, the cursor, the mote field and the ripple all come from
+   fx.js, which the teacher portal loads too. The speaker button sits next
+   to the theme button and is off until a student asks for it. */
 
-function playPop() {
-  try {
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(460, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(780, ctx.currentTime + 0.07);
-    gain.gain.setValueAtTime(0.14, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.07);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.07);
-    hapticPulse(12);
-  } catch (e) {}
-}
-
-function playChime() {
-  try {
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6 chord
-    notes.forEach((freq, idx) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
-      gain.gain.setValueAtTime(0.12, ctx.currentTime + idx * 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.08 + 0.45);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + idx * 0.08);
-      osc.stop(ctx.currentTime + idx * 0.08 + 0.45);
-    });
-    hapticPulse(40);
-  } catch (e) {}
-}
-
-function hapticPulse(ms = 12) {
-  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
-}
-
-/* ---------------- celebratory confetti particle engine ---------------- */
-
-function launchConfetti() {
-  const canvas = $('fxCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-
-  const colors = ['#6366F1', '#8B5CF6', '#10B981', '#F59E0B', '#EC4899', '#3B82F6', '#14B8A6'];
-  const particles = [];
-  for (let i = 0; i < 75; i++) {
-    particles.push({
-      x: canvas.width / 2 + (Math.random() - 0.5) * 160,
-      y: canvas.height / 2 + 30,
-      vx: (Math.random() - 0.5) * 16,
-      vy: -Math.random() * 16 - 7,
-      size: Math.random() * 8 + 6,
-      color: colors[Math.floor(Math.random() * colors.length)],
-      rotation: Math.random() * 360,
-      rSpeed: (Math.random() - 0.5) * 14,
-      gravity: 0.45,
-      opacity: 1
-    });
-  }
-
-  let frameId = null;
-  function animate() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    let alive = false;
-    particles.forEach(p => {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += p.gravity;
-      p.rotation += p.rSpeed;
-      p.opacity -= 0.009;
-
-      if (p.opacity > 0 && p.y < canvas.height + 60) {
-        alive = true;
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate((p.rotation * Math.PI) / 180);
-        ctx.fillStyle = p.color;
-        ctx.globalAlpha = Math.max(0, p.opacity);
-        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.65);
-        ctx.restore();
-      }
-    });
-
-    if (alive) {
-      frameId = requestAnimationFrame(animate);
-    } else {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      cancelAnimationFrame(frameId);
-    }
-  }
-  animate();
-}
+initFx();
+mountSoundToggle($('btnTheme'));
 
 /* ---------------- screens ---------------- */
 
@@ -200,7 +80,16 @@ const SCREENS = ['scLoading', 'scSignIn', 'scFatal', 'scRegister', 'scPick',
                  'scNotListed', 'scStart', 'scHistory', 'scAccount',
                  'scBrief', 'scResume', 'scExam', 'scSending', 'scDone'];
 
+/** What a screen is called, for the live region. */
+const SCREEN_NAME = {
+  scSignIn: 'Sign in', scStart: 'Choose your exam', scHistory: 'Exams you have taken',
+  scAccount: 'Account', scRegister: 'Find your name', scPick: 'Which one is you',
+  scNotListed: 'We could not find you', scBrief: 'Exam details', scResume: 'Exam in progress',
+  scExam: 'Exam', scSending: 'Submitting', scDone: 'Exam submitted', scFatal: 'Something went wrong'
+};
+
 function show(id) {
+  const changed = !$(id) || $(id).hidden;
   SCREENS.forEach(s => { $(s).hidden = (s !== id); });
   const inExam = id === 'scExam';
   $('brand').hidden = inExam;
@@ -209,6 +98,12 @@ function show(id) {
   if (!inExam) { $('pillSkipped').hidden = true; $('pillTimer').hidden = true; }
   syncBar(id);          // declared below; function declarations hoist
   scrollTo(0, 0);
+
+  if (!changed) return;
+  // Toggling [hidden] moves nobody's focus and says nothing, so a screen
+  // reader user would otherwise have no idea the page had changed at all.
+  if (SCREEN_NAME[id]) announce(SCREEN_NAME[id]);
+  if (id !== 'scExam') revealIn($(id));
 }
 
 function fatal(title, msg) {
@@ -318,6 +213,8 @@ $('btnSignIn').onclick = async () => {
         ? 'This site is not authorised for sign-in yet. Tell your instructor to add it in the Firebase console.'
         : 'Sign-in failed: ' + (err?.message || code);
     $('signInErr').hidden = false;
+    announce($('signInErr').textContent, true);
+    play('error');
   }
 };
 
@@ -560,11 +457,7 @@ $('btnRegister').onclick = async () => {
 
 /* ---------------- picking your name ---------------- */
 
-function pickErr(msg) {
-  const el = $('pickErr');
-  el.textContent = msg || '';
-  el.hidden = !msg;
-}
+function pickErr(msg) { flagError($('pickErr'), msg); }
 
 /**
  * The near-matches, as buttons. Course and section are shown on each one so
@@ -698,7 +591,7 @@ function renderExams(exams) {
 
     b.append(header, n, meta);
     b.onclick = () => {
-      playPop();
+      feedback('select', 10);
       S.picked = e.code;
       $('codeInput').value = '';
       for (const k of wrap.children) k.setAttribute?.('aria-pressed', 'false');
@@ -715,11 +608,28 @@ $('codeInput').addEventListener('input', () => {
 
 /* ---------------- start ---------------- */
 
-function err(msg) {
-  const el = $('startErr');
+/**
+ * Error text is announced and the card twitches. Red alone is missed by
+ * anyone who cannot see it and by anyone who was not looking at that
+ * corner of the screen when it appeared.
+ */
+function flagError(el, msg) {
   el.textContent = msg || '';
   el.hidden = !msg;
+  if (!msg) return;
+  announce(msg, true);
+  play('error');
+  haptic(24);
+  const card = el.closest('.card');
+  if (card && !reducedMotion()) {
+    card.classList.remove('fx-shake');
+    void card.offsetWidth;
+    card.classList.add('fx-shake');
+    card.addEventListener('animationend', () => card.classList.remove('fx-shake'), { once: true });
+  }
 }
+
+function err(msg) { flagError($('startErr'), msg); }
 
 $('btnContinue').onclick = async () => {
   const code = (S.picked || $('codeInput').value || '').trim().toUpperCase();
@@ -803,21 +713,45 @@ function begin() {
   autosave();
 }
 
+/**
+ * The dot tracker. Sighted students read it at a glance; everyone else gets
+ * the same fact as one sentence, because forty <span>s with title attributes
+ * are forty pieces of noise and no summary.
+ */
+/**
+ * The question on screen right now.
+ *
+ * The exam walks S.queue with S.pos. Skipping pushes the question onto
+ * S.deferred and steps past it; when the queue runs out, step() swaps the
+ * deferred list in as a second pass and resets pos. So "where am I" is
+ * always this one lookup, and running off the end returns undefined, which
+ * is render()'s signal to hand back to step().
+ */
+function current() {
+  return S.queue[S.pos];
+}
+
 function renderStepperDots() {
   const host = $('stepperDots');
   if (!host || !S.questions || !S.questions.length) return;
   host.replaceChildren();
 
   const cur = current();
-  S.questions.forEach((q, idx) => {
+  let done = 0, skipped = 0;
+
+  S.questions.forEach(q => {
     const dot = document.createElement('span');
     dot.className = 'stepper-dot';
-    dot.title = `Question ${idx + 1}`;
+    dot.setAttribute('aria-hidden', 'true');
     if (cur && q.no === cur.no) dot.classList.add('active');
-    else if (S.answers[q.no] != null) dot.classList.add('done');
-    else if (S.deferred.some(d => d.no === q.no)) dot.classList.add('skipped');
+    else if (S.answers[q.no] != null) { dot.classList.add('done'); done++; }
+    else if (S.deferred.some(d => d.no === q.no)) { dot.classList.add('skipped'); skipped++; }
     host.append(dot);
   });
+
+  host.setAttribute('role', 'img');
+  host.setAttribute('aria-label',
+    `${done} of ${S.questions.length} answered` + (skipped ? `, ${skipped} skipped` : ''));
 }
 
 function render() {
@@ -846,6 +780,8 @@ function render() {
     const box = document.createElement('div');
     box.className = 'opts';
     box.setAttribute('role', 'radiogroup');
+    // A radiogroup with no name is announced as "group" and nothing else.
+    box.setAttribute('aria-label', 'Answer choices');
 
     opts.forEach((t, i) => {
       const b = document.createElement('button');
@@ -853,6 +789,10 @@ function render() {
       b.className = 'opt';
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', 'false');
+      // Roving tabindex: Tab reaches the group once, then the arrows move
+      // within it. Tabbing through every option of a 6-choice question is
+      // what the radio pattern exists to avoid.
+      b.tabIndex = i === 0 ? 0 : -1;
       b.dataset.value = q.type === 'TF' ? t : letters[i];
 
       const k = document.createElement('span');
@@ -878,13 +818,27 @@ function render() {
       chk.append(p);
 
       b.append(k, tx, chk);
-      b.onclick = () => {
-        playPop();
-        for (const c of box.children) c.setAttribute('aria-checked', 'false');
-        b.setAttribute('aria-checked', 'true');
-      };
+      b.onclick = () => { choose(b); };
       box.append(b);
     });
+
+    box.addEventListener('keydown', e => {
+      const list = [...box.children];
+      const at = list.indexOf(document.activeElement);
+      if (at === -1) return;
+      let to = -1;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') to = (at + 1) % list.length;
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') to = (at - 1 + list.length) % list.length;
+      else if (e.key === 'Home') to = 0;
+      else if (e.key === 'End') to = list.length - 1;
+      else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); choose(list[at]); return; }
+      else return;
+      e.preventDefault();
+      // Arrowing selects as it moves — that is what a radio group does.
+      choose(list[to]);
+      list[to].focus();
+    });
+
     host.append(box);
 
   } else if (q.type === 'EN') {
@@ -961,10 +915,16 @@ function render() {
       chip.type = 'button';
       chip.className = 'chip';
       chip.textContent = word;
+      chip.setAttribute('aria-pressed', 'false');
       chip.onclick = () => {
         inp.value = word;
-        for (const c of bank.children) c.classList.remove('on');
+        for (const c of bank.children) {
+          c.classList.remove('on');
+          c.setAttribute('aria-pressed', 'false');
+        }
         chip.classList.add('on');
+        chip.setAttribute('aria-pressed', 'true');
+        feedback('select', 10);
       };
       bank.append(chip);
     });
@@ -988,6 +948,12 @@ function render() {
 
   $('btnSkip').hidden = S.secondPass;
 
+  // Said out loud on every advance: without it a screen reader user gets a
+  // silently rewritten card and no idea the question moved on.
+  announce(`${S.secondPass ? 'Skipped question. ' : ''}` +
+           `Question ${Math.min(done + 1, S.questions.length)} of ${S.questions.length}. ` +
+           `${TYPE_NAME[q.type] || ''}. ${q.question}`);
+
   const card = $('qCard');
   card.classList.remove('swap');
   void card.offsetWidth;
@@ -995,6 +961,17 @@ function render() {
 
   if (S.timerMode === 'per-question') startQuestion(q);
   S.qStarted = Date.now();
+}
+
+/** Marks one option as the answer and moves the tab stop onto it. */
+function choose(btn) {
+  const box = btn.parentElement;
+  for (const c of box.children) {
+    const on = c === btn;
+    c.setAttribute('aria-checked', on ? 'true' : 'false');
+    c.tabIndex = on ? 0 : -1;
+  }
+  feedback('select', 10);
 }
 
 function readAnswer() {
@@ -1019,37 +996,47 @@ function readAnswer() {
 
 let _unansweredConfirmed = false;
 
-function answer() {
+/**
+ * @param {boolean} force  Skip the "you haven't answered" prompt and record
+ *   the blank as-is. Set when the decision is no longer the student's: the
+ *   question timer ran out, or the whole-exam clock did. Asking someone to
+ *   go back and answer a question whose time has already gone is a trap.
+ */
+function answer(force) {
   const q = current();
   if (!q) return;
   const val = readAnswer();
   const isBlank = (val === '' || val == null || (typeof val === 'object' && Object.keys(val).length === 0));
 
-  if (isBlank && !_unansweredConfirmed) {
-    // Show unanswered alert modal
-    $('blankConfirmModal').hidden = false;
-    $('btnStayAndAnswer').onclick = () => {
-      $('blankConfirmModal').hidden = true;
-    };
+  if (isBlank && !force && !_unansweredConfirmed) {
+    const m = $('blankConfirmModal');
+    const back = () => { closeModal(m); };
+    $('btnStayAndAnswer').onclick = back;
     $('btnSkipAnyway').onclick = () => {
-      $('blankConfirmModal').hidden = true;
+      closeModal(m);
       _unansweredConfirmed = true;
       answer();
     };
+    // Escape means "go back and answer" — the cautious reading of a
+    // dismissal, never the one that throws the answer away.
+    openModal(m, $('btnStayAndAnswer'), { onDismiss: back });
+    play('error');
     return;
   }
 
   _unansweredConfirmed = false;
+  if (!isBlank) feedback('pop', 12);
   S.answers[q.no] = val;
   S.perQ[q.no] = Math.round((Date.now() - S.qStarted) / 1000);
   S.pos++;
   step();
 }
-$('btnAnswer').onclick = answer;
+$('btnAnswer').onclick = () => answer();
 
 $('btnSkip').onclick = () => {
   const q = current();
   if (!q || S.secondPass) return;
+  feedback('back', 12);
   S.deferred.push(q);
   S.pos++;
   step();
@@ -1073,6 +1060,7 @@ function step() {
 
 function startQuestion(q) {
   stopQuestion();
+  _lastPainted = -1;
   S.remaining = q.seconds || S.defaultTimer;
   S.span = S.remaining;
   $('pillTimer').hidden = false;
@@ -1081,7 +1069,7 @@ function startQuestion(q) {
   S.tick = setInterval(() => {
     S.remaining--;
     paint(S.remaining);
-    if (S.remaining <= 0) { stopQuestion(); answer(); }
+    if (S.remaining <= 0) { stopQuestion(); play('timeup'); answer(true); }
   }, 1000);
 }
 
@@ -1101,6 +1089,9 @@ function startGlobal() {
     if (left <= 0) { clearInterval(S.globalTick); S.globalTick = null; S.finished = true; finish(); }
   }, 1000);
 }
+
+/** The last whole second paint() drew, so a cue fires once and not per tick. */
+let _lastPainted = -1;
 
 function paint(sec) {
   sec = Math.max(0, sec);
@@ -1124,6 +1115,14 @@ function paint(sec) {
   if (card) {
     if (sec <= 10 && sec > 0) card.classList.add('urgent-time');
     else card.classList.remove('urgent-time');
+  }
+
+  // A cue at ten seconds and again at five. Once each — paint() runs every
+  // second and a tick per second would be unbearable.
+  if (sec !== _lastPainted) {
+    if (sec === 10 || sec === 5) { play('tap'); haptic(18); }
+    if (sec === 10) announce('Ten seconds left', true);
+    _lastPainted = sec;
   }
 }
 
@@ -1213,15 +1212,22 @@ function done(r) {
       }, 100);
     }
 
-    let currentPct = 0;
-    const countTimer = setInterval(() => {
-      currentPct += Math.ceil((pct - currentPct) / 6);
-      if (currentPct >= pct) {
-        currentPct = pct;
-        clearInterval(countTimer);
-      }
-      if (pctNum) pctNum.textContent = `${currentPct}%`;
-    }, 25);
+    if (reducedMotion()) {
+      if (pctNum) pctNum.textContent = `${pct}%`;
+    } else {
+      let currentPct = 0;
+      const countTimer = setInterval(() => {
+        currentPct += Math.max(1, Math.ceil((pct - currentPct) / 6));
+        if (currentPct >= pct) { currentPct = pct; clearInterval(countTimer); }
+        if (pctNum) pctNum.textContent = `${currentPct}%`;
+      }, 25);
+    }
+    // The gauge is a picture; the number behind it has to be readable.
+    if (radialWrap) {
+      radialWrap.setAttribute('role', 'img');
+      radialWrap.setAttribute('aria-label',
+        `You scored ${r.score} out of ${r.total}, ${pct} per cent.`);
+    }
 
     if (fracNum) fracNum.textContent = `${r.score} / ${r.total}`;
 
@@ -1229,10 +1235,18 @@ function done(r) {
     if (r.blankCount) bits.push(`${r.blankCount} unanswered`);
     $('doneNote').textContent = bits.join('  ·  ');
 
-    // Launch celebratory confetti and chord chime!
+    // Confetti for a good result only. Firing it at someone who scored 3
+    // out of 40 reads as mockery, and the same fanfare for every outcome
+    // stops meaning anything at all.
     setTimeout(() => {
-      launchConfetti();
-      playChime();
+      if (pct >= 75) {
+        confetti($('fxCanvas'), { origin: { x: 0.5, y: 0.35 } });
+        play('chime');
+        haptic(40);
+      } else {
+        play('submit');
+        haptic(18);
+      }
     }, 250);
   }
 
@@ -1256,6 +1270,7 @@ function renderReviewList(filter) {
     const active = btn.dataset.filter === filter;
     btn.classList.toggle('on', active);
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
   });
 
   const r = _lastDoneResult;
@@ -1274,10 +1289,13 @@ function renderReviewList(filter) {
   else if (filter === 'blank') items = items.filter(d => !d.given || d.given === '(blank)');
 
   if (!items.length) {
+    const WORD = { all: '', correct: 'correct', wrong: 'wrong', blank: 'unanswered' };
     const empty = document.createElement('p');
     empty.className = 'muted small';
     empty.style.padding = '12px 0';
-    empty.textContent = `No ${filter} questions in this review.`;
+    empty.textContent = filter === 'all'
+      ? 'There is nothing to review.'
+      : `You had no ${WORD[filter]} questions.`;
     wrap.append(empty);
     return;
   }
@@ -1324,22 +1342,49 @@ function renderReviewList(filter) {
   wrap.append(list);
 }
 
-document.querySelectorAll('#reviewFilterTabs .filter-tab').forEach(btn => {
-  btn.onclick = () => renderReviewList(btn.dataset.filter);
+const reviewTabs = [...document.querySelectorAll('#reviewFilterTabs .filter-tab')];
+reviewTabs.forEach((btn, i) => {
+  btn.tabIndex = i === 0 ? 0 : -1;
+  btn.onclick = () => { feedback('tap', 8); renderReviewList(btn.dataset.filter); };
+});
+$('reviewFilterTabs')?.addEventListener('keydown', e => {
+  const at = reviewTabs.indexOf(document.activeElement);
+  if (at === -1) return;
+  let to = -1;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') to = (at + 1) % reviewTabs.length;
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') to = (at - 1 + reviewTabs.length) % reviewTabs.length;
+  else if (e.key === 'Home') to = 0;
+  else if (e.key === 'End') to = reviewTabs.length - 1;
+  else return;
+  e.preventDefault();
+  reviewTabs[to].focus();
+  reviewTabs[to].click();
 });
 
-/* ---------------- strict behaviour monitoring & warning modal ----------------
+/* ---------------- leaving the page ----------------
 
-   Strict tab-switch policy ported from v1:
-   - Warning 1 & 2: Shows behavior warning modal with 20s auto-resume countdown.
-   - Warning 3: Submits the exam automatically and ends the session.
-   - Every event records exact timestamp evidence for teacher review. */
+   Every focus loss is timestamped into the Notes column for the teacher to
+   read, and the student is warned. What it does NOT do is end the exam.
+
+   That is a deliberate choice, not an oversight. This runs on student
+   phones: an incoming call, a notification pulled down, a low-battery
+   sheet and a banking OTP all raise the same events a cheating tab-switch
+   does, and none of them are distinguishable from the page. Failing an
+   honest student outright is a worse error than logging a dishonest one
+   for you to judge, and the Notes column gives you the evidence either way.
+   `scBrief` promises the student exactly this, so the two must agree.
+
+   Set STRICT_AUTO_SUBMIT to true if your exam room rules call for it — the
+   whole behaviour hangs off this one constant. Change the Begin-exam rules
+   list in index.html to match if you do.                                  */
+
+const STRICT_AUTO_SUBMIT = false;
+const WARN_LIMIT = 3;            // warnings shown before the strict cutoff
 
 let awayAt = null;
 let behaviorWarnings = 0;
-let warningCountdownRemaining = 20;
 let warningCountdownInterval = null;
-let violationLock = false;
+let blurCheck = null;
 
 /** Format a timestamp as a short local time string, e.g. "10:14:32 AM" */
 function fmtTime(ms) {
@@ -1369,68 +1414,101 @@ function closeAway() {
   awayAt = null;
 }
 
-function handleViolation(msg) {
-  if (!S.token || S.finished || violationLock) return;
-  violationLock = true;
-  leftPage();
-
-  behaviorWarnings++;
-
+/**
+ * The warning is shown on the way BACK, never on the way out.
+ *
+ * A modal raised while the tab is hidden counts down in a window nobody is
+ * looking at, so the student returns to a dismissed dialog and never learns
+ * they were flagged. Worse, background tabs throttle timers, so the count
+ * is wrong as well as unseen.
+ */
+function showWarning() {
   const wModal = $('warningModal');
-  const wText = $('warningModalText');
-  const wCountdown = $('warningModalCountdown');
+  const wText  = $('warningModalText');
+  const wCount = $('warningModalCountdown');
+  if (!wModal) return;
 
-  if (behaviorWarnings <= 2) {
-    warningCountdownRemaining = 20;
-    if (wText) {
-      wText.textContent = msg || `Behavior warning ${behaviorWarnings}/2: You switched away or minimized the exam tab. Further violations will automatically submit your exam.`;
-    }
-    if (wCountdown) wCountdown.textContent = `Auto-resuming in ${warningCountdownRemaining}s…`;
-    if (wModal) wModal.hidden = false;
+  const strictEnd = STRICT_AUTO_SUBMIT && behaviorWarnings >= WARN_LIMIT;
 
-    if (warningCountdownInterval) clearInterval(warningCountdownInterval);
-    warningCountdownInterval = setInterval(() => {
-      warningCountdownRemaining--;
-      if (wCountdown) wCountdown.textContent = `Auto-resuming in ${warningCountdownRemaining}s…`;
-      if (warningCountdownRemaining <= 0) {
-        clearInterval(warningCountdownInterval);
-        warningCountdownInterval = null;
-        if (wModal) wModal.hidden = true;
-        closeAway();
-        violationLock = false;
-      }
-    }, 1000);
-
-    $('btnResumeExam').onclick = () => {
-      if (warningCountdownInterval) { clearInterval(warningCountdownInterval); warningCountdownInterval = null; }
-      if (wModal) wModal.hidden = true;
-      closeAway();
-      violationLock = false;
-    };
-  } else {
-    // 3rd violation -> auto submit
-    if (wText) wText.textContent = 'Third violation detected: You have repeatedly switched away from the exam. Your exam is now being submitted.';
-    if (wCountdown) wCountdown.textContent = 'Submitting…';
-    if (wModal) wModal.hidden = false;
-    setTimeout(() => {
-      if (wModal) wModal.hidden = true;
-      closeAway();
-      violationLock = false;
-      finish();
-    }, 2200);
+  if (strictEnd) {
+    wText.textContent =
+      'You have left this page ' + behaviorWarnings + ' times. Your exam is being submitted now.';
+    wCount.textContent = 'Submitting…';
+    openModal(wModal, null, { dismissible: false });
+    play('alert');
+    setTimeout(() => { closeModal(wModal); finish(); }, 2200);
+    return;
   }
+
+  wText.textContent = STRICT_AUTO_SUBMIT
+    ? 'Warning ' + behaviorWarnings + ' of ' + WARN_LIMIT + ': you left the exam page. ' +
+      'Your instructor can see when, and for how long. Leaving ' + WARN_LIMIT + ' times submits your exam.'
+    : 'Warning ' + behaviorWarnings + ': you left the exam page. Your instructor can see ' +
+      'when you left and for how long. Your exam has not been ended — carry on and finish it.';
+
+  let left = 15;
+  wCount.textContent = 'Resuming in ' + left + 's…';
+  openModal(wModal, $('btnResumeExam'), { onDismiss: dismissWarning });
+  play('alert');
+
+  clearInterval(warningCountdownInterval);
+  warningCountdownInterval = setInterval(() => {
+    left--;
+    wCount.textContent = 'Resuming in ' + left + 's…';
+    if (left <= 0) dismissWarning();
+  }, 1000);
+
+  $('btnResumeExam').onclick = dismissWarning;
+}
+
+function dismissWarning() {
+  clearInterval(warningCountdownInterval);
+  warningCountdownInterval = null;
+  closeModal($('warningModal'));
+}
+
+/** The student is back. Close the event, count it, and tell them. */
+function cameBack() {
+  if (!awayAt) return;
+  closeAway();
+  if (!S.token || S.finished) return;
+  behaviorWarnings++;
+  showWarning();
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) handleViolation();
-  else closeAway();
+  if (!S.token || S.finished) return;
+  if (document.hidden) leftPage();
+  else cameBack();
 });
-addEventListener('blur', () => {
-  if (document.hasFocus && !document.hasFocus()) handleViolation();
-});
-addEventListener('focus', closeAway);
 
-// Disable right click context menu during active exam
+/*
+   window blur is a much noisier signal than visibilitychange: on Android
+   Chrome it fires when a <select> opens its native picker, and on iOS when
+   the keyboard animates in. Both are things a student does WHILE answering.
+   So a blur is only believed if the document still does not have focus a
+   moment later and the page has not merely handed focus to one of its own
+   controls.
+*/
+addEventListener('blur', () => {
+  if (!S.token || S.finished || awayAt) return;
+  clearTimeout(blurCheck);
+  blurCheck = setTimeout(() => {
+    if (document.hidden) return;              // visibilitychange owns this one
+    if (document.hasFocus?.()) return;        // never actually left
+    const el = document.activeElement;
+    if (el && /^(SELECT|INPUT|TEXTAREA)$/.test(el.tagName)) return;   // native picker
+    leftPage();
+  }, 600);
+});
+
+addEventListener('focus', () => {
+  clearTimeout(blurCheck);
+  cameBack();
+});
+
+// Right-click is disabled mid-exam, but never over a field the student is
+// typing in — cut, paste and the spelling menu all live on that menu.
 document.addEventListener('contextmenu', e => {
   if (S.token && !S.finished) {
     const t = e.target;
@@ -1446,12 +1524,8 @@ document.addEventListener('contextmenu', e => {
 
 const nudge = el => setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
 
-visualViewport?.addEventListener('resize', () => {
-  const el = document.activeElement;
-  if (el?.tagName === 'INPUT') nudge(el);
-});
 document.addEventListener('focusin', e => {
-  if (e.target?.tagName === 'INPUT') setTimeout(() => nudge(e.target), 180);
+  if (/^(INPUT|TEXTAREA)$/.test(e.target?.tagName || '')) setTimeout(() => nudge(e.target), 180);
 });
 
 /* ---- app bar navigation ----
@@ -1462,8 +1536,7 @@ document.addEventListener('focusin', e => {
    roster identity yet and Home would have nothing on it. */
 
 const TAB_SCREENS = {
-  home:    ['scStart'],
-  exams:   ['scBrief', 'scResume', 'scDone'],
+  exams:   ['scStart', 'scBrief', 'scResume', 'scDone'],
   history: ['scHistory'],
   account: ['scAccount']
 };
@@ -1490,7 +1563,8 @@ function syncBar(id) {
   bar.hidden = false;
   const active = SCREEN_TAB[id] || null;
   for (const btn of bar.querySelectorAll('.appbar-tab')) {
-    btn.setAttribute('aria-selected', btn.dataset.tab === active ? 'true' : 'false');
+    if (btn.dataset.tab === active) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
   }
 }
 
@@ -1503,12 +1577,15 @@ function syncBar(id) {
  */
 function tabTarget(tab) {
   if (tab !== 'exams') return TAB_SCREENS[tab]?.[0] || 'scStart';
+  // Exams is a flow, not a place: go back to the finished-exam screen if one
+  // is still live, otherwise to the picker.
   if (S.finished && S.token) return 'scDone';
   return 'scStart';
 }
 
 for (const btn of document.querySelectorAll('.appbar-tab')) {
   btn.addEventListener('click', () => {
+    feedback('nav', 8);
     const dest = tabTarget(btn.dataset.tab);
     crossFade(() => show(dest));   // same treatment the theme toggle gets
   });
