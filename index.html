@@ -161,40 +161,16 @@
 
       <div class="stack-s">
         <label class="lbl" for="regSection">Section</label>
-      <p class="muted">Tell the system who you are so your score goes to the right
-        row on the class list. You only do this once.</p>
-
-      <div class="two">
-        <div>
-          <label class="lbl" for="suYear">Year level</label>
-          <select class="field" id="suYear" required>
-            <option value="">Choose your year…</option>
-          </select>
-        </div>
-        <div>
-          <label class="lbl" for="suCourse">Course</label>
-          <select class="field" id="suCourse" required>
-            <option value="">Choose your course…</option>
-          </select>
-        </div>
+        <select class="field" id="regSection"></select>
       </div>
 
-      <div class="fld">
-        <label class="lbl" for="suSection">Section</label>
-        <select class="field" id="suSection" required>
-          <option value="">Choose your section…</option>
-        </select>
-      </div>
+      <p class="muted small" id="regEmail" style="word-break:break-all"></p>
+      <p class="err" id="regErr" hidden></p>
 
-      <div class="fld">
-        <label class="lbl" for="suName">Your full name</label>
-        <input class="field" id="suName" type="text" autocomplete="name"
-               placeholder="e.g. Dela Cruz, Juan" required>
-        <p class="muted small">Last name first is easiest to match.</p>
+      <div class="actions">
+        <button class="btn btn-primary" id="btnRegister" type="button">Find my name</button>
+        <button class="btn btn-ghost" id="btnRegOut" type="button">Sign out</button>
       </div>
-
-      <button class="btn btn-primary" id="btnSuSearch" type="button">Find my name</button>
-      <p class="err" id="suErr" hidden></p>
     </div>
   </section>
 
@@ -210,34 +186,16 @@
     </div>
   </section>
 
-  <section id="scHome" hidden>
-    <div class="section-header">
-      <div>
-        <p class="eyebrow" id="greetRole">Student</p>
-        <h1 class="h1" id="greetName">Welcome</h1>
-      </div>
-    </div>
-    <div class="stack" id="examList"></div>
-  </section>
-
-  <section id="scHistory" hidden>
-    <div class="section-header">
-      <h1 class="h1">Your exam history</h1>
-    </div>
-    <div class="stack" id="historyList"></div>
-  </section>
-
-  <section id="scAccount" hidden>
+  <section id="scNotListed" hidden>
     <div class="card solo">
-      <p class="eyebrow">Account details</p>
-      <h1 class="h1" id="acctName">Student</h1>
-      <dl class="facts">
-        <dt>Google account</dt><dd id="acctEmail">—</dd>
-        <dt>Year level</dt><dd id="acctYear">—</dd>
-        <dt>Course</dt><dd id="acctCourse">—</dd>
-        <dt>Section</dt><dd id="acctSection">—</dd>
-      </dl>
-      <button class="btn btn-ghost" id="btnSignOut" type="button">Sign out</button>
+      <h1 class="h1">Name not found</h1>
+      <p class="muted" id="notListedWhy">No one close to your name was found on the class list. Check your course and section, and make sure your spelling is correct.</p>
+      <p id="notListedName" class="h1" style="font-size:1.15rem;"></p>
+      <p id="notListedEmail" class="muted small" style="word-break:break-all"></p>
+      <div class="actions">
+        <button class="btn btn-primary" id="btnNotListedBack" type="button">‹ Try again</button>
+        <button class="btn btn-ghost" id="btnNotListedOut" type="button">Sign out</button>
+      </div>
     </div>
   </section>
 
