@@ -95,6 +95,7 @@ function show(id) {
   $('brand').hidden = inExam;
   $('pillProgress').hidden = !inExam;
   $('timerBar').hidden = !inExam;
+  if ($('btnExit')) $('btnExit').hidden = !inExam;
   if (!inExam) { $('pillSkipped').hidden = true; $('pillTimer').hidden = true; }
   syncBar(id);          // declared below; function declarations hoist
   scrollTo(0, 0);
@@ -708,24 +709,46 @@ async function doResume(token) {
 
 function begin() {
   show('scExam');
-  if (S.timerMode === 'whole-exam') startGlobal();
-  render();
+  if (S.timerMode === 'whole-exam') {
+    if ($('singleExamView')) $('singleExamView').hidden = true;
+    if ($('sectionExamView')) $('sectionExamView').hidden = true;
+    if ($('wholeExamView')) $('wholeExamView').hidden = false;
+    renderWholeExam();
+    startGlobal();
+  } else if (S.timerMode === 'per-section') {
+    if ($('singleExamView')) $('singleExamView').hidden = true;
+    if ($('wholeExamView')) $('wholeExamView').hidden = true;
+    if ($('sectionExamView')) $('sectionExamView').hidden = false;
+    S.sections = buildSections();
+    S.currentSecIndex = 0;
+    renderSection(0);
+  } else {
+    if ($('singleExamView')) $('singleExamView').hidden = false;
+    if ($('wholeExamView')) $('wholeExamView').hidden = true;
+    if ($('sectionExamView')) $('sectionExamView').hidden = true;
+    render();
+  }
   autosave();
 }
 
+/* ---- Exit exam handling ---- */
+if ($('btnExit')) {
+  $('btnExit').onclick = () => {
+    openModal($('exitConfirmModal'), $('btnCancelExit'), { onDismiss: () => closeModal($('exitConfirmModal')) });
+  };
+}
+if ($('btnCancelExit')) {
+  $('btnCancelExit').onclick = () => closeModal($('exitConfirmModal'));
+}
+if ($('btnConfirmExit')) {
+  $('btnConfirmExit').onclick = () => {
+    closeModal($('exitConfirmModal'));
+    finish();
+  };
+}
+
 /**
- * The dot tracker. Sighted students read it at a glance; everyone else gets
- * the same fact as one sentence, because forty <span>s with title attributes
- * are forty pieces of noise and no summary.
- */
-/**
- * The question on screen right now.
- *
- * The exam walks S.queue with S.pos. Skipping pushes the question onto
- * S.deferred and steps past it; when the queue runs out, step() swaps the
- * deferred list in as a second pass and resets pos. So "where am I" is
- * always this one lookup, and running off the end returns undefined, which
- * is render()'s signal to hand back to step().
+ * The question on screen right now in per-question mode.
  */
 function current() {
   return S.queue[S.pos];
@@ -744,7 +767,7 @@ function renderStepperDots() {
     dot.className = 'stepper-dot';
     dot.setAttribute('aria-hidden', 'true');
     if (cur && q.no === cur.no) dot.classList.add('active');
-    else if (S.answers[q.no] != null) { dot.classList.add('done'); done++; }
+    else if (S.answers[q.no] != null && S.answers[q.no] !== '') { dot.classList.add('done'); done++; }
     else if (S.deferred.some(d => d.no === q.no)) { dot.classList.add('skipped'); skipped++; }
     host.append(dot);
   });
@@ -754,6 +777,328 @@ function renderStepperDots() {
     `${done} of ${S.questions.length} answered` + (skipped ? `, ${skipped} skipped` : ''));
 }
 
+/* ---- Multi-Question Card Builder (for Whole Exam & Per-Section Modes) ---- */
+function createMultiQuestionCard(q, index) {
+  const card = document.createElement('div');
+  card.className = 'multi-q-card';
+  card.id = 'mqCard_' + q.no;
+
+  const head = document.createElement('div');
+  head.className = 'multi-q-head';
+
+  const noLabel = document.createElement('span');
+  noLabel.className = 'multi-q-no';
+  noLabel.textContent = `Question ${q.pos || (index + 1)} · ${TYPE_NAME[q.type] || q.type}`;
+
+  const hasAns = S.answers[q.no] != null && S.answers[q.no] !== '' &&
+    (typeof S.answers[q.no] !== 'object' || Object.keys(S.answers[q.no]).length > 0);
+
+  const statusBadge = document.createElement('span');
+  statusBadge.className = 'multi-q-status' + (hasAns ? ' answered' : '');
+  statusBadge.id = 'mqStatus_' + q.no;
+  statusBadge.textContent = hasAns ? 'Answered ✓' : 'Unanswered';
+
+  head.append(noLabel, statusBadge);
+
+  const qText = document.createElement('div');
+  qText.className = 'qtext';
+  qText.style.marginBottom = '12px';
+  qText.textContent = q.question;
+
+  const inputHost = document.createElement('div');
+  inputHost.id = 'mqInput_' + q.no;
+
+  const updateAnswer = (val) => {
+    S.answers[q.no] = val;
+    const isAns = (val !== '' && val != null && (typeof val !== 'object' || Object.keys(val).length > 0));
+    statusBadge.className = 'multi-q-status' + (isAns ? ' answered' : '');
+    statusBadge.textContent = isAns ? 'Answered ✓' : 'Unanswered';
+    const doneCount = Object.values(S.answers).filter(v => v !== '' && v != null && (typeof v !== 'object' || Object.keys(v).length > 0)).length;
+    $('pillProgress').textContent = `${doneCount} of ${S.questions.length} answered`;
+  };
+
+  if (q.type === 'MC' || q.type === 'TF') {
+    const opts = (q.type === 'TF' && (!q.choices || !q.choices.length)) ? ['True', 'False'] : q.choices;
+    const letters = (q.type === 'TF' && (!q.choices || !q.choices.length)) ? ['A', 'B'] : (q.letters || ['A', 'B', 'C', 'D']);
+    const box = document.createElement('div');
+    box.className = 'opts';
+    box.setAttribute('role', 'radiogroup');
+
+    opts.forEach((t, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'opt';
+      b.setAttribute('role', 'radio');
+      const val = letters[i] || t;
+      b.dataset.value = val;
+      const isSel = S.answers[q.no] === val;
+      b.setAttribute('aria-checked', isSel ? 'true' : 'false');
+      b.tabIndex = isSel ? 0 : -1;
+
+      const k = document.createElement('span');
+      k.className = 'k';
+      k.textContent = q.type === 'TF' ? t.charAt(0) : (letters[i] || String.fromCharCode(65 + i));
+
+      const tx = document.createElement('span');
+      tx.className = 't';
+      tx.textContent = t;
+
+      const chk = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      chk.setAttribute('class', 'chk');
+      chk.setAttribute('viewBox', '0 0 20 20');
+      chk.setAttribute('fill', 'none');
+      chk.setAttribute('stroke', 'currentColor');
+      chk.setAttribute('stroke-width', '2.6');
+      chk.setAttribute('stroke-linecap', 'round');
+      chk.setAttribute('stroke-linejoin', 'round');
+      chk.setAttribute('aria-hidden', 'true');
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', 'M3.5 10.5 8 15l8.5-10');
+      chk.append(p);
+
+      b.append(k, tx, chk);
+      b.onclick = () => {
+        for (const c of box.children) {
+          const on = c === b;
+          c.setAttribute('aria-checked', on ? 'true' : 'false');
+          c.tabIndex = on ? 0 : -1;
+        }
+        feedback('select', 10);
+        updateAnswer(val);
+      };
+      box.append(b);
+    });
+    inputHost.append(box);
+
+  } else if (q.type === 'EN') {
+    const ta = document.createElement('textarea');
+    ta.className = 'field';
+    ta.rows = Math.min(6, Math.max(3, q.expect || 4));
+    ta.spellcheck = false;
+    ta.placeholder = q.expect ? `List ${q.expect} items (one per line)` : 'One per line';
+    ta.value = S.answers[q.no] || '';
+    ta.addEventListener('input', () => updateAnswer(ta.value.trim()));
+    inputHost.append(ta);
+
+  } else if (q.type === 'MA') {
+    const box = document.createElement('div');
+    box.className = 'opts';
+    const picks = (typeof S.answers[q.no] === 'object' && S.answers[q.no]) ? S.answers[q.no] : {};
+
+    (q.choices || []).forEach((left) => {
+      const row = document.createElement('div');
+      row.className = 'pair';
+      const lab = document.createElement('span');
+      lab.className = 'pair-l';
+      lab.textContent = left;
+
+      const sel = document.createElement('select');
+      sel.className = 'field pair-s';
+      const none = document.createElement('option');
+      none.value = '';
+      none.textContent = 'Choose…';
+      sel.append(none);
+
+      (q.options || []).forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt;
+        o.textContent = opt;
+        if (picks[left] === opt) o.selected = true;
+        sel.append(o);
+      });
+
+      sel.addEventListener('change', () => {
+        const currentPicks = {};
+        box.querySelectorAll('select').forEach((s, idx) => {
+          if (s.value && q.choices[idx]) currentPicks[q.choices[idx]] = s.value;
+        });
+        updateAnswer(Object.keys(currentPicks).length ? currentPicks : '');
+      });
+
+      row.append(lab, sel);
+      box.append(row);
+    });
+    inputHost.append(box);
+
+  } else if (q.type === 'WB') {
+    const inp = document.createElement('input');
+    inp.className = 'field';
+    inp.type = 'text';
+    inp.placeholder = 'Tap a word or type here';
+    inp.value = S.answers[q.no] || '';
+    inp.addEventListener('input', () => updateAnswer(inp.value.trim()));
+
+    const bank = document.createElement('div');
+    bank.className = 'bank';
+    (q.choices || []).forEach(word => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip' + (inp.value === word ? ' on' : '');
+      chip.textContent = word;
+      chip.onclick = () => {
+        inp.value = word;
+        for (const c of bank.children) c.classList.remove('on');
+        chip.classList.add('on');
+        feedback('select', 10);
+        updateAnswer(word);
+      };
+      bank.append(chip);
+    });
+    inputHost.append(inp, bank);
+
+  } else {
+    const inp = document.createElement('input');
+    inp.className = 'field';
+    inp.type = 'text';
+    inp.placeholder = 'Type your answer';
+    inp.value = S.answers[q.no] || '';
+    inp.addEventListener('input', () => updateAnswer(inp.value.trim()));
+    inputHost.append(inp);
+  }
+
+  card.append(head, qText, inputHost);
+  return card;
+}
+
+/* ---- Whole Exam Mode Rendering ---- */
+function renderWholeExam() {
+  const host = $('wholeExamList');
+  if (!host) return;
+  host.replaceChildren();
+
+  const doneCount = Object.values(S.answers).filter(v => v !== '' && v != null).length;
+  $('pillProgress').textContent = `${doneCount} of ${S.questions.length} answered`;
+
+  S.questions.forEach((q, i) => {
+    host.append(createMultiQuestionCard(q, i));
+  });
+
+  if ($('btnSubmitWholeExam')) {
+    $('btnSubmitWholeExam').onclick = () => finish();
+  }
+}
+
+/* ---- Per-Section Mode Grouping & Rendering ---- */
+function buildSections() {
+  const sections = [];
+  let currentGroup = null;
+
+  S.questions.forEach(q => {
+    const type = q.type || 'MC';
+    if (!currentGroup || currentGroup.type !== type) {
+      currentGroup = {
+        type: type,
+        title: TYPE_NAME[type] || type,
+        questions: [q],
+        duration: 0
+      };
+      sections.push(currentGroup);
+    } else {
+      currentGroup.questions.push(q);
+    }
+    currentGroup.duration += (q.seconds || S.defaultTimer || 45);
+  });
+
+  return sections;
+}
+
+function renderSection(idx) {
+  const sec = S.sections[idx];
+  if (!sec) { finish(); return; }
+
+  $('sectionMeta').textContent = `Section ${idx + 1} of ${S.sections.length}`;
+  $('sectionTitle').textContent = sec.title;
+  $('sectionDesc').textContent = `Answer all ${sec.questions.length} question(s) in this section.`;
+
+  const host = $('sectionQuestionList');
+  if (host) {
+    host.replaceChildren();
+    sec.questions.forEach((q, i) => {
+      host.append(createMultiQuestionCard(q, i));
+    });
+  }
+
+  startSectionTimer(sec.duration || 60);
+
+  const isLast = idx + 1 >= S.sections.length;
+  if ($('btnNextSection')) {
+    $('btnNextSection').textContent = isLast ? 'Submit Final Section & Finish Exam ✓' : 'Complete Section & Proceed ›';
+    $('btnNextSection').onclick = () => {
+      stopQuestion();
+      if (isLast) {
+        finish();
+      } else {
+        showSectionTransition(idx + 1, () => {
+          S.currentSecIndex = idx + 1;
+          renderSection(S.currentSecIndex);
+        });
+      }
+    };
+  }
+}
+
+function showSectionTransition(idx, onComplete) {
+  const sec = S.sections[idx];
+  if (!sec) { onComplete(); return; }
+
+  const overlay = $('sectionTransitionOverlay');
+  if (!overlay) { onComplete(); return; }
+
+  $('transitionEyebrow').textContent = `NEXT: SECTION ${idx + 1} OF ${S.sections.length}`;
+  $('transitionTitle').textContent = `SECTION ${idx + 1}`;
+  $('transitionType').textContent = sec.title;
+
+  overlay.hidden = false;
+  void overlay.offsetWidth;
+  overlay.classList.add('active');
+  play('tap');
+  haptic(30);
+
+  setTimeout(() => {
+    overlay.classList.remove('active');
+    setTimeout(() => {
+      overlay.hidden = true;
+      onComplete();
+    }, 450);
+  }, 1600);
+}
+
+function startSectionTimer(totalSecs) {
+  stopQuestion();
+  _lastPainted = -1;
+  S.remaining = totalSecs;
+  S.span = totalSecs;
+  $('pillTimer').hidden = false;
+  $('timerBar').hidden = false;
+  paint(S.remaining);
+  if ($('sectionTimerPill')) {
+    const m = Math.floor(S.remaining / 60), s = S.remaining % 60;
+    $('sectionTimerPill').textContent = `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  S.tick = setInterval(() => {
+    S.remaining--;
+    paint(S.remaining);
+    if ($('sectionTimerPill')) {
+      const m = Math.max(0, Math.floor(S.remaining / 60)), s = Math.max(0, S.remaining % 60);
+      $('sectionTimerPill').textContent = `${m}:${String(s).padStart(2, '0')}`;
+    }
+    if (S.remaining <= 0) {
+      stopQuestion();
+      play('timeup');
+      if (S.currentSecIndex + 1 < S.sections.length) {
+        showSectionTransition(S.currentSecIndex + 1, () => {
+          S.currentSecIndex++;
+          renderSection(S.currentSecIndex);
+        });
+      } else {
+        finish();
+      }
+    }
+  }, 1000);
+}
+
+/* ---- Per-Question Mode Rendering ---- */
 function render() {
   const q = current();
   if (!q) { step(); return; }
@@ -780,7 +1125,6 @@ function render() {
     const box = document.createElement('div');
     box.className = 'opts';
     box.setAttribute('role', 'radiogroup');
-    // A radiogroup with no name is announced as "group" and nothing else.
     box.setAttribute('aria-label', 'Answer choices');
 
     opts.forEach((t, i) => {
@@ -788,12 +1132,10 @@ function render() {
       b.type = 'button';
       b.className = 'opt';
       b.setAttribute('role', 'radio');
-      b.setAttribute('aria-checked', 'false');
-      // Roving tabindex: Tab reaches the group once, then the arrows move
-      // within it. Tabbing through every option of a 6-choice question is
-      // what the radio pattern exists to avoid.
-      b.tabIndex = i === 0 ? 0 : -1;
-      b.dataset.value = q.type === 'TF' ? t : letters[i];
+      b.dataset.value = letters[i];
+      const isSel = S.answers[q.no] === letters[i];
+      b.setAttribute('aria-checked', isSel ? 'true' : 'false');
+      b.tabIndex = isSel ? 0 : -1;
 
       const k = document.createElement('span');
       k.className = 'k';
@@ -946,7 +1288,8 @@ function render() {
     // student has read the question.
   }
 
-  $('btnSkip').hidden = S.secondPass;
+  // Allow skipping as long as there is more than 1 item left in the pool
+  $('btnSkip').hidden = (S.queue.length + S.deferred.length <= 1);
 
   // Said out loud on every advance: without it a screen reader user gets a
   // silently rewritten card and no idea the question moved on.
@@ -1035,7 +1378,7 @@ $('btnAnswer').onclick = () => answer();
 
 $('btnSkip').onclick = () => {
   const q = current();
-  if (!q || S.secondPass) return;
+  if (!q) return;
   feedback('back', 12);
   S.deferred.push(q);
   S.pos++;
