@@ -161,41 +161,83 @@
 
       <div class="stack-s">
         <label class="lbl" for="regSection">Section</label>
-        <select class="field" id="regSection"></select>
+      <p class="muted">Tell the system who you are so your score goes to the right
+        row on the class list. You only do this once.</p>
+
+      <div class="two">
+        <div>
+          <label class="lbl" for="suYear">Year level</label>
+          <select class="field" id="suYear" required>
+            <option value="">Choose your year…</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl" for="suCourse">Course</label>
+          <select class="field" id="suCourse" required>
+            <option value="">Choose your course…</option>
+          </select>
+        </div>
       </div>
 
-      <p class="muted small" id="regEmail"></p>
-      <p class="err" id="regErr" hidden></p>
-      <button class="btn btn-primary" id="btnRegister" type="button">Find my name</button>
-      <button class="btn btn-ghost" id="btnRegOut" type="button">Sign in as someone else</button>
+      <div class="fld">
+        <label class="lbl" for="suSection">Section</label>
+        <select class="field" id="suSection" required>
+          <option value="">Choose your section…</option>
+        </select>
+      </div>
+
+      <div class="fld">
+        <label class="lbl" for="suName">Your full name</label>
+        <input class="field" id="suName" type="text" autocomplete="name"
+               placeholder="e.g. Dela Cruz, Juan" required>
+        <p class="muted small">Last name first is easiest to match.</p>
+      </div>
+
+      <button class="btn btn-primary" id="btnSuSearch" type="button">Find my name</button>
+      <p class="err" id="suErr" hidden></p>
     </div>
   </section>
 
   <section id="scPick" hidden>
     <div class="card solo">
-      <p class="eyebrow">One-time sign-up</p>
+      <p class="eyebrow">First-time sign-in</p>
       <h1 class="h1">Which one is you?</h1>
-      <p class="muted">These are the closest names on your class list. Pick
-        yours and it is yours for good — your scores are recorded under it,
-        and no one else can take it.</p>
-
+      <p class="muted">Tap your name to link it to your Google account. If none of
+        these are you, go back and check your spelling.</p>
       <div class="stack" id="pickList"></div>
-
+      <button class="btn btn-ghost" id="btnPickBack" type="button">‹ Search again</button>
       <p class="err" id="pickErr" hidden></p>
-      <button class="btn btn-ghost" id="btnPickBack" type="button">None of these — go back</button>
     </div>
   </section>
 
-  <section id="scNotListed" hidden>
+  <section id="scHome" hidden>
+    <div class="section-header">
+      <div>
+        <p class="eyebrow" id="greetRole">Student</p>
+        <h1 class="h1" id="greetName">Welcome</h1>
+      </div>
+    </div>
+    <div class="stack" id="examList"></div>
+  </section>
+
+  <section id="scHistory" hidden>
+    <div class="section-header">
+      <h1 class="h1">Your exam history</h1>
+    </div>
+    <div class="stack" id="historyList"></div>
+  </section>
+
+  <section id="scAccount" hidden>
     <div class="card solo">
-      <h1 class="h1">We could not find you</h1>
-      <p class="muted" id="notListedWhy"></p>
-      <p class="muted small">Ask your instructor to add you to the class list,
-        then reload this page. Give them the name and the address below.</p>
-      <div class="who" id="notListedName"></div>
-      <p class="muted small" id="notListedEmail" style="word-break:break-all"></p>
-      <button class="btn btn-primary" id="btnNotListedBack" type="button">Check what I typed</button>
-      <button class="btn btn-ghost" id="btnNotListedOut" type="button">Sign in as someone else</button>
+      <p class="eyebrow">Account details</p>
+      <h1 class="h1" id="acctName">Student</h1>
+      <dl class="facts">
+        <dt>Google account</dt><dd id="acctEmail">—</dd>
+        <dt>Year level</dt><dd id="acctYear">—</dd>
+        <dt>Course</dt><dd id="acctCourse">—</dd>
+        <dt>Section</dt><dd id="acctSection">—</dd>
+      </dl>
+      <button class="btn btn-ghost" id="btnSignOut" type="button">Sign out</button>
     </div>
   </section>
 
@@ -223,17 +265,59 @@
   </section>
 
   <section id="scExam" hidden>
-    <div id="stepperDots" class="stepper-dots"></div>
-    <div class="card solo" id="qCard">
-      <p class="eyebrow" id="qMeta">Question</p>
-      <div class="qtext" id="qText"></div>
-      <div id="qInput"></div>
-      <div class="actions">
-        <button class="btn btn-primary" id="btnAnswer" type="button">Submit answer</button>
-        <button class="btn btn-ghost" id="btnSkip" type="button">Skip</button>
+    <!-- Per-Question Mode View -->
+    <div id="singleExamView">
+      <div id="stepperDots" class="stepper-dots"></div>
+      <div class="card solo" id="qCard">
+        <p class="eyebrow" id="qMeta">Question</p>
+        <div class="qtext" id="qText"></div>
+        <div id="qInput"></div>
+        <div class="actions">
+          <button class="btn btn-primary" id="btnAnswer" type="button">Submit answer</button>
+          <button class="btn btn-ghost" id="btnSkip" type="button">Skip</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Whole Exam Continuous Scroll View -->
+    <div id="wholeExamView" hidden>
+      <div class="card solo" style="margin-bottom:14px;">
+        <p class="eyebrow" id="wholeExamMeta">Whole Exam</p>
+        <h1 class="h1" id="wholeExamTitle" style="font-size:1.3rem; margin-top:2px;">All Questions</h1>
+        <p class="muted small">Answer all questions below. Your answers are automatically saved.</p>
+      </div>
+      <div id="wholeExamList" class="stack"></div>
+      <div class="card solo" style="margin-top:16px;">
+        <button class="btn btn-primary" id="btnSubmitWholeExam" type="button" style="width:100%;">Submit Entire Exam</button>
+      </div>
+    </div>
+
+    <!-- Per-Section Continuous Scroll View -->
+    <div id="sectionExamView" hidden>
+      <div class="card solo" style="margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <p class="eyebrow" id="sectionMeta">Section 1</p>
+          <span class="pill" id="sectionTimerPill" role="timer" style="font-weight:700;">—</span>
+        </div>
+        <h1 class="h1" id="sectionTitle" style="font-size:1.3rem; margin-top:2px;">Section Title</h1>
+        <p class="muted small" id="sectionDesc">Answer all questions in this section before advancing.</p>
+      </div>
+      <div id="sectionQuestionList" class="stack"></div>
+      <div class="card solo" style="margin-top:16px;">
+        <button class="btn btn-primary" id="btnNextSection" type="button" style="width:100%;">Complete Section &amp; Proceed ›</button>
       </div>
     </div>
   </section>
+
+  <!-- Cinematic Dramatic Section Transition Overlay -->
+  <div id="sectionTransitionOverlay" class="section-transition-overlay" hidden>
+    <div class="transition-content">
+      <p class="transition-eyebrow" id="transitionEyebrow">UPCOMING SECTION</p>
+      <h2 class="transition-title" id="transitionTitle">SECTION II</h2>
+      <p class="transition-type" id="transitionType">IDENTIFICATION</p>
+      <div class="transition-pulse-line"></div>
+    </div>
+  </div>
 
   <section id="scSending" hidden>
     <div class="card center solo">
@@ -283,10 +367,11 @@
   <canvas id="fxCanvas" class="fx-canvas"></canvas>
 </main>
 
-<!-- Strict behavior warning modal (tab-switch violation) -->
+<!-- Tab-switch proctoring warning modal -->
 <div class="modal-backdrop" id="warningModal" hidden>
   <div class="modal-card">
     <div class="modal-header">
+      <span class="modal-icon-badge" aria-hidden="true">⚠️</span>
       <h3 class="modal-title bad">You left the exam page</h3>
     </div>
     <p id="warningModalText" class="modal-body"></p>
@@ -306,6 +391,21 @@
     <div class="actions">
       <button class="btn btn-ghost" id="btnStayAndAnswer" type="button">Go back &amp; answer</button>
       <button class="btn btn-primary" id="btnSkipAnyway" type="button">Proceed anyway</button>
+    </div>
+  </div>
+</div>
+
+<!-- Exit Exam Confirmation Modal -->
+<div class="modal-backdrop" id="exitConfirmModal" hidden>
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="modal-icon-badge" aria-hidden="true">🚪</span>
+      <h3 class="modal-title bad">Quit and Submit Exam?</h3>
+    </div>
+    <p class="modal-body">Are you sure you want to quit? <b>All questions you have answered will be graded and submitted as your final score</b> for this attempt.</p>
+    <div class="actions">
+      <button class="btn btn-ghost" id="btnCancelExit" type="button">Keep going</button>
+      <button class="btn btn-danger" id="btnConfirmExit" type="button" style="background:var(--bad);color:#fff;">Quit &amp; Submit</button>
     </div>
   </div>
 </div>
