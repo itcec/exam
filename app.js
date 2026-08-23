@@ -47,8 +47,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
 
 /* ---------------- screens ---------------- */
 
-const SCREENS = ['scLoading', 'scSignIn', 'scFatal', 'scStart', 'scIdentity',
-                 'scBrief', 'scResume', 'scExam', 'scSending', 'scDone'];
+const SCREENS = ['scLoading', 'scSignIn', 'scFatal', 'scRegister', 'scPick',
+                 'scNotListed', 'scStart', 'scBrief', 'scResume', 'scExam',
+                 'scSending', 'scDone'];
 
 function show(id) {
   SCREENS.forEach(s => { $(s).hidden = (s !== id); });
@@ -179,6 +180,7 @@ const TYPE_NAME = {
 /* ---------------- state ---------------- */
 
 const S = {
+  email: '',
   code: '', token: '', timerMode: 'per-question', defaultTimer: 45,
   questions: [], answers: {}, perQ: {},
   queue: [], pos: 0, deferred: [], secondPass: false,
@@ -206,6 +208,7 @@ async function boot() {
     return;
   }
 
+  S.email = r.email || '';
   $('whoEmail').textContent = r.email;
   if (r.lastName || r.firstName) {
     $('whoName').textContent = [r.lastName, r.firstName].filter(Boolean).join(', ');
@@ -214,6 +217,9 @@ async function boot() {
       .filter(Boolean).join('  ·  ');
     if (bits) $('whoEmail').textContent = bits + '\n' + r.email;
   }
+
+  // Not on the class list yet — sign them up rather than turning them away.
+  if (!r.known) { showRegister(r); return; }
 
   if (r.blocked) {
     fatal('Your account is blocked',
@@ -235,8 +241,13 @@ async function boot() {
 }
 
 /**
- * Exams already sat. The server decides whether a score may be shown — it
- * holds one back while the student could still sit the exam again.
+ * Exams already sat, read from the student's Roster row. The server decides
+ * whether a score may be shown — it holds one back while the student could
+ * still sit the exam again.
+ *
+ * The badge is the best score. Where there was more than one attempt, the
+ * row opens to show the average and each try, so a student who improved can
+ * see it rather than only their best number.
  */
 function renderHistory(list) {
   const wrap = $('historyWrap');
@@ -253,16 +264,22 @@ function renderHistory(list) {
   box.className = 'stack';
 
   for (const h of list) {
-    const row = document.createElement('div');
+    const many = h.showScore && h.tries?.length > 1;
+
+    const row = document.createElement(many ? 'details' : 'div');
     row.className = 'past';
+
+    const line = document.createElement(many ? 'summary' : 'div');
+    line.className = 'past-line';
 
     const left = document.createElement('div');
     const t = document.createElement('div');
     t.className = 'past-t';
     t.textContent = h.title || h.code;
+
     const d = document.createElement('div');
     d.className = 'past-d';
-    d.textContent = [h.date, h.attempt > 1 ? 'try ' + h.attempt : '']
+    d.textContent = [h.date, h.attempts > 1 ? h.attempts + ' tries' : '']
       .filter(Boolean).join('  ·  ');
     left.append(t, d);
 
@@ -270,16 +287,198 @@ function renderHistory(list) {
     if (h.showScore) {
       badge.className = 'past-s';
       badge.textContent = h.score + ' / ' + h.total;
+      if (many) badge.title = 'Best of ' + h.attempts + ' tries';
     } else {
       badge.className = 'past-s pending';
       badge.textContent = h.pending ? 'Not released' : 'Submitted';
     }
 
-    row.append(left, badge);
+    line.append(left, badge);
+    row.append(line);
+
+    if (many) {
+      const detail = document.createElement('div');
+      detail.className = 'past-tries';
+
+      const avg = document.createElement('div');
+      avg.className = 'past-d';
+      avg.textContent = 'Average  ' + h.average + ' / ' + h.total;
+      detail.append(avg);
+
+      for (const tr of h.tries) {
+        const li = document.createElement('div');
+        li.className = 'past-d';
+        li.textContent = 'Try ' + tr.no + '  ·  ' + tr.score + ' / ' + h.total;
+        if (tr.score === h.score) li.classList.add('best');
+        detail.append(li);
+      }
+      row.append(detail);
+    }
+
     box.append(row);
   }
   wrap.append(box);
 }
+
+/* ---------------- one-time sign-up ---------------- */
+
+function fillSelect(id, values, chosen) {
+  const sel = $(id);
+  sel.replaceChildren();
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = 'Choose…';
+  sel.append(blank);
+  for (const v of values) {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    if (v === chosen) o.selected = true;
+    sel.append(o);
+  }
+}
+
+/* What the student typed, kept between the form and the pick list — the
+   claim is checked against it again on the server. */
+let signUp = null;
+
+function showRegister(r) {
+  // The lists come from the server so they can never drift from the ones
+  // the exam settings filter against.
+  const o = r.options || { years: [], courses: [], sections: [] };
+  fillSelect('regYear', o.years, r.year);
+  fillSelect('regCourse', o.courses, r.course);
+  fillSelect('regSection', o.sections, r.section);
+
+  $('regLast').value = r.lastName || '';
+  $('regFirst').value = r.firstName || '';
+  $('regEmail').textContent = 'Signed in as ' + r.email;
+  $('regErr').hidden = true;
+  show('scRegister');
+}
+
+$('btnRegOut').onclick = () => signOut(auth).then(() => location.reload());
+
+$('btnRegister').onclick = async () => {
+  const profile = {
+    lastName:  $('regLast').value.trim(),
+    firstName: $('regFirst').value.trim(),
+    year:      $('regYear').value,
+    course:    $('regCourse').value,
+    section:   $('regSection').value
+  };
+
+  const err = $('regErr');
+  if (Object.values(profile).some(v => !v)) {
+    err.textContent = 'Please fill in every box before continuing.';
+    err.hidden = false;
+    return;
+  }
+  err.hidden = true;
+
+  const b = $('btnRegister');
+  b.disabled = true; b.textContent = 'Looking…';
+  try {
+    const res = await api('search', { idToken: await idToken(), profile });
+    if (!res.ok) {
+      err.textContent = res.message || 'Could not check the class list.';
+      err.hidden = false;
+      return;
+    }
+    signUp = profile;
+    if (!res.candidates.length) { showNotListed(profile); return; }
+    showPick(res.candidates);
+  } catch {
+    err.textContent = 'Could not reach the server. Check your connection and try again.';
+    err.hidden = false;
+  } finally {
+    b.disabled = false; b.textContent = 'Find my name';
+  }
+};
+
+/* ---------------- picking your name ---------------- */
+
+function pickErr(msg) {
+  const el = $('pickErr');
+  el.textContent = msg || '';
+  el.hidden = !msg;
+}
+
+/**
+ * The near-matches, as buttons. Course and section are shown on each one so
+ * a student in the wrong section can see it before claiming anything.
+ */
+function showPick(candidates) {
+  const wrap = $('pickList');
+  wrap.replaceChildren();
+  pickErr('');
+
+  for (const c of candidates) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pick';
+
+    const n = document.createElement('span');
+    n.className = 'c';
+    n.textContent = `${c.lastName}, ${c.firstName}`;
+
+    const m = document.createElement('span');
+    m.className = 'n';
+    m.textContent = [c.course, c.section ? 'Section ' + c.section : '']
+      .filter(Boolean).join('  ·  ');
+
+    b.append(n, m);
+    b.onclick = () => claim(c);
+    wrap.append(b);
+  }
+  show('scPick');
+}
+
+async function claim(candidate) {
+  const buttons = [...$('pickList').children];
+  const release = () => buttons.forEach(b => { b.disabled = false; });
+
+  buttons.forEach(b => { b.disabled = true; });
+  pickErr('');
+
+  try {
+    const res = await api('claim', {
+      idToken: await idToken(),
+      row: candidate.row,
+      profile: signUp
+    });
+    if (!res.ok) {
+      pickErr(res.message || 'Could not claim that name.');
+      release();
+      return;
+    }
+    $('loadingText').textContent = 'Loading your exams…';
+    show('scLoading');
+    boot();                       // straight through to the dashboard
+  } catch {
+    pickErr('Could not reach the server. Check your connection and try again.');
+    release();
+  }
+}
+
+$('btnPickBack').onclick = () => { pickErr(''); show('scRegister'); };
+
+/**
+ * Nothing matched. There is no self-add — an unlisted student is the
+ * instructor's to add, which is what keeps a stranger with a Google account
+ * from putting themselves on the class list.
+ */
+function showNotListed(profile) {
+  $('notListedWhy').textContent =
+    `No one close to "${profile.lastName}, ${profile.firstName}" is on the ` +
+    `${profile.course} section ${profile.section} list. Check your spelling ` +
+    `and your section first — a typo in either one hides your name.`;
+  $('notListedName').textContent = `${profile.lastName}, ${profile.firstName}`;
+  $('notListedEmail').textContent = S.email || '';
+  show('scNotListed');
+}
+
+$('btnNotListedBack').onclick = () => show('scRegister');
+$('btnNotListedOut').onclick = () => signOut(auth).then(() => location.reload());
 
 function renderExams(exams) {
   const wrap = $('examList');
@@ -343,7 +542,6 @@ $('btnContinue').onclick = async () => {
   b.disabled = true; b.textContent = 'Checking…';
   try {
     const r = await api('start', { idToken: await idToken(), code });
-    if (r.needsIdentity) { offerIdentity(r, code); return; }
     if (!r.ok) { err(r.message || 'Could not start this exam.'); return; }
     prepare(r); brief(r);
   } catch {
@@ -352,33 +550,6 @@ $('btnContinue').onclick = async () => {
     b.disabled = false; b.textContent = 'Continue';
   }
 };
-
-function offerIdentity(r, code) {
-  if (!r.candidate) { err(r.message); return; }
-  $('whoCandidate').textContent = `${r.candidate.lastName}, ${r.candidate.firstName}`;
-  $('whoSection').textContent = r.candidate.section ? 'Section ' + r.candidate.section : '';
-
-  $('btnClaimYes').onclick = async () => {
-    const b = $('btnClaimYes');
-    b.disabled = true; b.textContent = 'Confirming…';
-    try {
-      const c = await api('claim', { idToken: await idToken(), row: r.candidate.row });
-      if (!c.ok) { show('scStart'); err(c.message); return; }
-      const s = await api('start', { idToken: await idToken(), code });
-      if (!s.ok) { show('scStart'); err(s.message || 'Could not start.'); return; }
-      prepare(s); brief(s);
-    } catch {
-      show('scStart'); err('Could not reach the server.');
-    } finally {
-      b.disabled = false; b.textContent = "Yes, that's me";
-    }
-  };
-  $('btnClaimNo').onclick = () => {
-    show('scStart');
-    err('Ask your instructor to add ' + $('whoEmail').textContent + ' to the class list.');
-  };
-  show('scIdentity');
-}
 
 /* ---------------- brief ---------------- */
 
