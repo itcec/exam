@@ -367,6 +367,11 @@
   .modal-header h3 { font-size: 1.1rem; font-weight: 700; }
   .close-btn { background: none; border: none; font-size: 1.1rem; color: var(--fg-2); cursor: pointer; padding: 4px; }
 
+  @media (min-width: 640px) {
+    .modal-backdrop { align-items: center; justify-content: center; }
+    .modal-card { border-radius: var(--r-lg); border-block-end: 1px solid var(--edge); padding-block-end: 24px; }
+  }
+
   /* Student table rows */
   .student-row {
     display: grid; grid-template-columns: 1fr auto auto;
