@@ -10,6 +10,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="fx.css">
 <script>
   // Before first paint, so a saved choice never flashes the other theme.
   try {
@@ -20,6 +21,8 @@
 </head>
 <body>
 
+<a class="skip-link" href="#main">Skip to content</a>
+
 <!-- Time remaining, as one glanceable bar. -->
 <div class="timerbar" id="timerBar" hidden><i id="timerFill"></i></div>
 
@@ -27,10 +30,10 @@
      field when the iOS keyboard opens. -->
 <header class="bar">
   <span class="brand" id="brand">Exam</span>
-  <span class="pill" id="pillProgress" hidden>—</span>
+  <span class="pill" id="pillProgress" aria-live="polite" hidden>—</span>
   <span class="pill" id="pillSkipped" hidden>Skipped 0</span>
   <span class="grow"></span>
-  <span class="pill" id="pillTimer" hidden>—</span>
+  <span class="pill" id="pillTimer" role="timer" aria-live="off" hidden>—</span>
   <button class="icon-btn" id="btnTheme" type="button" aria-label="Switch to dark mode">
     <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -44,7 +47,7 @@
   </button>
 </header>
 
-<main class="shell">
+<main class="shell" id="main" tabindex="-1">
 
   <section id="scLoading">
     <div class="card center solo">
@@ -262,13 +265,17 @@
         <p class="muted small" id="doneNote"></p>
       </div>
       <div class="card cell-major" id="reviewCard">
-        <div class="filter-tabs" id="reviewFilterTabs" role="tablist" aria-label="Review filters">
-          <button class="filter-tab on" data-filter="all" type="button" aria-selected="true">All (<span id="cntAll">0</span>)</button>
-          <button class="filter-tab" data-filter="correct" type="button" aria-selected="false">Correct ✅ (<span id="cntCorrect">0</span>)</button>
-          <button class="filter-tab" data-filter="wrong" type="button" aria-selected="false">Wrong ❌ (<span id="cntWrong">0</span>)</button>
-          <button class="filter-tab" data-filter="blank" type="button" aria-selected="false">Unanswered ⚪ (<span id="cntBlank">0</span>)</button>
+        <div class="filter-tabs" id="reviewFilterTabs" role="tablist" aria-label="Filter the review">
+          <button class="filter-tab on" data-filter="all" type="button" role="tab"
+                  aria-selected="true" aria-controls="reviewWrap">All (<span id="cntAll">0</span>)</button>
+          <button class="filter-tab" data-filter="correct" type="button" role="tab"
+                  aria-selected="false" aria-controls="reviewWrap">Correct ✅ (<span id="cntCorrect">0</span>)</button>
+          <button class="filter-tab" data-filter="wrong" type="button" role="tab"
+                  aria-selected="false" aria-controls="reviewWrap">Wrong ❌ (<span id="cntWrong">0</span>)</button>
+          <button class="filter-tab" data-filter="blank" type="button" role="tab"
+                  aria-selected="false" aria-controls="reviewWrap">Unanswered ⚪ (<span id="cntBlank">0</span>)</button>
         </div>
-        <div id="reviewWrap"></div>
+        <div id="reviewWrap" role="tabpanel" tabindex="0" aria-label="Review"></div>
       </div>
     </div>
   </section>
@@ -280,10 +287,10 @@
 <div class="modal-backdrop" id="warningModal" hidden>
   <div class="modal-card">
     <div class="modal-header">
-      <h3 style="color:var(--bad);margin:0;font-size:1.15rem;">⚠️ Tab Switch Warning</h3>
+      <h3 class="modal-title bad">You left the exam page</h3>
     </div>
-    <p id="warningModalText" class="muted" style="font-weight:600;margin:10px 0;"></p>
-    <div id="warningModalCountdown" style="font-size:2rem;font-weight:800;color:var(--warn);text-align:center;margin:8px 0;"></div>
+    <p id="warningModalText" class="modal-body"></p>
+    <div id="warningModalCountdown" class="modal-count" aria-live="off"></div>
     <button class="btn btn-primary" id="btnResumeExam" type="button">I understand, resume exam</button>
   </div>
 </div>
@@ -292,9 +299,10 @@
 <div class="modal-backdrop" id="blankConfirmModal" hidden>
   <div class="modal-card">
     <div class="modal-header">
-      <h3 style="margin:0;font-size:1.15rem;">⚠️ Question Unanswered</h3>
+      <h3 class="modal-title">This question is blank</h3>
     </div>
-    <p class="muted" style="margin:10px 0;">You have not answered or selected a choice for this question yet. Would you like to go back and answer, or proceed anyway?</p>
+    <p class="modal-body">You have not typed an answer or picked a choice yet. Go back and
+      answer it, or leave it blank and move on.</p>
     <div class="actions">
       <button class="btn btn-ghost" id="btnStayAndAnswer" type="button">Go back &amp; answer</button>
       <button class="btn btn-primary" id="btnSkipAnyway" type="button">Proceed anyway</button>
@@ -303,20 +311,10 @@
 </div>
 
 <!-- Bottom app bar — hidden on error/onboarding screens and during active exam -->
-<nav class="appbar" id="appBar" role="tablist" aria-label="Main navigation" hidden>
-
-  <button class="appbar-tab" id="tabHome" data-tab="home"
-          aria-label="Home" aria-selected="false" role="tab" type="button">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
-      <path d="M9 21V12h6v9"/>
-    </svg>
-    <span>Home</span>
-  </button>
+<nav class="appbar" id="appBar" aria-label="Main" hidden>
 
   <button class="appbar-tab" id="tabExams" data-tab="exams"
-          aria-label="Exams" aria-selected="false" role="tab" type="button">
+          type="button">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <rect x="5" y="2" width="14" height="20" rx="2"/>
@@ -326,7 +324,7 @@
   </button>
 
   <button class="appbar-tab" id="tabHistory" data-tab="history"
-          aria-label="History" aria-selected="false" role="tab" type="button">
+          type="button">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9"/>
@@ -336,7 +334,7 @@
   </button>
 
   <button class="appbar-tab" id="tabAccount" data-tab="account"
-          aria-label="Account" aria-selected="false" role="tab" type="button">
+          type="button">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="12" cy="8" r="4"/>
