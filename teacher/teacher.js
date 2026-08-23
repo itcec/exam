@@ -12,6 +12,10 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRe
   from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
 import { FIREBASE_CONFIG, API_URL, validateConfig } from '../config.js';
+import {
+  initFx, play, feedback, announce, toast, revealIn, countTo,
+  openModal, closeModal, mountSoundToggle
+} from '../fx.js';
 
 /* ---- config guard ---- */
 (function () {
@@ -32,12 +36,23 @@ const $ = id => document.getElementById(id);
 const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
 const activeTheme = () => document.documentElement.dataset.theme || (prefersDark() ? 'dark' : 'light');
 
+function labelTheme() {
+  $('btnTheme').setAttribute('aria-label',
+    activeTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+}
+
 function setTheme(t) {
   document.documentElement.dataset.theme = t;
   try { localStorage.setItem('exam_theme_v1', t); } catch {}
+  labelTheme();
 }
 
-$('btnTheme').onclick = () => setTheme(activeTheme() === 'dark' ? 'light' : 'dark');
+$('btnTheme').onclick = () => { feedback('tap', 8); setTheme(activeTheme() === 'dark' ? 'light' : 'dark'); };
+labelTheme();
+
+/* The same interaction layer the student portal runs. */
+initFx();
+mountSoundToggle($('btnTheme'));
 
 /* ================================================================
    Firebase auth
@@ -76,27 +91,46 @@ async function idToken() {
    API helper — same pattern as app.js
    ================================================================ */
 
-async function api(action, body = {}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    body: JSON.stringify({ action, ...body }),
-    headers: {}    // simple request — no preflight
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+/**
+ * Mirrors app.js: a simple cross-origin POST, retried on a flaky connection
+ * but never on a refusal. res.json() was throwing a parse error on the login
+ * HTML that comes back when the deployment is not public, which reads to the
+ * teacher as a broken portal rather than a deployment setting.
+ */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function api(action, body = {}, tries = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, ...body })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw Object.assign(
+          new Error('The exam server returned a sign-in page instead of data. ' +
+                    'Check the Apps Script deployment is set to "Anyone".'),
+          { permanent: true });
+      }
+    } catch (err) {
+      lastErr = err;
+      if (err.permanent || attempt === tries) break;
+      await sleep(Math.min(900 * 2 ** (attempt - 1), 5000));
+    }
+  }
+  throw lastErr;
 }
 
 /* ================================================================
    Screen / tab routing
    ================================================================ */
 
-const SCREENS = [
-  'scTLoading', 'scTSignIn', 'scTDenied',
-  'scTDashboard', 'scTExams', 'scTExamDetail',
-  'scTStudents', 'scTResults'
-];
-
-const TAB_SCREENS = {
 /* ================================================================
    Client Cache & State Management
    ================================================================ */
@@ -149,8 +183,21 @@ const SCREEN_TAB = Object.fromEntries(
 
 const BAR_HIDDEN = new Set(['scTLoading', 'scTSignIn', 'scTDenied', 'scTExamDetail']);
 
+const SCREEN_NAME = {
+  scTSignIn: 'Teacher sign-in', scTDenied: 'Access denied', scTDashboard: 'Dashboard',
+  scTExams: 'Exams', scTExamDetail: 'Exam details', scTStudents: 'Students',
+  scTResults: 'Results'
+};
+
 function show(id) {
+  const changed = !$(id) || $(id).hidden;
   SCREENS.forEach(s => { $(s).hidden = s !== id; });
+
+  if (changed) {
+    if (SCREEN_NAME[id]) announce(SCREEN_NAME[id]);
+    revealIn($(id));
+    scrollTo(0, 0);
+  }
 
   const bar = $('tAppBar');
   if (!bar) return;
@@ -160,13 +207,15 @@ function show(id) {
 
   const tab = SCREEN_TAB[id] || null;
   document.querySelectorAll('.appbar-tab').forEach(btn => {
-    btn.setAttribute('aria-selected', btn.dataset.tab === tab ? 'true' : 'false');
+    if (btn.dataset.tab === tab) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
   });
 }
 
 // App bar tab click — renders instantly from CACHE
 document.querySelectorAll('#tAppBar .appbar-tab').forEach(btn => {
   btn.addEventListener('click', () => {
+    feedback('nav', 8);
     const target = TAB_SCREENS[btn.dataset.tab];
     if (target) showTab(btn.dataset.tab);
   });
@@ -229,6 +278,7 @@ onAuthStateChanged(auth, async user => {
     $('topRole').hidden = false;
     $('topRole').textContent = r.email || user.email;
     if ($('btnSyncAll')) $('btnSyncAll').hidden = false;
+    if ($('btnSignOut')) $('btnSignOut').hidden = false;
 
     // Cache the whole workbook snapshot in memory and sessionStorage
     CACHE.dashboard = r.dashboard;
@@ -292,11 +342,13 @@ $('btnTSignIn').onclick = async () => {
   }
 };
 
-/* Sign out */
-$('btnTDeniedOut').onclick = () => {
-  sessionStorage.removeItem('teacher_cache_v2');
-  signOut(auth);
-};
+/* Sign out. The cache holds a whole class list, so it goes with the session. */
+function doSignOut() {
+  try { sessionStorage.removeItem('teacher_cache_v2'); } catch {}
+  signOut(auth).then(() => location.reload());
+}
+$('btnTDeniedOut').onclick = doSignOut;
+if ($('btnSignOut')) $('btnSignOut').onclick = doSignOut;
 
 /* Global Full Sync Button */
 if ($('btnSyncAll')) {
@@ -331,9 +383,11 @@ if ($('btnSyncAll')) {
 
 function renderDashboard(data) {
   if (!data) return;
-  $('dashOpenNum').textContent    = data.openExams   ?? '—';
-  $('dashStudentNum').textContent = data.students    ?? '—';
-  $('dashTodayNum').textContent   = data.today       ?? '—';
+  // Counting up is the only sign these three numbers were refreshed at all;
+  // a re-render to the same value is otherwise completely silent.
+  countTo($('dashOpenNum'),    data.openExams);
+  countTo($('dashStudentNum'), data.students);
+  countTo($('dashTodayNum'),   data.today);
 
   const list = $('dashRecentList');
   if (!data.recent?.length) { list.textContent = 'No submissions yet today.'; return; }
@@ -400,8 +454,12 @@ function renderExamCards(exams) {
     wrap.append(p); return;
   }
   exams.forEach(ex => {
-    const card = document.createElement('div');
+    // A <button>, not a <div>: the whole card opens the exam, so it has to be
+    // reachable by Tab and operable by Enter and Space like anything else.
+    const card = document.createElement('button');
+    card.type = 'button';
     card.className = 'card exam-card liftable';
+    card.setAttribute('aria-label', 'Open ' + (ex.title || ex.code) + ' results');
     card.innerHTML = `
       <div class="exam-card-top">
         <span class="exam-card-code">${esc(ex.code)}</span>
@@ -414,10 +472,11 @@ function renderExamCards(exams) {
         ${ex.opensAt ? ' · Opens ' + esc(ex.opensAt) : ''}
         ${ex.closesAt ? ' · Closes ' + esc(ex.closesAt) : ''}
       </div>
-      <div class="exam-card-actions" id="actions-${esc(ex.code)}"></div>`;
+      <div class="exam-card-actions"></div>`;
 
-    // Status toggle buttons
-    const actionRow = card.querySelector('#actions-' + CSS.escape(ex.code));
+    // Held by reference. The old id was built with esc() but read back with
+    // CSS.escape(), which disagree, and two exams would collide on it anyway.
+    const actionRow = card.querySelector('.exam-card-actions');
     const statuses = ['open', 'draft', 'closed'];
     statuses.forEach(st => {
       if (st === ex.status) return;
@@ -425,8 +484,11 @@ function renderExamCards(exams) {
       btn.className = 'btn-sm btn-outline';
       btn.type = 'button';
       btn.textContent = st === 'open' ? '▶ Open' : st === 'draft' ? '✏ Draft' : '■ Close';
+      btn.setAttribute('aria-label',
+        (st === 'open' ? 'Open' : st === 'draft' ? 'Move to draft' : 'Close') + ' ' + ex.code);
       btn.onclick = async (e) => {
         e.stopPropagation();
+        feedback('tap', 8);
         await setExamStatus(ex.code, st, card);
       };
       actionRow.append(btn);
@@ -436,12 +498,14 @@ function renderExamCards(exams) {
     detailBtn.className = 'btn-sm btn-outline';
     detailBtn.type = 'button';
     detailBtn.textContent = '📊 Results';
-    detailBtn.onclick = (e) => { e.stopPropagation(); openExamDetail(ex); };
+    detailBtn.setAttribute('aria-label', 'Results for ' + ex.code);
+    detailBtn.onclick = (e) => { e.stopPropagation(); feedback('nav', 8); openExamDetail(ex); };
     actionRow.append(detailBtn);
 
-    card.addEventListener('click', () => openExamDetail(ex));
-    $('examCards').append(card);
+    card.addEventListener('click', () => { feedback('nav', 8); openExamDetail(ex); });
+    wrap.append(card);
   });
+  revealIn(wrap);
 }
 
 function statusChip(status) {
@@ -453,28 +517,29 @@ function statusChip(status) {
 async function setExamStatus(code, status, card) {
   try {
     const r = await api('teacherSetStatus', { idToken: await idToken(), code, status });
-    if (r.ok) { await loadExams(); return; }
+    if (r.ok) { await loadExams(); toast(code + ' is now ' + status + '.', 'ok'); return; }
     // Opening runs the same preflight the Sheet menu runs, so a refusal
     // arrives with the actual list of what is wrong. Show it.
-    alert([r.message || 'Could not update status.']
+    toast([r.message || 'Could not update status.']
       .concat(r.errors?.length ? [''].concat(r.errors.map(e => '• ' + e)) : [])
-      .join('\n'));
-  } catch (err) { console.error(err); }
+      .join('\n'), 'bad', 9000);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || 'Could not reach the exam server.', 'bad');
+  }
 }
 
 /* Create new exam modal */
 $('btnNewExam').onclick = () => {
-  $('newExamModal').hidden = false;
   $('newExamOut').replaceChildren();
   $('newExamCode').value = '';
   $('newExamTitle').value = '';
   $('newExamSubject').value = '';
-  $('newExamCode').focus();
+  openModal($('newExamModal'), $('newExamCode'));
 };
 
-$('btnCloseNewExam').onclick = $('btnCancelNewExam').onclick = () => {
-  $('newExamModal').hidden = true;
-};
+$('btnCloseNewExam').onclick = $('btnCancelNewExam').onclick =
+  () => closeModal($('newExamModal'));
 
 $('newExamTimerMode').onchange = () => {
   const isWhole = $('newExamTimerMode').value === 'whole-exam';
@@ -484,7 +549,7 @@ $('newExamTimerMode').onchange = () => {
 
 $('btnSubmitNewExam').onclick = async () => {
   const code = $('newExamCode').value.trim().toUpperCase();
-  if (!code) { alert('Please enter an Exam Code.'); $('newExamCode').focus(); return; }
+  if (!code) { toast('Please enter an exam code.', 'bad'); $('newExamCode').focus(); return; }
 
   const title = $('newExamTitle').value.trim();
   const subject = $('newExamSubject').value.trim().toUpperCase();
@@ -510,9 +575,9 @@ $('btnSubmitNewExam').onclick = async () => {
 
     const r = await api('teacherCreateExam', payload);
     if (r.ok) {
-      $('newExamModal').hidden = true;
+      closeModal($('newExamModal'));
       await loadExams();
-      alert(`Exam "${code}" created successfully!`);
+      toast(`Exam "${code}" created. Add its questions from the Sheet menu.`, 'ok', 6000);
     } else {
       $('newExamOut').innerHTML = `<div class="msg bad" style="color:var(--bad);margin-top:6px;font-size:12px;">${esc(r.message || 'Could not create exam.')}</div>`;
     }
@@ -617,6 +682,7 @@ function renderStudentTable(students) {
   );
   const wrap = $('studentTable');
   wrap.replaceChildren();
+  announce(filtered.length + (filtered.length === 1 ? ' student' : ' students') + ' shown');
   if (!filtered.length) {
     const p = document.createElement('p');
     p.className = 'muted small';
@@ -635,25 +701,33 @@ function renderStudentTable(students) {
     row.append(name, email);
     wrap.append(row);
   });
+  revealIn(wrap, '.student-row');
 }
 
 // Instant local filtering without network round-trips
 $('filterCourse').onchange = $('filterSection').onchange = () => {
+  play('tap');
   renderStudentTable(CACHE.students || []);
 };
 
 /* Add students modal */
 $('btnAddStudents').onclick = () => {
   populateAddModal();
-  $('addStudentsModal').hidden = false;
+  openModal($('addStudentsModal'), $('addCourse'));
 };
-$('btnCloseAdd').onclick    = () => { $('addStudentsModal').hidden = true; $('addOut').replaceChildren(); };
+$('btnCloseAdd').onclick = () => {
+  closeModal($('addStudentsModal'));
+  $('addOut').replaceChildren();
+};
 
 $('btnCheckStudents').onclick = async () => {
   const course  = $('addCourse').value;
   const section = $('addSection').value;
   const paste   = $('addPaste').value.trim();
-  if (!course || !section || !paste) { alert('Please fill in Course, Section, and paste the class list.'); return; }
+  if (!course || !section || !paste) {
+    toast('Fill in Course and Section, and paste the class list.', 'bad');
+    return;
+  }
   try {
     const r = await api('teacherCheckStudents', { idToken: await idToken(), course, section, paste });
     if (!r.ok) { $('addOut').textContent = r.message || 'Error'; return; }
@@ -683,11 +757,12 @@ $('btnDoAdd').onclick = async () => {
   try {
     const r = await api('teacherAddStudents', { idToken: await idToken(), course, section, paste });
     if (r.ok) {
-      $('addStudentsModal').hidden = true;
+      closeModal($('addStudentsModal'));
       $('addOut').replaceChildren();
       $('btnDoAdd').disabled = true;
       await loadStudents();
-      alert((r.added || 0) + ' student(s) added to the Roster.');
+      const n = r.added || 0;
+      toast(n + (n === 1 ? ' student' : ' students') + ' added to the Roster.', 'ok');
     } else { $('addOut').textContent = r.message || 'Error adding students.'; }
   } catch (err) { $('addOut').textContent = 'Error: ' + err.message; }
 };
@@ -799,8 +874,12 @@ if ($('btnRefreshResults')) {
 function renderResultsTable(wrap, rows, total) {
   const tbl = document.createElement('table');
   tbl.className = 'results-table';
-  tbl.innerHTML = `<thead><tr>
-    <th>Name</th><th>Score</th><th>Status</th><th>Time (min)</th><th>Notes</th>
+  // scope= is what lets a screen reader read "Score" before each score cell
+  // instead of announcing a wall of unlabelled numbers.
+  tbl.innerHTML = `<caption>${rows.length} submission${rows.length === 1 ? '' : 's'}</caption>
+  <thead><tr>
+    <th scope="col">Name</th><th scope="col">Score</th><th scope="col">Status</th>
+    <th scope="col">Time (min)</th><th scope="col">Notes</th>
   </tr></thead>`;
   const tbody = document.createElement('tbody');
   rows.forEach(row => {
@@ -812,12 +891,17 @@ function renderResultsTable(wrap, rows, total) {
       : row.status === 'late' ? '⏰'
       : row.done ? '✅' : '—';
 
+    const statusWord = row.flagged ? 'Flagged'
+      : row.status === 'in-progress' ? 'In progress'
+      : row.status === 'late' ? 'Late'
+      : row.done ? 'Done' : 'Not started';
+
     tr.innerHTML = `
-      <td>${esc(row.name || '—')}</td>
+      <th scope="row">${esc(row.name || '—')}</th>
       <td>${row.score != null ? row.score + ' / ' + total : '—'}</td>
-      <td>${statusIcon}</td>
+      <td><span aria-hidden="true">${statusIcon}</span><span class="sr-only">${statusWord}</span></td>
       <td>${row.minutes ?? '—'}</td>
-      <td style="font-size:.8125rem;max-width:260px;">${row.notes ? esc(row.notes) : ''}</td>`;
+      <td class="notes-cell">${row.notes ? esc(row.notes) : ''}</td>`;
 
     // The server writes one focus-loss event per line, so keep the breaks.
     if (row.notes) {
@@ -835,20 +919,33 @@ function renderResultsTable(wrap, rows, total) {
   wrap.append(tbl);
 }
 
+/**
+ * A cell opening with = + - or @ is run as a formula by Excel and Sheets, so
+ * a student recorded as "-Ann" or a Notes line starting with = would execute
+ * when the file is opened. Prefixing an apostrophe is the standard defusing:
+ * spreadsheets treat the rest as text and do not show the quote.
+ */
+function csvCell(v) {
+  let t = v == null ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+  return "\"" + t.replace(/"/g, '""') + "\"";
+}
+
 function exportCSV(rows, code) {
   const headers = 'Name,Score,Status,Minutes,Notes';
-  const lines = rows.map(r => [
-    '"' + (r.name || '').replace(/"/g, '""') + '"',
-    r.score ?? '',
-    r.status,
-    r.minutes ?? '',
-    '"' + (r.notes || '').replace(/"/g, '""') + '"'
-  ].join(','));
-  const csv = [headers, ...lines].join('\n');
+  const lines = rows.map(r =>
+    [r.name, r.score, r.status, r.minutes, r.notes].map(csvCell).join(','));
+  // A BOM, or Excel reads the accented names in a Filipino roster as mojibake.
+  const csv = '\ufeff' + [headers, ...lines].join('\r\n');
+
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.href = url;
   a.download = code + '-results.csv';
   a.click();
+  // Without this the whole file stays in memory until the tab is closed.
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast('Downloaded ' + code + '-results.csv', 'ok');
 }
 
 /* ================================================================
