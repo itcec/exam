@@ -54,8 +54,8 @@
   </section>
 
   <section id="scSignIn" hidden>
-    <div class="card">
-      <p class= solo"eyebrow" id="schoolName">Online Exam</p>
+    <div class="card solo">
+      <p class="eyebrow" id="schoolName">Online Exam</p>
       <h1 class="h1">Sign in to start</h1>
       <p class="muted">Use the Google account your school gave you. Your score is
         recorded under that account.</p>
@@ -73,8 +73,8 @@
   </section>
 
   <section id="scFatal" hidden>
-    <div class="card">
-      <h1 class= solo"h1" id="fatalTitle">Something went wrong</h1>
+    <div class="card solo">
+      <h1 class="h1" id="fatalTitle">Something went wrong</h1>
       <p id="fatalText" class="muted"></p>
       <button class="btn btn-ghost" id="btnReload" type="button">Reload</button>
     </div>
@@ -108,21 +108,80 @@
     </div>
   </section>
 
-  <section id="scIdentity" hidden>
-    <div class="card">
-      <h1 class= solo"h1">Is this you?</h1>
-      <p class="muted">We found this name on the class list. Confirm it so your
-        score is recorded under the right student.</p>
-      <div class="who" id="whoCandidate"></div>
-      <p class="muted small" id="whoSection"></p>
-      <button class="btn btn-primary" id="btnClaimYes" type="button">Yes, that's me</button>
-      <button class="btn btn-ghost" id="btnClaimNo" type="button">No, that's not me</button>
+  <section id="scRegister" hidden>
+    <div class="card solo">
+      <p class="eyebrow">One-time sign-up</p>
+      <h1 class="h1">Find your name</h1>
+      <p class="muted">Your instructor has already put your class on the list.
+        Tell us who you are and we will find you on it. This is asked once.</p>
+
+      <div class="two">
+        <div class="stack-s">
+          <label class="lbl" for="regLast">Last name</label>
+          <input class="field" id="regLast" type="text" autocomplete="family-name"
+                 autocapitalize="words" placeholder="Dela Cruz">
+        </div>
+        <div class="stack-s">
+          <label class="lbl" for="regFirst">First name</label>
+          <input class="field" id="regFirst" type="text" autocomplete="given-name"
+                 autocapitalize="words" placeholder="Juan">
+        </div>
+      </div>
+
+      <div class="two">
+        <div class="stack-s">
+          <label class="lbl" for="regYear">Year level</label>
+          <select class="field" id="regYear"></select>
+        </div>
+        <div class="stack-s">
+          <label class="lbl" for="regCourse">Course</label>
+          <select class="field" id="regCourse"></select>
+        </div>
+      </div>
+
+      <div class="stack-s">
+        <label class="lbl" for="regSection">Section</label>
+        <select class="field" id="regSection"></select>
+      </div>
+
+      <p class="muted small" id="regEmail"></p>
+      <p class="err" id="regErr" hidden></p>
+      <button class="btn btn-primary" id="btnRegister" type="button">Find my name</button>
+      <button class="btn btn-ghost" id="btnRegOut" type="button">Sign in as someone else</button>
+    </div>
+  </section>
+
+  <section id="scPick" hidden>
+    <div class="card solo">
+      <p class="eyebrow">One-time sign-up</p>
+      <h1 class="h1">Which one is you?</h1>
+      <p class="muted">These are the closest names on your class list. Pick
+        yours and it is yours for good — your scores are recorded under it,
+        and no one else can take it.</p>
+
+      <div class="stack" id="pickList"></div>
+
+      <p class="err" id="pickErr" hidden></p>
+      <button class="btn btn-ghost" id="btnPickBack" type="button">None of these — go back</button>
+    </div>
+  </section>
+
+  <section id="scNotListed" hidden>
+    <div class="card solo">
+      <h1 class="h1">We could not find you</h1>
+      <p class="muted" id="notListedWhy"></p>
+      <p class="muted small">Ask your instructor to add you to the class list,
+        then reload this page. Give them the name and the address below.</p>
+      <div class="who" id="notListedName"></div>
+      <p class="muted small" id="notListedEmail" style="word-break:break-all"></p>
+      <button class="btn btn-primary" id="btnNotListedBack" type="button">Check what I typed</button>
+      <button class="btn btn-ghost" id="btnNotListedOut" type="button">Sign in as someone else</button>
     </div>
   </section>
 
   <section id="scBrief" hidden>
-    <div class="card">
-      <h1 class= solo"h1" id="briefTitle">Exam</h1>
+    <div class="card solo">
+      <h1 class="h1" id="briefTitle">Exam</h1>
       <dl class="facts" id="briefFacts"></dl>
       <ul class="rules">
         <li>Answer each question, or tap <b>Skip</b> to come back to it.</li>
@@ -136,8 +195,8 @@
   </section>
 
   <section id="scResume" hidden>
-    <div class="card">
-      <h1 class= solo"h1">You have an exam in progress</h1>
+    <div class="card solo">
+      <h1 class="h1">You have an exam in progress</h1>
       <p class="muted" id="resumeText"></p>
       <button class="btn btn-primary" id="btnResume" type="button">Continue where I left off</button>
     </div>
