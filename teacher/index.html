@@ -70,6 +70,90 @@
       <button class="btn-sm btn-accent" id="btnNewExam" type="button">+ New exam</button>
     </div>
     <div id="examCards" class="stack"></div>
+
+    <!-- Create New Exam Modal -->
+    <div class="modal-backdrop" id="newExamModal" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Create new exam</h3>
+          <button class="close-btn" id="btnCloseNewExam" type="button">✕</button>
+        </div>
+        <div class="two">
+          <div>
+            <label class="lbl" for="newExamCode">Exam Code *</label>
+            <input class="field mono" id="newExamCode" placeholder="e.g. IT211-MID" required style="text-transform:uppercase;">
+          </div>
+          <div>
+            <label class="lbl" for="newExamSubject">Subject Code</label>
+            <input class="field mono" id="newExamSubject" placeholder="e.g. IT211" style="text-transform:uppercase;">
+          </div>
+        </div>
+        <div>
+          <label class="lbl" for="newExamTitle">Exam Title</label>
+          <input class="field" id="newExamTitle" placeholder="e.g. Midterm Examination in Web Development">
+        </div>
+        <div class="two">
+          <div>
+            <label class="lbl" for="newExamCourse">Target Course</label>
+            <select class="field" id="newExamCourse">
+              <option value="">Any course</option>
+              <option value="BSIT">BSIT</option>
+              <option value="BSED">BSED</option>
+              <option value="BEED">BEED</option>
+              <option value="BSHM">BSHM</option>
+              <option value="BSTM">BSTM</option>
+              <option value="BSCRIM">BSCRIM</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl" for="newExamYear">Year Level</label>
+            <select class="field" id="newExamYear">
+              <option value="">Any year</option>
+              <option value="1ST">1ST</option>
+              <option value="2ND">2ND</option>
+              <option value="3RD">3RD</option>
+              <option value="4TH">4TH</option>
+            </select>
+          </div>
+        </div>
+        <div class="two">
+          <div>
+            <label class="lbl" for="newExamTimerMode">Timer Mode</label>
+            <select class="field" id="newExamTimerMode">
+              <option value="per-question">One timer per question</option>
+              <option value="whole-exam">One timer for whole exam</option>
+            </select>
+          </div>
+          <div id="wrapTimerInput">
+            <label class="lbl" id="lblTimerDuration" for="newExamDuration">Seconds per question</label>
+            <input class="field" type="number" id="newExamDuration" value="45" min="5" max="3600">
+          </div>
+        </div>
+        <div class="two">
+          <div>
+            <label class="lbl" for="newExamTries">Tries Allowed</label>
+            <select class="field" id="newExamTries">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="Unlimited">Unlimited</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl" for="newExamStatus">Initial Status</label>
+            <select class="field" id="newExamStatus">
+              <option value="draft">Draft (hidden from students)</option>
+              <option value="open">Open (active)</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:12px;">
+          <button class="btn btn-ghost" id="btnCancelNewExam" type="button">Cancel</button>
+          <button class="btn btn-primary" id="btnSubmitNewExam" type="button">Create Exam</button>
+        </div>
+        <div id="newExamOut" style="margin-top:6px;"></div>
+      </div>
+    </div>
   </section>
   <section id="scTExamDetail" hidden>
     <div class="section-header">
