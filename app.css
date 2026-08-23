@@ -212,11 +212,35 @@
       var(--bg-deep);
     animation: auroraDrift 28s ease-in-out infinite alternate;
   }
+
+  /* Second sheet, slower and going the other way. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: -40%;
+    z-index: -1;
+    pointer-events: none;
+    opacity: .85;
+    background:
+      radial-gradient(closest-side at 72% 22%, var(--mesh-2) 0%, transparent 70%),
+      radial-gradient(closest-side at 24% 74%, var(--mesh-1) 0%, transparent 72%);
+    animation: auroraCounter 41s ease-in-out infinite alternate;
+  }
 }
 @keyframes auroraDrift {
   0%   { transform: scale(1) translate(0, 0); }
   50%  { transform: scale(1.08) translate(-2%, 3%); }
   100% { transform: scale(1.02) translate(3%, -2%); }
+}
+@keyframes auroraCounter {
+  0%   { transform: scale(1.06) translate(2%, -1%) rotate(0deg); }
+  50%  { transform: scale(1) translate(-3%, 2%) rotate(-1.5deg); }
+  100% { transform: scale(1.1) translate(1%, 3%) rotate(1deg); }
+}
+
+/* A still background is the point of the preference, not a slower one. */
+@media (prefers-reduced-motion: reduce) {
+  body::before, body::after { animation: none !important; }
 }
 
 /* ---------------------------------------------------------------- */
@@ -709,7 +733,7 @@
   /* ---- low-time pulsing card aura ---- */
   @keyframes lowTimeGlow {
     0%, 100% { box-shadow: var(--shadow); border-color: var(--edge); }
-    50% { box-shadow: 0 0 28px 6px rgba(239, 68, 68, 0.35); border-color: rgba(239, 68, 68, 0.75); }
+    50%      { box-shadow: 0 0 28px 6px var(--bad-soft); border-color: var(--bad); }
   }
   .card.urgent-time {
     animation: lowTimeGlow 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
@@ -855,6 +879,13 @@
   }
   @keyframes scaleUp { from { transform: scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
   .modal-header { display: flex; align-items: center; justify-content: space-between; }
+  .modal-title  { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--fg); }
+  .modal-title.bad { color: var(--bad); }
+  .modal-body   { margin: 0; color: var(--fg-2); line-height: 1.55; }
+  .modal-count  {
+    font-size: 1.75rem; font-weight: 800; text-align: center;
+    color: var(--warn); font-variant-numeric: tabular-nums;
+  }
 }
 
 /* ---------------------------------------------------------------- */
@@ -965,15 +996,15 @@
   }
 
   /* Active state */
-  .appbar-tab[aria-selected="true"] {
+  .appbar-tab[aria-current="page"] {
     color: var(--accent);
   }
-  .appbar-tab[aria-selected="true"] svg {
+  .appbar-tab[aria-current="page"] svg {
     transform: translateY(-2px) scale(1.08);
   }
 
   /* Accent pill indicator above the icon */
-  .appbar-tab[aria-selected="true"]::before {
+  .appbar-tab[aria-current="page"]::before {
     content: '';
     position: absolute;
     inset-block-start: 0;
@@ -983,6 +1014,11 @@
     block-size: 3px;
     border-radius: 0 0 3px 3px;
     background: var(--accent);
+    animation: tabMark .3s cubic-bezier(.34, 1.56, .64, 1) both;
+  }
+  @keyframes tabMark {
+    from { inline-size: 0; opacity: 0; }
+    to   { inline-size: 28px; opacity: 1; }
   }
 
   /* Coarse-pointer screens: slightly taller tabs for easier tapping */
@@ -1004,7 +1040,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .appbar, .appbar-tab svg { transition: none; }
-    .appbar-tab[aria-selected="true"] svg { transform: none; }
+    .appbar-tab[aria-current="page"] svg { transform: none; }
   }
 }
 
