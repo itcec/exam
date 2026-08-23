@@ -304,14 +304,65 @@ async function setExamStatus(code, status, card) {
   } catch (err) { console.error(err); }
 }
 
-$('btnNewExam').onclick = async () => {
-  const name = prompt('Enter a short exam code (e.g. PRELIM1, MIDTERM):');
-  if (!name?.trim()) return;
+/* Create new exam modal */
+$('btnNewExam').onclick = () => {
+  $('newExamModal').hidden = false;
+  $('newExamOut').replaceChildren();
+  $('newExamCode').value = '';
+  $('newExamTitle').value = '';
+  $('newExamSubject').value = '';
+  $('newExamCode').focus();
+};
+
+$('btnCloseNewExam').onclick = $('btnCancelNewExam').onclick = () => {
+  $('newExamModal').hidden = true;
+};
+
+$('newExamTimerMode').onchange = () => {
+  const isWhole = $('newExamTimerMode').value === 'whole-exam';
+  $('lblTimerDuration').textContent = isWhole ? 'Minutes for whole exam' : 'Seconds per question';
+  $('newExamDuration').value = isWhole ? '30' : '45';
+};
+
+$('btnSubmitNewExam').onclick = async () => {
+  const code = $('newExamCode').value.trim().toUpperCase();
+  if (!code) { alert('Please enter an Exam Code.'); $('newExamCode').focus(); return; }
+
+  const title = $('newExamTitle').value.trim();
+  const subject = $('newExamSubject').value.trim().toUpperCase();
+  const course = $('newExamCourse').value;
+  const year = $('newExamYear').value;
+  const timerMode = $('newExamTimerMode').value;
+  const duration = parseInt($('newExamDuration').value, 10) || (timerMode === 'whole-exam' ? 30 : 45);
+  const tries = $('newExamTries').value;
+  const status = $('newExamStatus').value;
+
+  const btn = $('btnSubmitNewExam');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  $('newExamOut').textContent = '';
+
   try {
-    const r = await api('teacherCreateExam', { idToken: await idToken(), name: name.trim().toUpperCase() });
-    if (r.ok) { await loadExams(); alert('Exam "' + name.trim().toUpperCase() + '" created. Open the Google Sheet to add questions.'); }
-    else alert(r.message || 'Could not create exam.');
-  } catch (err) { console.error(err); }
+    const payload = {
+      idToken: await idToken(),
+      code, title, subject, course, year, timerMode,
+      defaultTimer: timerMode === 'per-question' ? duration : 45,
+      wholeExamMinutes: timerMode === 'whole-exam' ? duration : 30,
+      tries, status
+    };
+
+    const r = await api('teacherCreateExam', payload);
+    if (r.ok) {
+      $('newExamModal').hidden = true;
+      await loadExams();
+      alert(`Exam "${code}" created successfully!`);
+    } else {
+      $('newExamOut').innerHTML = `<div class="msg bad" style="color:var(--bad);margin-top:6px;font-size:12px;">${esc(r.message || 'Could not create exam.')}</div>`;
+    }
+  } catch (err) {
+    $('newExamOut').innerHTML = `<div class="msg bad" style="color:var(--bad);margin-top:6px;font-size:12px;">Error: ${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Create Exam';
+  }
 };
 
 /* ================================================================
@@ -361,9 +412,14 @@ async function loadStudents() {
   } catch (err) { wrap.textContent = 'Could not load students.'; console.error(err); }
 }
 
+const DEFAULT_COURSES  = ['BSIT', 'BSED', 'BEED', 'BSHM', 'BSTM', 'BSCRIM'];
+const DEFAULT_SECTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
+
 function populateStudentFilters(students) {
-  const courses  = [...new Set(students.map(s => s.course).filter(Boolean))].sort();
-  const sections = [...new Set(students.map(s => s.section).filter(Boolean))].sort((a,b)=>+a-+b);
+  const customCourses  = (students || []).map(s => s.course).filter(Boolean);
+  const customSections = (students || []).map(s => s.section).filter(Boolean);
+  const courses  = [...new Set([...DEFAULT_COURSES, ...customCourses])].sort();
+  const sections = [...new Set([...DEFAULT_SECTIONS, ...customSections])].sort((a,b)=>+a-+b);
   const fill = (sel, items) => {
     while (sel.options.length > 1) sel.remove(1);
     items.forEach(v => { const o = new Option(v, v); sel.add(o); });
@@ -407,7 +463,10 @@ $('filterCourse').onchange = $('filterSection').onchange = async () => {
 };
 
 /* Add students modal */
-$('btnAddStudents').onclick = () => { $('addStudentsModal').hidden = false; };
+$('btnAddStudents').onclick = () => {
+  populateAddModal();
+  $('addStudentsModal').hidden = false;
+};
 $('btnCloseAdd').onclick    = () => { $('addStudentsModal').hidden = true; $('addOut').replaceChildren(); };
 
 $('btnCheckStudents').onclick = async () => {
@@ -439,23 +498,16 @@ $('btnDoAdd').onclick = async () => {
   } catch (err) { $('addOut').textContent = 'Error: ' + err.message; }
 };
 
-/* Populate course/section dropdowns in the add modal from Script Properties */
-(async function populateAddModal() {
-  try {
-    const r = await api('teacherListStudents', { idToken: await idToken() });
-    if (!r.ok) return;
-    const courses  = [...new Set((r.students || []).map(s => s.course).filter(Boolean))].sort();
-    const sections = [...new Set((r.students || []).map(s => s.section).filter(Boolean))].sort((a,b)=>+a-+b);
-    [courses,  $('addCourse')].forEach(([items, sel]) => {
-      if (!Array.isArray(items)) return;
-      items.forEach(v => sel.add(new Option(v, v)));
-    });
-    [sections, $('addSection')].forEach(([items, sel]) => {
-      if (!Array.isArray(items)) return;
-      items.forEach(v => sel.add(new Option('Section ' + v, v)));
-    });
-  } catch {}
-}());
+/* Populate course/section dropdowns in the add modal */
+function populateAddModal() {
+  const courseSel = $('addCourse');
+  const sectionSel = $('addSection');
+  courseSel.replaceChildren(new Option('Choose course…', ''));
+  sectionSel.replaceChildren(new Option('Choose section…', ''));
+  DEFAULT_COURSES.forEach(c => courseSel.add(new Option(c, c)));
+  DEFAULT_SECTIONS.forEach(s => sectionSel.add(new Option('Section ' + s, s)));
+}
+populateAddModal();
 
 /* ================================================================
    Results
