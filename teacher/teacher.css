@@ -139,13 +139,19 @@
 @layer mesh {
   body::before {
     content: '';
-    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    position: fixed; inset: -30%; z-index: -1; pointer-events: none;
     background:
-      radial-gradient(circle at 10% 10%, var(--mesh-1) 0%, transparent 46%),
-      radial-gradient(circle at 88% 80%, var(--mesh-2) 0%, transparent 44%),
-      radial-gradient(circle at 55% 35%, var(--mesh-3) 0%, transparent 52%),
+      radial-gradient(circle at 12% 12%, var(--mesh-1) 0%, transparent 48%),
+      radial-gradient(circle at 85% 82%, var(--mesh-2) 0%, transparent 46%),
+      radial-gradient(circle at 58% 38%, var(--mesh-3) 0%, transparent 54%),
       var(--bg-deep);
+    animation: teacherAurora 28s ease-in-out infinite alternate;
   }
+}
+@keyframes teacherAurora {
+  0%   { transform: scale(1) translate(0, 0); }
+  50%  { transform: scale(1.08) translate(-2%, 3%); }
+  100% { transform: scale(1.02) translate(3%, -2%); }
 }
 
 @layer layout {
@@ -157,8 +163,8 @@
     padding-block-start: env(safe-area-inset-top, 0px);
     min-block-size: calc(54px + env(safe-area-inset-top, 0px));
     background: var(--glass);
-    backdrop-filter: blur(var(--blur)) saturate(1.5);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.5);
+    backdrop-filter: blur(var(--blur)) saturate(1.6);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.6);
     border-block-end: 1px solid var(--edge);
   }
   .topbar-brand { font-size: 1rem; font-weight: 700; letter-spacing: -.01em; }
@@ -167,6 +173,57 @@
     text-transform: uppercase; color: var(--fg-3);
   }
   .grow { margin-inline-start: auto; }
+
+  /* Live Radar Pulse Badge */
+  .radar-pulse {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px;
+    background: var(--ok-soft); border: 1px solid var(--ok);
+    font-size: 0.75rem; font-weight: 700; color: var(--ok);
+  }
+  .radar-dot {
+    display: inline-block;
+    inline-size: 8px; block-size: 8px; border-radius: 50%;
+    background: var(--ok); position: relative;
+  }
+  .radar-dot::after {
+    content: '';
+    position: absolute; inset: -3px; border-radius: 50%;
+    background: var(--ok); opacity: 0.6;
+    animation: radarRipple 1.6s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+  }
+  @keyframes radarRipple {
+    0% { transform: scale(0.6); opacity: 0.8; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+
+  /* Visual Score Spectrum Bar */
+  .spectrum-wrap {
+    display: flex; flex-direction: column; gap: 8px;
+    margin: 14px 0 18px;
+  }
+  .spectrum-bar {
+    display: flex; block-size: 10px; border-radius: 999px;
+    overflow: hidden; background: var(--sunk);
+  }
+  .spectrum-seg {
+    block-size: 100%;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .spectrum-seg.hi { background: var(--ok); }
+  .spectrum-seg.mid { background: var(--accent); }
+  .spectrum-seg.low { background: var(--bad); }
+  .spectrum-legend {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    font-size: 0.75rem; color: var(--fg-3);
+  }
+  .spectrum-legend span {
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .spectrum-legend b {
+    display: inline-block;
+    inline-size: 8px; block-size: 8px; border-radius: 50%;
+  }
 
   /* Shell — scrollable content area, padded for the app bar */
   .tshell {
