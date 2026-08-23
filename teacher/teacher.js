@@ -47,12 +47,46 @@ function setTheme(t) {
   labelTheme();
 }
 
-$('btnTheme').onclick = () => { feedback('tap', 8); setTheme(activeTheme() === 'dark' ? 'light' : 'dark'); };
+if ($('btnTeacherMenu')) {
+  $('btnTeacherMenu').onclick = (e) => {
+    e.stopPropagation();
+    const drop = $('teacherMenuDropdown');
+    const on = drop.hidden;
+    drop.hidden = !on;
+    $('btnTeacherMenu').setAttribute('aria-expanded', on ? 'true' : 'false');
+  };
+}
+document.addEventListener('click', (e) => {
+  if ($('teacherMenuDropdown') && !$('teacherMenuDropdown').hidden) {
+    if (!e.target.closest('#menuContainer')) {
+      $('teacherMenuDropdown').hidden = true;
+      if ($('btnTeacherMenu')) $('btnTeacherMenu').setAttribute('aria-expanded', 'false');
+    }
+  }
+});
+if ($('menuSyncAll')) {
+  $('menuSyncAll').onclick = () => {
+    $('teacherMenuDropdown').hidden = true;
+    syncAllData();
+  };
+}
+if ($('menuTheme')) {
+  $('menuTheme').onclick = () => {
+    $('teacherMenuDropdown').hidden = true;
+    feedback('tap', 8);
+    setTheme(activeTheme() === 'dark' ? 'light' : 'dark');
+  };
+}
+if ($('menuSignOut')) {
+  $('menuSignOut').onclick = () => {
+    $('teacherMenuDropdown').hidden = true;
+    signOut(auth).then(() => location.reload());
+  };
+}
 labelTheme();
 
 /* The same interaction layer the student portal runs. */
 initFx();
-mountSoundToggle($('btnTheme'));
 
 /* ================================================================
    Firebase auth
@@ -277,8 +311,7 @@ onAuthStateChanged(auth, async user => {
 
     $('topRole').hidden = false;
     $('topRole').textContent = r.email || user.email;
-    if ($('btnSyncAll')) $('btnSyncAll').hidden = false;
-    if ($('btnSignOut')) $('btnSignOut').hidden = false;
+    if ($('menuContainer')) $('menuContainer').hidden = false;
 
     // Cache the whole workbook snapshot in memory and sessionStorage
     CACHE.dashboard = r.dashboard;
@@ -350,32 +383,33 @@ function doSignOut() {
 $('btnTDeniedOut').onclick = doSignOut;
 if ($('btnSignOut')) $('btnSignOut').onclick = doSignOut;
 
-/* Global Full Sync Button */
-if ($('btnSyncAll')) {
-  $('btnSyncAll').onclick = async () => {
-    const btn = $('btnSyncAll');
-    btn.classList.add('spin-anim');
-    try {
-      const r = await api('teacherBootstrap', { idToken: await idToken() });
-      if (r.ok) {
-        CACHE.dashboard = r.dashboard;
-        CACHE.exams     = r.exams || [];
-        CACHE.students  = r.students || [];
-        CACHE.options   = r.options || {};
-        CACHE.timestamp = r.serverTimestamp || Date.now();
-        saveCache();
+/* Global Full Sync */
+async function syncAllData() {
+  toast('Syncing workbook data…', 'ok');
+  try {
+    const r = await api('teacherBootstrap', { idToken: await idToken() });
+    if (r.ok) {
+      CACHE.dashboard = r.dashboard;
+      CACHE.exams     = r.exams || [];
+      CACHE.students  = r.students || [];
+      CACHE.options   = r.options || {};
+      CACHE.timestamp = r.serverTimestamp || Date.now();
+      saveCache();
 
-        if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
-        if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); }
-        if (CACHE.students) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
-      }
-    } catch (e) {
-      console.error('[teacher] sync all error', e);
-    } finally {
-      btn.classList.remove('spin-anim');
+      if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
+      if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); }
+      if (CACHE.students) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
+      toast('All workbook data synchronized!', 'ok');
+      play('pop');
+    } else {
+      toast(r.message || 'Sync failed', 'bad');
     }
-  };
+  } catch (e) {
+    console.error('[teacher] sync all error', e);
+    toast(e.message, 'bad');
+  }
 }
+if ($('btnSyncAll')) $('btnSyncAll').onclick = syncAllData;
 
 /* ================================================================
    Dashboard
@@ -636,6 +670,77 @@ async function loadExamResults(code) {
 }
 
 /* ================================================================
+   Add Questions Modal Logic
+   ================================================================ */
+
+if ($('btnOpenAddQuestions')) {
+  $('btnOpenAddQuestions').onclick = () => {
+    if (!_currentDetailExamCode) return;
+    $('addQModalTitle').textContent = `Add / Import Questions (${_currentDetailExamCode})`;
+    $('addQPaste').value = '';
+    $('addQOut').replaceChildren();
+    $('btnDoAddQuestions').disabled = true;
+    openModal($('addQuestionsModal'), $('addQPaste'));
+  };
+}
+if ($('btnCloseAddQuestions')) {
+  $('btnCloseAddQuestions').onclick = () => closeModal($('addQuestionsModal'));
+}
+if ($('btnCheckAddQuestions')) {
+  $('btnCheckAddQuestions').onclick = async () => {
+    const paste = $('addQPaste').value.trim();
+    if (!paste) { toast('Please paste question text.', 'bad'); return; }
+    const btn = $('btnCheckAddQuestions');
+    btn.disabled = true; btn.textContent = 'Checking…';
+    try {
+      const r = await api('teacherCheckQuestions', { idToken: await idToken(), code: _currentDetailExamCode, paste });
+      if (!r.ok) {
+        $('addQOut').innerHTML = `<p class="err small" style="margin-top:6px;">${esc(r.message || 'Check failed')}</p>`;
+        return;
+      }
+      const lines = [`✓ ${r.count} usable question(s) found.`];
+      if (r.preview) lines.push('', r.preview);
+      if (r.problems?.length) {
+        lines.push('', `${r.problems.length} issue(s) detected:`);
+        r.problems.slice(0, 5).forEach(p => lines.push(`  line ${p.line}: ${p.why}`));
+      }
+      $('addQOut').textContent = lines.join('\n');
+      $('addQOut').style.whiteSpace = 'pre-line';
+      $('btnDoAddQuestions').disabled = !r.count;
+    } catch (err) {
+      $('addQOut').innerHTML = `<p class="err small" style="margin-top:6px;">${esc(err.message)}</p>`;
+    } finally {
+      btn.disabled = false; btn.textContent = '🔍 Check & Verify';
+    }
+  };
+}
+if ($('btnDoAddQuestions')) {
+  $('btnDoAddQuestions').onclick = async () => {
+    const paste = $('addQPaste').value.trim();
+    const mode = $('addQMode').value;
+    const btn = $('btnDoAddQuestions');
+    btn.disabled = true; btn.textContent = 'Importing…';
+    try {
+      const r = await api('teacherAddQuestions', { idToken: await idToken(), code: _currentDetailExamCode, paste, mode });
+      if (!r.ok) { toast(r.message || 'Import failed', 'bad'); return; }
+      closeModal($('addQuestionsModal'));
+      toast(`Successfully imported ${r.added} question(s) into ${_currentDetailExamCode}!`, 'ok');
+      play('submit');
+      if ($('detailQCount')) $('detailQCount').textContent = r.total;
+      if (CACHE.exams) {
+        const ex = CACHE.exams.find(e => e.code === _currentDetailExamCode);
+        if (ex) ex.questions = r.total;
+        saveCache();
+      }
+    } catch (err) {
+      toast(err.message, 'bad');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Import into Exam';
+    }
+  };
+}
+
+/* ================================================================
    Students
    ================================================================ */
 
@@ -691,17 +796,126 @@ function renderStudentTable(students) {
   }
   filtered.forEach(s => {
     const row = document.createElement('div');
-    row.className = 'student-row';
-    const name = document.createElement('div');
-    name.innerHTML = `<div class="student-name">${esc(s.lastName)}, ${esc(s.firstName)}</div>
-      <div class="student-meta">${esc(s.course || '')} ${s.section ? '· Section ' + s.section : ''}</div>`;
-    const email = document.createElement('span');
-    email.className = 'student-meta';
-    email.textContent = s.email || '—';
-    row.append(name, email);
+    row.className = 'student-card';
+
+    const info = document.createElement('div');
+    info.className = 'student-info';
+    info.innerHTML = `
+      <div class="student-name">${esc(s.lastName)}, ${esc(s.firstName)}</div>
+      <div class="student-meta">${esc(s.course || '')} ${s.section ? '· Section ' + s.section : ''} ${s.year ? '· ' + s.year : ''}</div>
+      <div class="student-email ${s.email ? 'linked' : ''}">${s.email ? '📧 ' + esc(s.email) : '⚪ Unclaimed (No Google account linked)'}</div>
+    `;
+
+    const actions = document.createElement('div');
+    actions.className = 'student-actions';
+
+    const btnEdit = document.createElement('button');
+    btnEdit.type = 'button';
+    btnEdit.className = 'btn-tbl-action';
+    btnEdit.innerHTML = '✏️ Edit';
+    btnEdit.onclick = () => openEditStudent(s);
+    actions.append(btnEdit);
+
+    if (s.email) {
+      const btnUnlink = document.createElement('button');
+      btnUnlink.type = 'button';
+      btnUnlink.className = 'btn-tbl-action unlink';
+      btnUnlink.innerHTML = '🔓 Unlink';
+      btnUnlink.onclick = () => openUnlinkStudent(s);
+      actions.append(btnUnlink);
+    }
+
+    row.append(info, actions);
     wrap.append(row);
   });
-  revealIn(wrap, '.student-row');
+  revealIn(wrap, '.student-card');
+}
+
+/* Edit & Unlink Student Handlers */
+function openEditStudent(s) {
+  $('editStudentRow').value = s.row;
+  $('editStudentLast').value = s.lastName || '';
+  $('editStudentFirst').value = s.firstName || '';
+  $('editStudentCourse').value = s.course || '';
+  $('editStudentSection').value = s.section || '';
+  $('editStudentYear').value = s.year || '';
+  $('editStudentEmail').value = s.email || '';
+  $('editStudentOut').replaceChildren();
+  openModal($('editStudentModal'), $('editStudentLast'));
+}
+
+if ($('btnCloseEditStudent')) $('btnCloseEditStudent').onclick = () => closeModal($('editStudentModal'));
+if ($('btnCancelEditStudent')) $('btnCancelEditStudent').onclick = () => closeModal($('editStudentModal'));
+
+if ($('btnSaveEditStudent')) {
+  $('btnSaveEditStudent').onclick = async () => {
+    const row = $('editStudentRow').value;
+    const details = {
+      lastName: $('editStudentLast').value.trim(),
+      firstName: $('editStudentFirst').value.trim(),
+      course: $('editStudentCourse').value.trim(),
+      section: $('editStudentSection').value.trim(),
+      year: $('editStudentYear').value.trim(),
+      email: $('editStudentEmail').value.trim()
+    };
+    if (!details.lastName || !details.firstName || !details.course || !details.section) {
+      $('editStudentOut').innerHTML = '<p class="err small">Last name, first name, course, and section are required.</p>';
+      return;
+    }
+    const btn = $('btnSaveEditStudent');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const r = await api('teacherEditStudent', { idToken: await idToken(), row, details });
+      if (!r.ok) { $('editStudentOut').innerHTML = `<p class="err small">${esc(r.message || 'Save failed')}</p>`; return; }
+      closeModal($('editStudentModal'));
+      toast('Student details updated successfully!', 'ok');
+      play('pop');
+      if (CACHE.students) {
+        const target = CACHE.students.find(st => String(st.row) === String(row));
+        if (target) Object.assign(target, details);
+        saveCache();
+        renderStudentTable(CACHE.students);
+      }
+    } catch (err) {
+      $('editStudentOut').innerHTML = `<p class="err small">${esc(err.message)}</p>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Save Changes';
+    }
+  };
+}
+
+function openUnlinkStudent(s) {
+  $('unlinkStudentRow').value = s.row;
+  $('unlinkModalText').innerHTML = `Are you sure you want to unlink <b>${esc(s.firstName)} ${esc(s.lastName)}</b>'s Google account (<code>${esc(s.email)}</code>)?<br><br>The student will be able to claim their name again using another account.`;
+  openModal($('unlinkStudentModal'), $('btnCancelUnlinkStudent'));
+}
+
+if ($('btnCloseUnlinkStudent')) $('btnCloseUnlinkStudent').onclick = () => closeModal($('unlinkStudentModal'));
+if ($('btnCancelUnlinkStudent')) $('btnCancelUnlinkStudent').onclick = () => closeModal($('unlinkStudentModal'));
+
+if ($('btnConfirmUnlinkStudent')) {
+  $('btnConfirmUnlinkStudent').onclick = async () => {
+    const row = $('unlinkStudentRow').value;
+    const btn = $('btnConfirmUnlinkStudent');
+    btn.disabled = true; btn.textContent = 'Unlinking…';
+    try {
+      const r = await api('teacherUnlinkStudent', { idToken: await idToken(), row });
+      if (!r.ok) { toast(r.message || 'Unlink failed', 'bad'); return; }
+      closeModal($('unlinkStudentModal'));
+      toast('Student account unlinked successfully.', 'ok');
+      play('pop');
+      if (CACHE.students) {
+        const target = CACHE.students.find(st => String(st.row) === String(row));
+        if (target) target.email = '';
+        saveCache();
+        renderStudentTable(CACHE.students);
+      }
+    } catch (err) {
+      toast(err.message, 'bad');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Unlink Email';
+    }
+  };
 }
 
 // Instant local filtering without network round-trips
@@ -732,8 +946,6 @@ $('btnCheckStudents').onclick = async () => {
     const r = await api('teacherCheckStudents', { idToken: await idToken(), course, section, paste });
     if (!r.ok) { $('addOut').textContent = r.message || 'Error'; return; }
 
-    // The same plan the Sheets dialog shows: what is new, what is already
-    // there, and which lines could not be read at all.
     const lines = [r.count + ' new student' + (r.count === 1 ? '' : 's') + ' would be added.'];
     if (r.preview) lines.push('', r.preview);
     if (r.already?.length)  lines.push('', r.already.length + ' already on the list — skipped.');
