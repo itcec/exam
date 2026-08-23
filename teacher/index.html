@@ -208,33 +208,136 @@
       </div>
     </div>
 
-    <!-- Add Questions Modal -->
+    <!-- Add Questions Modal (Full 2-Step Builder) -->
     <div class="modal-backdrop" id="addQuestionsModal" hidden>
       <div class="modal-card modal-card-lg">
         <div class="modal-header">
-          <h3 id="addQModalTitle">Add / Import Questions</h3>
+          <h3 id="addQModalTitle">Exam builder</h3>
           <button class="close-btn" id="btnCloseAddQuestions" type="button">✕</button>
         </div>
-        <p class="muted small">Paste questions or AI generated sections below (e.g. <code>Question | Answer</code>, <code>Item = Match</code>, or <code>=== SECTION ===</code> headers).</p>
-        
-        <div class="two" style="margin-bottom:10px;">
-          <div>
-            <label class="lbl" for="addQMode">Import Mode</label>
-            <select class="field" id="addQMode">
-              <option value="append">Append to existing questions</option>
-              <option value="replace">Replace all existing questions</option>
+
+        <nav class="crumbs">
+          <button class="crumb on" id="tCr1" type="button"><span class="n">1</span>Blueprint — types &amp; count</button>
+          <span class="sep">›</span>
+          <button class="crumb" id="tCr2" type="button"><span class="n">2</span>Questions — paste &amp; verify</button>
+        </nav>
+
+        <!-- STEP 1: BLUEPRINT -->
+        <div id="tStep1">
+          <div class="hint" style="margin-bottom:12px;">
+            <b>Step 1 of 2 — Blueprint.</b> Switch on the kinds of questions this exam needs and set how many, timing, difficulty, and order.
+          </div>
+
+          <div class="fld" style="background:var(--sunk); padding:10px 12px; border-radius:var(--r-md); border:1px solid var(--edge); margin-bottom:12px;">
+            <label class="lbl" for="tExamTimerModeSelect" style="color:var(--accent); font-weight:700;">⏱️ Exam Delivery &amp; Timer Mode</label>
+            <select class="field" id="tExamTimerModeSelect" style="font-weight:600;">
+              <option value="whole-exam">One timer for the whole exam (Scroll all questions)</option>
+              <option value="per-section">One timer per section (Scroll per section with cinematic transition)</option>
+              <option value="per-question">One timer per question (Step 1 by 1 with question timer)</option>
             </select>
+            <p id="tTimerModeHint" class="muted small" style="margin-top:4px;">
+              Questions will be delivered continuously on one page. Total exam duration is set in Step 2.
+            </p>
+          </div>
+
+          <div id="tTypeList" class="stack-s"></div>
+
+          <div class="tally-total" id="tTally" style="margin:12px 0;">No question types switched on yet.</div>
+
+          <div class="actions">
+            <button class="btn btn-primary" id="btnTNextStep" type="button" disabled style="width:100%;">Next — generate &amp; add questions ›</button>
           </div>
         </div>
-        
-        <label class="lbl" for="addQPaste">Questions Text</label>
-        <textarea class="field mono" id="addQPaste" rows="9" placeholder="What is an apple? a. red b. fruit | b&#10;Water boils at 100C. (TRUE OR FALSE) | TRUE&#10;CPU = Central Processing Unit"></textarea>
-        
-        <div class="actions" style="margin-top:10px;">
-          <button class="btn btn-primary" id="btnCheckAddQuestions" type="button">🔍 Check &amp; Verify</button>
-          <button class="btn btn-accent" id="btnDoAddQuestions" type="button" disabled>Import into Exam</button>
+
+        <!-- STEP 2: QUESTIONS & VERIFY -->
+        <div id="tStep2" hidden>
+          <!-- Whole Exam Duration Setting Card -->
+          <div id="tWholeExamTimerCard" class="master-card" style="margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+            <div>
+              <span class="master-title">⏱️ Whole Exam Total Duration</span>
+              <p class="muted small">All questions will appear on one continuous scrollable page.</p>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; flex:none;">
+              <input type="number" id="tWholeExamMinsInput" value="30" min="1" max="300" class="field" style="width:75px; font-weight:700; text-align:center;">
+              <span class="muted small" style="font-weight:600;">mins</span>
+            </div>
+          </div>
+
+          <!-- Universal Master AI Prompt Box -->
+          <div class="master-card" style="margin-bottom:12px;">
+            <div class="master-head" style="margin-bottom:8px;">
+              <span class="master-title">✨ Universal AI Prompt (All Question Types)</span>
+              <button class="btn btn-accent btn-sm" id="btnTCopyMaster" type="button">📋 Copy Master Prompt</button>
+            </div>
+            <p class="muted small" style="margin-bottom:8px;">
+              One prompt generates all selected question types in <b>ChatGPT, Gemini, or Claude</b>.
+            </p>
+            <details>
+              <summary style="cursor:pointer; font-size:0.75rem; font-weight:600; color:var(--accent); margin-bottom:6px;">
+                👁 View / customize master prompt
+              </summary>
+              <pre class="prompt" id="tMasterPromptPreview"></pre>
+            </details>
+          </div>
+
+          <!-- Auto-Split Master Paste Box -->
+          <div class="panel" style="margin-bottom:12px;">
+            <div class="head">
+              <span class="nm" style="color:var(--accent);">⚡ Paste Full AI Output (Auto-Distribute)</span>
+            </div>
+            <div class="body">
+              <p class="muted small" style="margin-bottom:6px;">
+                Paste the AI's entire response here. It will automatically split each section into its corresponding question type below!
+              </p>
+              <textarea class="field mono" id="tMasterPasteInput" rows="5" placeholder="Paste full AI response here (with === SECTION === headers)..."></textarea>
+              <div class="actions" style="margin-top:8px;">
+                <button class="btn btn-primary" id="btnTAutoSplit" type="button">⚡ Auto-Distribute to Sections</button>
+              </div>
+              <div id="tAutoSplitMsg" style="margin-top:6px;"></div>
+            </div>
+          </div>
+
+          <!-- Format rules cheatsheet -->
+          <details style="margin-bottom:12px;">
+            <summary style="cursor:pointer; font-size:0.8125rem; font-weight:600; color:var(--fg-2);">
+              📖 Format rules cheatsheet (click to expand)
+            </summary>
+            <table style="width:100%; border-collapse:collapse; font-size:0.75rem; margin-top:8px;">
+              <thead>
+                <tr style="background:var(--sunk);">
+                  <th style="padding:6px 8px; text-align:left; border:1px solid var(--edge);">Type</th>
+                  <th style="padding:6px 8px; text-align:left; border:1px solid var(--edge);">Format (Question | Answer)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td style="padding:6px 8px; border:1px solid var(--edge); font-weight:600;">Identification</td><td style="padding:6px 8px; border:1px solid var(--edge);">Plain question <code>|</code> answer; alternative</td></tr>
+                <tr style="background:var(--sunk);"><td style="padding:6px 8px; border:1px solid var(--edge); font-weight:600;">Multiple choice</td><td style="padding:6px 8px; border:1px solid var(--edge);">Question a. opt b. opt c. opt <code>|</code> c</td></tr>
+                <tr><td style="padding:6px 8px; border:1px solid var(--edge); font-weight:600;">True or false</td><td style="padding:6px 8px; border:1px solid var(--edge);">Statement (TRUE OR FALSE) <code>|</code> TRUE</td></tr>
+                <tr style="background:var(--sunk);"><td style="padding:6px 8px; border:1px solid var(--edge); font-weight:600;">Enumeration</td><td style="padding:6px 8px; border:1px solid var(--edge);">Question (ENUMERATE) <code>|</code> item1; item2</td></tr>
+                <tr><td style="padding:6px 8px; border:1px solid var(--edge); font-weight:600;">Matching</td><td style="padding:6px 8px; border:1px solid var(--edge);"><code>item = match</code> (one pair per line)</td></tr>
+                <tr style="background:var(--sunk);"><td style="padding:6px 8px; border:1px solid var(--edge); font-weight:600;">Word bank</td><td style="padding:6px 8px; border:1px solid var(--edge);">Sentence with ____ (WORD BANK: a, b) <code>|</code> answer</td></tr>
+              </tbody>
+            </table>
+          </details>
+
+          <div id="tPanels" class="stack-s"></div>
+
+          <div class="two" style="margin:12px 0 10px;">
+            <div>
+              <label class="lbl" for="tAddQMode">Import Mode</label>
+              <select class="field" id="tAddQMode">
+                <option value="append">Append to existing questions</option>
+                <option value="replace">Replace all existing questions</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="actions" style="margin-top:12px;">
+            <button class="btn btn-ghost" id="btnTBackStep" type="button">‹ Back to Blueprint</button>
+            <button class="btn btn-primary" id="btnTAddAll" type="button" disabled>Add to exam</button>
+          </div>
+          <div id="tAddOut" style="margin-top:8px;"></div>
         </div>
-        <div id="addQOut" style="margin-top:8px;"></div>
       </div>
     </div>
   </section>
