@@ -97,6 +97,47 @@ const SCREENS = [
 ];
 
 const TAB_SCREENS = {
+/* ================================================================
+   Client Cache & State Management
+   ================================================================ */
+
+const CACHE = {
+  dashboard: null,
+  exams: null,
+  students: null,
+  options: null,
+  results: {},
+  timestamp: 0
+};
+
+// Try to restore from sessionStorage on load
+try {
+  const saved = sessionStorage.getItem('teacher_cache_v2');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (parsed && typeof parsed === 'object') Object.assign(CACHE, parsed);
+  }
+} catch (e) {}
+
+function saveCache() {
+  try {
+    sessionStorage.setItem('teacher_cache_v2', JSON.stringify({
+      dashboard: CACHE.dashboard,
+      exams: CACHE.exams,
+      students: CACHE.students,
+      options: CACHE.options,
+      timestamp: CACHE.timestamp
+    }));
+  } catch (e) {}
+}
+
+const SCREENS = [
+  'scTLoading', 'scTSignIn', 'scTDenied',
+  'scTDashboard', 'scTExams', 'scTExamDetail',
+  'scTStudents', 'scTResults'
+];
+
+const TAB_SCREENS = {
   dashboard: 'scTDashboard',
   exams:     'scTExams',
   students:  'scTStudents',
@@ -123,7 +164,7 @@ function show(id) {
   });
 }
 
-// App bar tab click
+// App bar tab click — renders instantly from CACHE
 document.querySelectorAll('#tAppBar .appbar-tab').forEach(btn => {
   btn.addEventListener('click', () => {
     const target = TAB_SCREENS[btn.dataset.tab];
@@ -131,12 +172,21 @@ document.querySelectorAll('#tAppBar .appbar-tab').forEach(btn => {
   });
 });
 
-async function showTab(tab) {
+function showTab(tab) {
   show(TAB_SCREENS[tab]);
-  if (tab === 'dashboard') await loadDashboard();
-  if (tab === 'exams')     await loadExams();
-  if (tab === 'students')  await loadStudents();
-  if (tab === 'results')   resetResults();
+  if (tab === 'dashboard') {
+    if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
+    else loadDashboard();
+  } else if (tab === 'exams') {
+    if (CACHE.exams) renderExamCards(CACHE.exams);
+    else loadExams();
+  } else if (tab === 'students') {
+    if (CACHE.students) renderStudentTable(CACHE.students);
+    else loadStudents();
+  } else if (tab === 'results') {
+    if (CACHE.exams) populateResultsPicker(CACHE.exams);
+    else resetResults();
+  }
 }
 
 /* ================================================================
@@ -157,12 +207,12 @@ if (window.visualViewport) {
 }
 
 /* ================================================================
-   Auth state
+   Auth state & Whole Workbook Snapshot Bootstrap
    ================================================================ */
 
 onAuthStateChanged(auth, async user => {
   if (!user) { show('scTSignIn'); return; }
-  $('tLoadingText').textContent = 'Checking access…';
+  $('tLoadingText').textContent = 'Loading workbook data…';
   show('scTLoading');
 
   try {
@@ -177,9 +227,23 @@ onAuthStateChanged(auth, async user => {
     }
 
     $('topRole').hidden = false;
-    $('topRole').textContent = user.email;
-    await loadDashboard();
-    show('scTDashboard');
+    $('topRole').textContent = r.email || user.email;
+    if ($('btnSyncAll')) $('btnSyncAll').hidden = false;
+
+    // Cache the whole workbook snapshot in memory and sessionStorage
+    CACHE.dashboard = r.dashboard;
+    CACHE.exams     = r.exams || [];
+    CACHE.students  = r.students || [];
+    CACHE.options   = r.options || {};
+    CACHE.timestamp = r.serverTimestamp || Date.now();
+    saveCache();
+
+    // Paint initial screens from cache
+    if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
+    if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); }
+    if (CACHE.students) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
+
+    showTab('dashboard');
   } catch (err) {
     console.error('[teacher] bootstrap error', err);
     show('scTDenied');
@@ -229,56 +293,102 @@ $('btnTSignIn').onclick = async () => {
 };
 
 /* Sign out */
-$('btnTDeniedOut').onclick = () => signOut(auth);
+$('btnTDeniedOut').onclick = () => {
+  sessionStorage.removeItem('teacher_cache_v2');
+  signOut(auth);
+};
+
+/* Global Full Sync Button */
+if ($('btnSyncAll')) {
+  $('btnSyncAll').onclick = async () => {
+    const btn = $('btnSyncAll');
+    btn.classList.add('spin-anim');
+    try {
+      const r = await api('teacherBootstrap', { idToken: await idToken() });
+      if (r.ok) {
+        CACHE.dashboard = r.dashboard;
+        CACHE.exams     = r.exams || [];
+        CACHE.students  = r.students || [];
+        CACHE.options   = r.options || {};
+        CACHE.timestamp = r.serverTimestamp || Date.now();
+        saveCache();
+
+        if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
+        if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); }
+        if (CACHE.students) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
+      }
+    } catch (e) {
+      console.error('[teacher] sync all error', e);
+    } finally {
+      btn.classList.remove('spin-anim');
+    }
+  };
+}
 
 /* ================================================================
    Dashboard
    ================================================================ */
 
+function renderDashboard(data) {
+  if (!data) return;
+  $('dashOpenNum').textContent    = data.openExams   ?? '—';
+  $('dashStudentNum').textContent = data.students    ?? '—';
+  $('dashTodayNum').textContent   = data.today       ?? '—';
+
+  const list = $('dashRecentList');
+  if (!data.recent?.length) { list.textContent = 'No submissions yet today.'; return; }
+  list.replaceChildren();
+  data.recent.slice(0, 8).forEach(sub => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--edge);';
+    const name = document.createElement('span');
+    name.textContent = sub.name;
+    const meta = document.createElement('span');
+    meta.style.cssText = 'color:var(--fg-3);font-size:.8125rem;white-space:nowrap;';
+    meta.textContent = sub.exam + '  · ' + (sub.score != null ? sub.score + '/' + sub.total : 'Submitted');
+    row.append(name, meta);
+    list.append(row);
+  });
+}
+
 async function loadDashboard() {
+  const btn = $('btnRefreshDash');
+  if (btn) btn.textContent = '🔄 Loading…';
   try {
     const r = await api('teacherDashboard', { idToken: await idToken() });
     if (!r.ok) return;
-    $('dashOpenNum').textContent    = r.openExams   ?? '—';
-    $('dashStudentNum').textContent = r.students    ?? '—';
-    $('dashTodayNum').textContent   = r.today       ?? '—';
-
-    const list = $('dashRecentList');
-    if (!r.recent?.length) { list.textContent = 'No submissions yet today.'; return; }
-    list.replaceChildren();
-    r.recent.slice(0, 8).forEach(sub => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--edge);';
-      const name = document.createElement('span');
-      name.textContent = sub.name;
-      const meta = document.createElement('span');
-      meta.style.cssText = 'color:var(--fg-3);font-size:.8125rem;white-space:nowrap;';
-      meta.textContent = sub.exam + '  · ' + (sub.score != null ? sub.score + '/' + sub.total : 'Submitted');
-      row.append(name, meta);
-      list.append(row);
-    });
+    CACHE.dashboard = r;
+    saveCache();
+    renderDashboard(r);
   } catch (err) {
     console.error('[teacher] dashboard', err);
+  } finally {
+    if (btn) btn.textContent = '🔄 Refresh';
   }
 }
+if ($('btnRefreshDash')) $('btnRefreshDash').onclick = loadDashboard;
 
 /* ================================================================
    Exams
    ================================================================ */
 
-let _exams = [];
-
 async function loadExams() {
-  const wrap = $('examCards');
-  wrap.textContent = '…';
+  const btn = $('btnRefreshExams');
+  if (btn) btn.textContent = '🔄 Loading…';
   try {
     const r = await api('teacherListExams', { idToken: await idToken() });
-    if (!r.ok) { wrap.textContent = r.message || 'Error loading exams.'; return; }
-    _exams = r.exams || [];
-    renderExamCards(_exams);
-    populateResultsPicker(_exams);
-  } catch (err) { wrap.textContent = 'Could not load exams.'; console.error(err); }
+    if (!r.ok) { return; }
+    CACHE.exams = r.exams || [];
+    saveCache();
+    renderExamCards(CACHE.exams);
+    populateResultsPicker(CACHE.exams);
+  } catch (err) {
+    console.error('[teacher] loadExams', err);
+  } finally {
+    if (btn) btn.textContent = '🔄 Refresh';
+  }
 }
+if ($('btnRefreshExams')) $('btnRefreshExams').onclick = loadExams;
 
 function renderExamCards(exams) {
   const wrap = $('examCards');
@@ -343,8 +453,12 @@ function statusChip(status) {
 async function setExamStatus(code, status, card) {
   try {
     const r = await api('teacherSetStatus', { idToken: await idToken(), code, status });
-    if (r.ok) await loadExams();
-    else alert(r.message || 'Could not update status.');
+    if (r.ok) { await loadExams(); return; }
+    // Opening runs the same preflight the Sheet menu runs, so a refusal
+    // arrives with the actual list of what is wrong. Show it.
+    alert([r.message || 'Could not update status.']
+      .concat(r.errors?.length ? [''].concat(r.errors.map(e => '• ' + e)) : [])
+      .join('\n'));
   } catch (err) { console.error(err); }
 }
 
@@ -413,7 +527,10 @@ $('btnSubmitNewExam').onclick = async () => {
    Exam Detail
    ================================================================ */
 
+let _currentDetailExamCode = '';
+
 async function openExamDetail(ex) {
+  _currentDetailExamCode = ex.code;
   $('detailCode').textContent = ex.code + (ex.title ? ' — ' + ex.title : '');
   $('detailStats').innerHTML = `
     <div><p class="eyebrow">Status</p>${statusChip(ex.status)}</div>
@@ -427,7 +544,15 @@ async function openExamDetail(ex) {
 
 $('btnExamBack').onclick = () => { show('scTExams'); };
 
+if ($('btnRefreshDetail')) {
+  $('btnRefreshDetail').onclick = () => {
+    if (_currentDetailExamCode) loadExamResults(_currentDetailExamCode);
+  };
+}
+
 async function loadExamResults(code) {
+  const btn = $('btnRefreshDetail');
+  if (btn) btn.textContent = '🔄 Loading…';
   try {
     const r = await api('teacherGetResults', { idToken: await idToken(), code });
     if (!r.ok) { $('detailResultsList').textContent = r.message || 'Could not load results.'; return; }
@@ -438,7 +563,11 @@ async function loadExamResults(code) {
     const list = $('detailResultsList');
     if (!r.rows?.length) { list.textContent = 'No submissions yet.'; return; }
     renderResultsTable(list, r.rows, r.total);
-  } catch (err) { console.error('[teacher] results', err); }
+  } catch (err) {
+    console.error('[teacher] results', err);
+  } finally {
+    if (btn) btn.textContent = '🔄 Refresh';
+  }
 }
 
 /* ================================================================
@@ -446,15 +575,22 @@ async function loadExamResults(code) {
    ================================================================ */
 
 async function loadStudents() {
-  const wrap = $('studentTable');
-  wrap.textContent = '…';
+  const btn = $('btnRefreshStudents');
+  if (btn) btn.textContent = '🔄 Loading…';
   try {
     const r = await api('teacherListStudents', { idToken: await idToken() });
-    if (!r.ok) { wrap.textContent = r.message || 'Error'; return; }
-    renderStudentTable(r.students || []);
-    populateStudentFilters(r.students || []);
-  } catch (err) { wrap.textContent = 'Could not load students.'; console.error(err); }
+    if (!r.ok) { return; }
+    CACHE.students = r.students || [];
+    saveCache();
+    populateStudentFilters(CACHE.students);
+    renderStudentTable(CACHE.students);
+  } catch (err) {
+    console.error('[teacher] loadStudents', err);
+  } finally {
+    if (btn) btn.textContent = '🔄 Refresh';
+  }
 }
+if ($('btnRefreshStudents')) $('btnRefreshStudents').onclick = loadStudents;
 
 const DEFAULT_COURSES  = ['BSIT', 'BSED', 'BEED', 'BSHM', 'BSTM', 'BSCRIM'];
 const DEFAULT_SECTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
@@ -475,7 +611,7 @@ function populateStudentFilters(students) {
 function renderStudentTable(students) {
   const course   = $('filterCourse').value;
   const section  = $('filterSection').value;
-  const filtered = students.filter(s =>
+  const filtered = (students || []).filter(s =>
     (!course  || s.course  === course) &&
     (!section || String(s.section) === section)
   );
@@ -501,9 +637,9 @@ function renderStudentTable(students) {
   });
 }
 
-$('filterCourse').onchange = $('filterSection').onchange = async () => {
-  const r = await api('teacherListStudents', { idToken: await idToken() });
-  if (r.ok) renderStudentTable(r.students || []);
+// Instant local filtering without network round-trips
+$('filterCourse').onchange = $('filterSection').onchange = () => {
+  renderStudentTable(CACHE.students || []);
 };
 
 /* Add students modal */
@@ -521,8 +657,22 @@ $('btnCheckStudents').onclick = async () => {
   try {
     const r = await api('teacherCheckStudents', { idToken: await idToken(), course, section, paste });
     if (!r.ok) { $('addOut').textContent = r.message || 'Error'; return; }
-    $('addOut').textContent = r.preview || (r.count + ' students ready to add.');
-    $('btnDoAdd').disabled = false;
+
+    // The same plan the Sheets dialog shows: what is new, what is already
+    // there, and which lines could not be read at all.
+    const lines = [r.count + ' new student' + (r.count === 1 ? '' : 's') + ' would be added.'];
+    if (r.preview) lines.push('', r.preview);
+    if (r.already?.length)  lines.push('', r.already.length + ' already on the list — skipped.');
+    if (r.claimed?.length)  lines.push(r.claimed.length + ' already signed in — skipped.');
+    if (r.repeated?.length) lines.push(r.repeated.length + ' repeated in your paste — counted once.');
+    if (r.problems?.length) {
+      lines.push('', r.problems.length + ' line(s) could not be read:');
+      r.problems.slice(0, 5).forEach(p => lines.push('  line ' + p.line + ': ' + p.why));
+    }
+
+    $('addOut').textContent = lines.join('\n');
+    $('addOut').style.whiteSpace = 'pre-line';
+    $('btnDoAdd').disabled = !r.count;
   } catch (err) { $('addOut').textContent = 'Error: ' + err.message; }
 };
 
@@ -607,6 +757,13 @@ $('resultsExamPicker').onchange = async function () {
   } catch (err) { $('resultsContent').textContent = 'Error: ' + err.message; console.error(err); }
 };
 
+if ($('btnRefreshResults')) {
+  $('btnRefreshResults').onclick = () => {
+    const code = $('resultsExamPicker').value;
+    if (code) $('resultsExamPicker').onchange();
+  };
+}
+
 function renderResultsTable(wrap, rows, total) {
   const tbl = document.createElement('table');
   tbl.className = 'results-table';
@@ -617,9 +774,11 @@ function renderResultsTable(wrap, rows, total) {
   rows.forEach(row => {
     const tr = document.createElement('tr');
     if (row.flagged) tr.classList.add('flag-row');
-    const statusIcon = row.status === 'done'
-      ? (row.flagged ? '🚩' : '✅')
-      : row.status === 'in-progress' ? '🔄' : '—';
+    // Statuses on the sheet are ok · late · flagged · in-progress · abandoned.
+    const statusIcon = row.flagged ? '🚩'
+      : row.status === 'in-progress' ? '🔄'
+      : row.status === 'late' ? '⏰'
+      : row.done ? '✅' : '—';
 
     tr.innerHTML = `
       <td>${esc(row.name || '—')}</td>
@@ -628,11 +787,12 @@ function renderResultsTable(wrap, rows, total) {
       <td>${row.minutes ?? '—'}</td>
       <td style="font-size:.8125rem;max-width:260px;">${row.notes ? esc(row.notes) : ''}</td>`;
 
-    // Expand flag detail if notes contain timestamps
-    if (row.flagged && row.notes) {
+    // The server writes one focus-loss event per line, so keep the breaks.
+    if (row.notes) {
       const detail = document.createElement('div');
-      detail.className = 'flag-detail';
-      detail.textContent = row.notes.replace(/; /g, '\n');
+      detail.className = row.flagged ? 'flag-detail' : '';
+      detail.style.whiteSpace = 'pre-line';
+      detail.textContent = row.notes;
       const td = tr.cells[4];
       td.textContent = '';
       td.append(detail);
