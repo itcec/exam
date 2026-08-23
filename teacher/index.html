@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Exam Management</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="stylesheet" href="teacher.css">
+<script>
+  try {
+    var t = localStorage.getItem('exam_theme_v1');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
+</head>
+<body>
+<header class="topbar" id="topbar">
+  <span class="topbar-brand">📝 Exam Management</span>
+  <span class="grow"></span>
+  <span class="topbar-role" id="topRole" hidden>Teacher</span>
+  <button class="icon-btn" id="btnTheme" type="button" aria-label="Switch theme">
+    <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg>
+    <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.8 6.8 0 0 0 10.8 10.8Z"/></svg>
+  </button>
+</header>
+<main class="tshell">
+  <section id="scTLoading">
+    <div class="card center solo"><div class="spinner" aria-hidden="true"></div><p class="muted" id="tLoadingText">Starting up…</p></div>
+  </section>
+  <section id="scTSignIn" hidden>
+    <div class="card solo">
+      <p class="eyebrow">Exam Management</p>
+      <h1 class="h1">Teacher sign-in</h1>
+      <p class="muted">Sign in with the Google account your administrator registered.</p>
+      <button class="btn btn-google" id="btnTSignIn" type="button">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h11.8c-.5 2.7-2 5-4.4 6.6v5.5h7.1c4.1-3.8 6.6-9.4 6.6-16.3z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.2 15.5 46 24 46z"/><path fill="#FBBC05" d="M11.8 28.3c-.4-1.3-.7-2.7-.7-4.3s.3-3 .7-4.3v-5.7H4.5C2.9 17.1 2 20.4 2 24s.9 6.9 2.5 10l7.3-5.7z"/><path fill="#EA4335" d="M24 10.7c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.1 29.9 2 24 2 15.5 2 8.1 6.8 4.5 14l7.3 5.7c1.7-5.2 6.5-9 12.2-9z"/></svg>
+        Continue with Google
+      </button>
+      <p class="err small" id="tSignInErr" hidden></p>
+    </div>
+  </section>
+  <section id="scTDenied" hidden>
+    <div class="card solo">
+      <h1 class="h1">Access denied</h1>
+      <p class="muted">Your account is not authorised to manage this exam system. Ask your administrator to add your email in the Google Sheet under Setup › Configure teacher access.</p>
+      <button class="btn btn-ghost" id="btnTDeniedOut" type="button">Sign in as someone else</button>
+    </div>
+  </section>
+  <section id="scTDashboard" hidden>
+    <h2 class="section-title">Dashboard</h2>
+    <div class="bento stat-bento">
+      <div class="card stat-card center"><p class="eyebrow">Open exams</p><p class="stat-num" id="dashOpenNum">—</p></div>
+      <div class="card stat-card center"><p class="eyebrow">Total students</p><p class="stat-num" id="dashStudentNum">—</p></div>
+      <div class="card stat-card center"><p class="eyebrow">Submissions today</p><p class="stat-num" id="dashTodayNum">—</p></div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <p class="eyebrow">Recent activity</p>
+      <div id="dashRecentList" class="stack-s muted small">Loading…</div>
+    </div>
+  </section>
+  <section id="scTExams" hidden>
+    <div class="section-header">
+      <h2 class="section-title">Exams</h2>
+      <button class="btn-sm btn-accent" id="btnNewExam" type="button">+ New exam</button>
+    </div>
+    <div id="examCards" class="stack"></div>
+  </section>
+  <section id="scTExamDetail" hidden>
+    <div class="section-header">
+      <button class="back-btn" id="btnExamBack" type="button">‹ Exams</button>
+      <span class="exam-code-label" id="detailCode"></span>
+    </div>
+    <div class="bento">
+      <div class="card cell-wide">
+        <div class="detail-stat-row" id="detailStats"></div>
+        <div class="actions-row" id="detailActions"></div>
+      </div>
+      <div class="card cell-wide">
+        <p class="eyebrow">Results</p>
+        <div id="detailResultsList" class="muted small">No submissions yet.</div>
+      </div>
+    </div>
+  </section>
+  <section id="scTStudents" hidden>
+    <div class="section-header">
+      <h2 class="section-title">Students</h2>
+      <button class="btn-sm btn-accent" id="btnAddStudents" type="button">+ Add</button>
+    </div>
+    <div class="filter-row">
+      <select class="field-sm" id="filterCourse"><option value="">All courses</option></select>
+      <select class="field-sm" id="filterSection"><option value="">All sections</option></select>
+    </div>
+    <div id="studentTable" class="stack"></div>
+    <div class="modal-backdrop" id="addStudentsModal" hidden>
+      <div class="modal-card">
+        <div class="modal-header"><h3>Add students</h3><button class="close-btn" id="btnCloseAdd" type="button">✕</button></div>
+        <p class="muted small">Paste your class list — one student per line, last name first.</p>
+        <div class="two">
+          <div><label class="lbl" for="addCourse">Course</label><select class="field" id="addCourse"></select></div>
+          <div><label class="lbl" for="addSection">Section</label><select class="field" id="addSection"></select></div>
+        </div>
+        <label class="lbl" for="addPaste">Class list</label>
+        <textarea class="field mono" id="addPaste" rows="8" placeholder="Dela Cruz, Juan A.&#10;Reyes, Maria Isabel"></textarea>
+        <div class="actions">
+          <button class="btn btn-primary" id="btnCheckStudents" type="button">Check the list</button>
+          <button class="btn btn-ghost" id="btnDoAdd" type="button" disabled>Add to Roster</button>
+        </div>
+        <div id="addOut"></div>
+      </div>
+    </div>
+  </section>
+  <section id="scTResults" hidden>
+    <div class="section-header">
+      <h2 class="section-title">Results</h2>
+      <select class="field-sm" id="resultsExamPicker"><option value="">Choose exam…</option></select>
+    </div>
+    <div id="resultsContent"><div class="card center solo muted small">Select an exam above to view results.</div></div>
+  </section>
+</main>
+<nav class="appbar" id="tAppBar" aria-label="Main navigation" hidden>
+  <button class="appbar-tab" id="tTabDashboard" data-tab="dashboard" aria-label="Dashboard" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span>Dashboard</span>
+  </button>
+  <button class="appbar-tab" id="tTabExams" data-tab="exams" aria-label="Exams" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>
+    <span>Exams</span>
+  </button>
+  <button class="appbar-tab" id="tTabStudents" data-tab="students" aria-label="Students" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M3 21c0-4 2.7-7 6-7M16 11c2.2 0 4 1.8 4 4v1"/><path d="M14 21h6M17 18v6"/></svg>
+    <span>Students</span>
+  </button>
+  <button class="appbar-tab" id="tTabResults" data-tab="results" aria-label="Results" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+    <span>Results</span>
+  </button>
+</nav>
+<script type="module" src="teacher.js"></script>
+</body>
+</html>
