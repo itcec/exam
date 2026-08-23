@@ -234,12 +234,89 @@
         <p class="muted small" id="doneNote"></p>
       </div>
       <div class="card cell-major" id="reviewCard">
+        <div class="filter-tabs" id="reviewFilterTabs" role="tablist" aria-label="Review filters">
+          <button class="filter-tab on" data-filter="all" type="button" aria-selected="true">All (<span id="cntAll">0</span>)</button>
+          <button class="filter-tab" data-filter="correct" type="button" aria-selected="false">Correct ✅ (<span id="cntCorrect">0</span>)</button>
+          <button class="filter-tab" data-filter="wrong" type="button" aria-selected="false">Wrong ❌ (<span id="cntWrong">0</span>)</button>
+          <button class="filter-tab" data-filter="blank" type="button" aria-selected="false">Unanswered ⚪ (<span id="cntBlank">0</span>)</button>
+        </div>
         <div id="reviewWrap"></div>
       </div>
     </div>
   </section>
 
 </main>
+
+<!-- Strict behavior warning modal (tab-switch violation) -->
+<div class="modal-backdrop" id="warningModal" hidden>
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 style="color:var(--bad);margin:0;font-size:1.15rem;">⚠️ Tab Switch Warning</h3>
+    </div>
+    <p id="warningModalText" class="muted" style="font-weight:600;margin:10px 0;"></p>
+    <div id="warningModalCountdown" style="font-size:2rem;font-weight:800;color:var(--warn);text-align:center;margin:8px 0;"></div>
+    <button class="btn btn-primary" id="btnResumeExam" type="button">I understand, resume exam</button>
+  </div>
+</div>
+
+<!-- Unanswered question alert modal -->
+<div class="modal-backdrop" id="blankConfirmModal" hidden>
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3 style="margin:0;font-size:1.15rem;">⚠️ Question Unanswered</h3>
+    </div>
+    <p class="muted" style="margin:10px 0;">You have not answered or selected a choice for this question yet. Would you like to go back and answer, or proceed anyway?</p>
+    <div class="actions">
+      <button class="btn btn-ghost" id="btnStayAndAnswer" type="button">Go back &amp; answer</button>
+      <button class="btn btn-primary" id="btnSkipAnyway" type="button">Proceed anyway</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom app bar — hidden on error/onboarding screens and during active exam -->
+<nav class="appbar" id="appBar" aria-label="Main navigation" hidden>
+
+  <button class="appbar-tab" id="tabHome" data-tab="home"
+          aria-label="Home" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
+      <path d="M9 21V12h6v9"/>
+    </svg>
+    <span>Home</span>
+  </button>
+
+  <button class="appbar-tab" id="tabExams" data-tab="exams"
+          aria-label="Exams" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="5" y="2" width="14" height="20" rx="2"/>
+      <path d="M9 7h6M9 11h6M9 15h4"/>
+    </svg>
+    <span>Exams</span>
+  </button>
+
+  <button class="appbar-tab" id="tabHistory" data-tab="history"
+          aria-label="History" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 7v5l3 3"/>
+    </svg>
+    <span>History</span>
+  </button>
+
+  <button class="appbar-tab" id="tabAccount" data-tab="account"
+          aria-label="Account" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="4"/>
+      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+    </svg>
+    <span>Account</span>
+  </button>
+
+</nav>
 
 <script type="module" src="app.js"></script>
 </body>
