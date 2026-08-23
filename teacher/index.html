@@ -24,6 +24,9 @@
   <span class="topbar-brand">📝 Exam Management</span>
   <span class="grow"></span>
   <span class="topbar-role" id="topRole" hidden>Teacher</span>
+  <button class="icon-btn" id="btnSyncAll" type="button" aria-label="Sync all data" title="Sync / Refresh Data" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+  </button>
   <button class="icon-btn" id="btnTheme" type="button" aria-label="Switch theme">
     <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg>
     <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.8 6.8 0 0 0 10.8 10.8Z"/></svg>
@@ -53,7 +56,10 @@
     </div>
   </section>
   <section id="scTDashboard" hidden>
-    <h2 class="section-title">Dashboard</h2>
+    <div class="section-header">
+      <h2 class="section-title">Dashboard</h2>
+      <button class="btn-sm btn-outline" id="btnRefreshDash" type="button">🔄 Refresh</button>
+    </div>
     <div class="bento stat-bento">
       <div class="card stat-card center"><p class="eyebrow">Open exams</p><p class="stat-num" id="dashOpenNum">—</p></div>
       <div class="card stat-card center"><p class="eyebrow">Total students</p><p class="stat-num" id="dashStudentNum">—</p></div>
@@ -67,7 +73,10 @@
   <section id="scTExams" hidden>
     <div class="section-header">
       <h2 class="section-title">Exams</h2>
-      <button class="btn-sm btn-accent" id="btnNewExam" type="button">+ New exam</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-sm btn-outline" id="btnRefreshExams" type="button">🔄 Refresh</button>
+        <button class="btn-sm btn-accent" id="btnNewExam" type="button">+ New exam</button>
+      </div>
     </div>
     <div id="examCards" class="stack"></div>
 
@@ -159,6 +168,8 @@
     <div class="section-header">
       <button class="back-btn" id="btnExamBack" type="button">‹ Exams</button>
       <span class="exam-code-label" id="detailCode"></span>
+      <span class="grow"></span>
+      <button class="btn-sm btn-outline" id="btnRefreshDetail" type="button">🔄 Refresh</button>
     </div>
     <div class="bento">
       <div class="card cell-wide">
@@ -174,7 +185,10 @@
   <section id="scTStudents" hidden>
     <div class="section-header">
       <h2 class="section-title">Students</h2>
-      <button class="btn-sm btn-accent" id="btnAddStudents" type="button">+ Add</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-sm btn-outline" id="btnRefreshStudents" type="button">🔄 Refresh</button>
+        <button class="btn-sm btn-accent" id="btnAddStudents" type="button">+ Add</button>
+      </div>
     </div>
     <div class="filter-row">
       <select class="field-sm" id="filterCourse"><option value="">All courses</option></select>
@@ -199,10 +213,12 @@
       </div>
     </div>
   </section>
-  <section id="scTResults" hidden>
     <div class="section-header">
       <h2 class="section-title">Results</h2>
-      <select class="field-sm" id="resultsExamPicker"><option value="">Choose exam…</option></select>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select class="field-sm" id="resultsExamPicker"><option value="">Choose exam…</option></select>
+        <button class="btn-sm btn-outline" id="btnRefreshResults" type="button">🔄 Refresh</button>
+      </div>
     </div>
     <div id="resultsContent"><div class="card center solo muted small">Select an exam above to view results.</div></div>
   </section>
