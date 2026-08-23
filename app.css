@@ -258,6 +258,10 @@
     padding-block: 24px calc(64px + env(safe-area-inset-bottom));
   }
 
+  /* Two fields side by side once there is room for them. */
+  .two { display: flex; flex-direction: column; gap: 12px; }
+  @media (width >= 430px) { .two { flex-direction: row; } .two > * { flex: 1; } }
+
   .stack   { display: flex; flex-direction: column; gap: 12px; }
   .stack-s { display: flex; flex-direction: column; gap: 7px; }
 }
@@ -656,9 +660,11 @@
     vertical-align: 1px;
   }
 
-  /* ---- history ---- */
+  /* ---- history ----
+     One exam per row. A row with more than one attempt is a <details>, so
+     the badge stays the headline number and the breakdown stays folded
+     away until it is asked for. */
   .past {
-    display: flex; align-items: center; gap: 14px;
     padding: 15px 16px;
     background: var(--glass-2);
     border: 1px solid var(--edge);
@@ -666,11 +672,41 @@
     transition: border-color .25s cubic-bezier(.4, 0, .2, 1);
   }
   .past:hover { border-color: var(--edge-hi); }
-  .past > div:first-child { flex: 1; min-inline-size: 0; }
+
+  .past-line {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .past-line > div:first-child { flex: 1; min-inline-size: 0; }
+
+  /* summary carries the same row, minus the browser's disclosure triangle */
+  summary.past-line { cursor: pointer; list-style: none; }
+  summary.past-line::-webkit-details-marker { display: none; }
+  summary.past-line::after {
+    content: '';
+    flex: 0 0 auto;
+    inline-size: 7px; block-size: 7px;
+    border-inline-end: 2px solid var(--fg-3);
+    border-block-end: 2px solid var(--fg-3);
+    transform: rotate(45deg) translate(-2px, -2px);
+    transition: transform .2s cubic-bezier(.4, 0, .2, 1);
+  }
+  details.past[open] > summary.past-line::after {
+    transform: rotate(-135deg) translate(-2px, -2px);
+  }
+  summary.past-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .past-tries {
+    margin-block-start: 12px; padding-block-start: 12px;
+    border-block-start: 1px solid var(--edge);
+    display: grid; gap: 5px;
+  }
+  .past-tries .past-d.best { color: var(--accent); font-weight: 700; }
+
   .past-t { font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; color: var(--fg); }
   .past-d {
     font-size: 0.75rem; color: var(--fg-3);
     letter-spacing: .04em; text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
   }
   .past-s {
     flex: 0 0 auto;
@@ -686,6 +722,10 @@
     background: var(--glass-hi); border-color: var(--edge);
     color: var(--fg-3); font-weight: 600; font-size: 0.75rem;
     letter-spacing: .04em; text-transform: uppercase;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    summary.past-line::after { transition: none; }
   }
 
   .spinner {
