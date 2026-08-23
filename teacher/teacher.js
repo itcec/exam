@@ -7,7 +7,7 @@
    ================================================================ */
 
 import { initializeApp }           from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut,
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut,
          onAuthStateChanged, setPersistence, browserLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
@@ -19,8 +19,6 @@ import { FIREBASE_CONFIG, API_URL, validateConfig } from '../config.js';
   if (!err) return;
   document.getElementById('scTLoading').hidden = true;
   document.getElementById('scTDenied').hidden = false;
-  document.getElementById('tDeniedText').textContent =
-    'The exam site is missing an important setting. Please ask your teacher about this matter.';
   console.error('[Proctor-teacher] config: ' + err);
   throw new Error(err);
 }());
@@ -47,7 +45,23 @@ $('btnTheme').onclick = () => setTheme(activeTheme() === 'dark' ? 'light' : 'dar
 
 const app  = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
-await setPersistence(auth, browserLocalPersistence);
+try {
+  await setPersistence(auth, browserLocalPersistence);
+} catch (e) {
+  console.warn('[teacher] persistence error:', e);
+}
+
+// Check if user just returned from a redirect sign-in
+try {
+  await getRedirectResult(auth);
+} catch (e) {
+  console.warn('[teacher] redirect result note:', e);
+}
+
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({
+  prompt: 'select_account'
+});
 
 let _idToken = null;
 
@@ -173,14 +187,44 @@ onAuthStateChanged(auth, async user => {
 });
 
 /* Sign in */
+let _signingIn = false;
+
 $('btnTSignIn').onclick = async () => {
-  const provider = new GoogleAuthProvider();
-  try { await signInWithPopup(auth, provider); }
-  catch (err) {
-    if (err.code !== 'auth/popup-closed-by-user') {
-      $('tSignInErr').textContent = err.message;
+  if (_signingIn) return;
+  _signingIn = true;
+  const b = $('btnTSignIn');
+  b.disabled = true;
+  $('tSignInErr').hidden = true;
+
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    console.warn('[teacher] sign-in note:', err);
+    const code = err?.code || '';
+    if (code === 'auth/popup-blocked') {
+      $('tSignInErr').textContent = 'Your browser blocked the sign-in window. Allow pop-ups for this site and try again.';
+      $('tSignInErr').hidden = false;
+    } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      $('tSignInErr').textContent = 'Sign-in was cancelled. Tap the button to try again.';
+      $('tSignInErr').hidden = false;
+    } else if (code === 'auth/unauthorized-domain') {
+      $('tSignInErr').textContent = 'This site is not authorised in Firebase. Add this domain in Firebase Authentication Settings.';
+      $('tSignInErr').hidden = false;
+    } else if (err.message && err.message.includes('INTERNAL ASSERTION FAILED')) {
+      try {
+        await signInWithRedirect(auth, provider);
+        return;
+      } catch (redirErr) {
+        $('tSignInErr').textContent = 'Sign-in error: ' + redirErr.message;
+        $('tSignInErr').hidden = false;
+      }
+    } else {
+      $('tSignInErr').textContent = 'Sign-in failed: ' + (err?.message || code);
       $('tSignInErr').hidden = false;
     }
+  } finally {
+    _signingIn = false;
+    b.disabled = false;
   }
 };
 
