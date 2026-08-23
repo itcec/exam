@@ -14,7 +14,7 @@
      - blur is dialled back when the device or the user asks for it
    ================================================================== */
 
-@layer tokens, base, mesh, layout, bento, components, motion;
+@layer tokens, base, mesh, layout, bento, components, motion, appbar;
 
 /* ---------------------------------------------------------------- */
 @layer tokens {
@@ -255,7 +255,8 @@
   .shell {
     inline-size: min(100% - 32px, 940px);
     margin-inline: auto;
-    padding-block: 24px calc(64px + env(safe-area-inset-bottom));
+    /* 88px = ~56px app bar height + 8px gap + safe area buffer */
+    padding-block: 24px calc(88px + env(safe-area-inset-bottom, 0px));
   }
 
   /* Two fields side by side once there is room for them. */
@@ -735,6 +736,46 @@
     border-radius: 50%;
     animation: spin .8s linear infinite;
   }
+
+  /* ---- filter tabs for review results ---- */
+  .filter-tabs {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    margin-block-end: 14px;
+  }
+  .filter-tab {
+    padding: 6px 13px; font-size: 0.75rem; font-weight: 700;
+    letter-spacing: .03em; text-transform: uppercase;
+    border-radius: 999px; border: 1px solid var(--edge);
+    background: var(--glass-hi); color: var(--fg-2);
+    cursor: pointer; transition: all .2s ease;
+  }
+  .filter-tab:hover { border-color: var(--edge-hi); color: var(--fg); }
+  .filter-tab.on, .filter-tab[aria-selected="true"] {
+    background: var(--accent); border-color: var(--accent); color: var(--on-accent);
+  }
+
+  /* ---- modal backdrop and card ---- */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(0, 0, 0, .55);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    animation: fadeIn .18s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal-card {
+    inline-size: 100%; max-inline-size: 480px;
+    padding: 24px 22px;
+    background: var(--bg);
+    border-radius: var(--r-lg);
+    border: 1px solid var(--edge);
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 14px;
+    animation: scaleUp .22s cubic-bezier(.4, 0, .2, 1);
+  }
+  @keyframes scaleUp { from { transform: scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; }
 }
 
 /* ---------------------------------------------------------------- */
@@ -773,3 +814,118 @@
     .card.liftable:hover, .pick:hover { transform: none; }
   }
 }
+
+/* ---------------------------------------------------------------- */
+@layer appbar {
+  /*
+     Bottom app bar — fixed to the visual viewport bottom.
+     iOS / Android considerations:
+       - env(safe-area-inset-bottom) clears the iPhone home indicator
+       - position:fixed is used deliberately here (not sticky); because the
+         bar is OUTSIDE <main> it does not scroll with the content and cannot
+         float over an answer field inside the scroll container.
+       - Keyboard detection: when visualViewport shrinks (keyboard open) we
+         add [data-keyboard] to <html> and hide the bar so it can't overlap
+         the answer input.
+       - Tap targets: min-block-size 56px + padding ensures 48px+ touch area
+         on every device (Google Material / Apple HIG minimum).
+  */
+
+  .appbar {
+    position: fixed;
+    inset-block-end: 0;
+    inset-inline: 0;
+    z-index: 30;
+    display: flex;
+    background: var(--glass);
+    backdrop-filter: blur(var(--blur)) saturate(1.5);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.5);
+    border-block-start: 1px solid var(--edge);
+    /* Push content above the home indicator on iPhone */
+    padding-block-end: env(safe-area-inset-bottom, 0px);
+    /* Smooth slide in / out */
+    transition: transform .22s cubic-bezier(.4, 0, .2, 1),
+                opacity  .22s cubic-bezier(.4, 0, .2, 1);
+  }
+
+  /* Hide when iOS keyboard is open — avoids the bar floating over inputs */
+  :root[data-keyboard] .appbar {
+    transform: translateY(100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .appbar-tab {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    min-block-size: 56px;       /* ≥48 px touch target */
+    padding: 10px 4px 9px;
+    border: 0;
+    background: transparent;
+    color: var(--fg-3);
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: color .2s ease;
+  }
+
+  .appbar-tab svg {
+    inline-size: 24px;
+    block-size: 24px;
+    flex: none;
+    stroke: currentColor;
+    transition: transform .2s cubic-bezier(.34, 1.56, .64, 1);
+  }
+
+  /* Active state */
+  .appbar-tab[aria-selected="true"] {
+    color: var(--accent);
+  }
+  .appbar-tab[aria-selected="true"] svg {
+    transform: translateY(-2px) scale(1.08);
+  }
+
+  /* Accent pill indicator above the icon */
+  .appbar-tab[aria-selected="true"]::before {
+    content: '';
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 50%;
+    translate: -50% 0;
+    inline-size: 28px;
+    block-size: 3px;
+    border-radius: 0 0 3px 3px;
+    background: var(--accent);
+  }
+
+  /* Coarse-pointer screens: slightly taller tabs for easier tapping */
+  @media (pointer: coarse) {
+    .appbar-tab { min-block-size: 60px; }
+  }
+
+  /* Reduced blur on cheap Android phones */
+  @media (pointer: coarse) and (width < 480px) {
+    .appbar {
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .appbar { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .appbar, .appbar-tab svg { transition: none; }
+    .appbar-tab[aria-selected="true"] svg { transform: none; }
+  }
+}
+
