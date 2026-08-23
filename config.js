@@ -16,7 +16,7 @@ export const FIREBASE_CONFIG = {
 };
 
 /* Apps Script ▸ Deploy ▸ New deployment ▸ Web app ▸ the /exec URL. */
-export const API_URL = 'https://script.google.com/macros/s/AKfycbxkB1ec3XtqcbeKgk_xsHTnrEZd2hSzAWy7Tw9CFlMZA4BqqToI2fslscMqhC9QSH4q/exec';
+export const API_URL = 'https://script.google.com/macros/s/AKfycby_lX3Mt9uGY9xYCwsFoRdg5D6upDI5ebs9icgPmQ93-NZlSLSUVWVZHW3VUR29FnWN/exec';
 
 /* Shown on the sign-in screen. Purely cosmetic. */
 export const SCHOOL_NAME = 'Information Technology';
@@ -26,3 +26,42 @@ export const SCHOOL_NAME = 'Information Technology';
    so the real check is ALLOWED_EMAIL_DOMAINS in the Apps Script
    properties. Leave blank to show all accounts. */
 export const HOSTED_DOMAIN = '';
+
+/* ------------------------------------------------------------------
+   validateConfig()
+
+   Call this before touching Firebase. Returns a short error code string
+   if something is missing, or null if everything looks set.
+
+   The error code is intentionally terse — it is only meant for the browser
+   DevTools console so a teacher can self-diagnose. Students are shown a
+   generic message and never see this code.
+   ------------------------------------------------------------------ */
+export function validateConfig() {
+  if (!FIREBASE_CONFIG.apiKey)     return 'missing:apiKey';
+  if (!FIREBASE_CONFIG.authDomain) return 'missing:authDomain';
+  if (!FIREBASE_CONFIG.projectId)  return 'missing:projectId';
+  if (!FIREBASE_CONFIG.appId)      return 'missing:appId';
+  if (!API_URL)                    return 'missing:apiUrl';
+  if (API_URL.includes('YOUR_ID')) return 'placeholder:apiUrl';
+  return null;
+}
+
+/* ------------------------------------------------------------------
+   Checks the values above before the app tries to use them.
+
+   Returns a short machine-readable code, never a sentence: the caller
+   shows the student a plain apology and logs this to the console, where
+   only the teacher (with DevTools open) will see which value is missing.
+   Naming the missing key on screen would tell a student nothing useful
+   and would advertise how the site is wired.
+   ------------------------------------------------------------------ */
+export function validateConfig() {
+  if (!FIREBASE_CONFIG.apiKey)     return 'missing:apiKey';
+  if (!FIREBASE_CONFIG.authDomain) return 'missing:authDomain';
+  if (!FIREBASE_CONFIG.projectId)  return 'missing:projectId';
+  if (!FIREBASE_CONFIG.appId)      return 'missing:appId';
+  if (!API_URL || API_URL.indexOf('YOUR_ID') !== -1) return 'missing:apiUrl';
+  if (!/^https:\/\/script\.google\.com\/.*\/exec$/.test(API_URL)) return 'bad:apiUrl';
+  return null;   // all good
+}
