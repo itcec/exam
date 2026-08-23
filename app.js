@@ -77,6 +77,123 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (!document.documentElement.dataset.theme) labelTheme();
 });
 
+/* ---------------- sound fx & haptics (Web Audio API) ---------------- */
+
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) _audioCtx = new AudioCtx();
+  }
+  if (_audioCtx && _audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+
+function playPop() {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(460, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(780, ctx.currentTime + 0.07);
+    gain.gain.setValueAtTime(0.14, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.07);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.07);
+    hapticPulse(12);
+  } catch (e) {}
+}
+
+function playChime() {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6 chord
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime + idx * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.08 + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + idx * 0.08);
+      osc.stop(ctx.currentTime + idx * 0.08 + 0.45);
+    });
+    hapticPulse(40);
+  } catch (e) {}
+}
+
+function hapticPulse(ms = 12) {
+  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+}
+
+/* ---------------- celebratory confetti particle engine ---------------- */
+
+function launchConfetti() {
+  const canvas = $('fxCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  const colors = ['#6366F1', '#8B5CF6', '#10B981', '#F59E0B', '#EC4899', '#3B82F6', '#14B8A6'];
+  const particles = [];
+  for (let i = 0; i < 75; i++) {
+    particles.push({
+      x: canvas.width / 2 + (Math.random() - 0.5) * 160,
+      y: canvas.height / 2 + 30,
+      vx: (Math.random() - 0.5) * 16,
+      vy: -Math.random() * 16 - 7,
+      size: Math.random() * 8 + 6,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: Math.random() * 360,
+      rSpeed: (Math.random() - 0.5) * 14,
+      gravity: 0.45,
+      opacity: 1
+    });
+  }
+
+  let frameId = null;
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = false;
+    particles.forEach(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += p.gravity;
+      p.rotation += p.rSpeed;
+      p.opacity -= 0.009;
+
+      if (p.opacity > 0 && p.y < canvas.height + 60) {
+        alive = true;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(0, p.opacity);
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.65);
+        ctx.restore();
+      }
+    });
+
+    if (alive) {
+      frameId = requestAnimationFrame(animate);
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      cancelAnimationFrame(frameId);
+    }
+  }
+  animate();
+}
+
 /* ---------------- screens ---------------- */
 
 const SCREENS = ['scLoading', 'scSignIn', 'scFatal', 'scRegister', 'scPick',
@@ -541,22 +658,47 @@ function renderExams(exams) {
     b.type = 'button';
     b.className = 'pick';
     b.setAttribute('aria-pressed', 'false');
-    const c = document.createElement('span'); c.className = 'c'; c.textContent = e.code;
-    const n = document.createElement('span'); n.className = 'n'; n.textContent = e.title;
-    b.append(c, n);
 
-    const bits = [];
-    if (e.questions) bits.push(e.questions + ' question' + (e.questions === 1 ? '' : 's'));
-    if (e.triesLeft > 1) bits.push(e.triesLeft + ' tries left');
-    if (e.closesAt) bits.push('closes ' + e.closesAt);
-    if (bits.length) {
-      const m = document.createElement('span');
-      m.className = 'n';
-      m.style.opacity = '.8';
-      m.textContent = bits.join('  ·  ');
-      b.append(m);
+    const header = document.createElement('div');
+    header.className = 'pick-header';
+    const c = document.createElement('span');
+    c.className = 'c';
+    c.textContent = e.code;
+    const badge = document.createElement('span');
+    badge.className = 'pick-tag';
+    badge.style.color = 'var(--ok)';
+    badge.textContent = '● Open';
+    header.append(c, badge);
+
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = e.title || e.code;
+
+    const meta = document.createElement('div');
+    meta.className = 'pick-meta';
+
+    if (e.questions) {
+      const qTag = document.createElement('span');
+      qTag.className = 'pick-tag';
+      qTag.textContent = `${e.questions} question${e.questions === 1 ? '' : 's'}`;
+      meta.append(qTag);
     }
+    if (e.triesLeft != null) {
+      const tTag = document.createElement('span');
+      tTag.className = 'pick-tag';
+      tTag.textContent = `${e.triesLeft} attempt${e.triesLeft === 1 ? '' : 's'} left`;
+      meta.append(tTag);
+    }
+    if (e.closesAt) {
+      const cTag = document.createElement('span');
+      cTag.className = 'pick-tag';
+      cTag.textContent = `Closes ${e.closesAt}`;
+      meta.append(cTag);
+    }
+
+    b.append(header, n, meta);
     b.onclick = () => {
+      playPop();
       S.picked = e.code;
       $('codeInput').value = '';
       for (const k of wrap.children) k.setAttribute?.('aria-pressed', 'false');
@@ -661,11 +803,28 @@ function begin() {
   autosave();
 }
 
-const current = () => S.queue[S.pos];
+function renderStepperDots() {
+  const host = $('stepperDots');
+  if (!host || !S.questions || !S.questions.length) return;
+  host.replaceChildren();
+
+  const cur = current();
+  S.questions.forEach((q, idx) => {
+    const dot = document.createElement('span');
+    dot.className = 'stepper-dot';
+    dot.title = `Question ${idx + 1}`;
+    if (cur && q.no === cur.no) dot.classList.add('active');
+    else if (S.answers[q.no] != null) dot.classList.add('done');
+    else if (S.deferred.some(d => d.no === q.no)) dot.classList.add('skipped');
+    host.append(dot);
+  });
+}
 
 function render() {
   const q = current();
   if (!q) { step(); return; }
+
+  renderStepperDots();
 
   const done = Object.keys(S.answers).length;
   $('pillProgress').textContent = `Question ${Math.min(done + 1, S.questions.length)} of ${S.questions.length}`;
@@ -720,6 +879,7 @@ function render() {
 
       b.append(k, tx, chk);
       b.onclick = () => {
+        playPop();
         for (const c of box.children) c.setAttribute('aria-checked', 'false');
         b.setAttribute('aria-checked', 'true');
       };
@@ -958,6 +1118,13 @@ function paint(sec) {
   $('timerBar').classList.toggle('low', low);
   $('timerBar').classList.toggle('mid', mid);
   $('timerFill').style.transform = `scaleX(${frac.toFixed(4)})`;
+
+  // Tactile low-time pulse aura around the question card
+  const card = $('qCard');
+  if (card) {
+    if (sec <= 10 && sec > 0) card.classList.add('urgent-time');
+    else card.classList.remove('urgent-time');
+  }
 }
 
 /* ---------------- autosave ---------------- */
@@ -1018,16 +1185,55 @@ function done(r) {
   $('doneTitle').textContent = 'Exam submitted';
   const mode = r.revealMode || 'none';
 
-  if (mode === 'none') {
+  const radialWrap = $('scoreRadialWrap');
+  const radialBar = $('scoreRadialBar');
+  const pctNum = $('scorePercentNum');
+  const fracNum = $('scoreFractionNum');
+
+  if (mode === 'none' || !r.total) {
     $('scoreBox').hidden = true;
+    if (radialWrap) radialWrap.hidden = true;
     $('doneNote').textContent = 'Your answers have been recorded. Your instructor will release results.';
   } else {
-    $('scoreBox').hidden = false;
-    $('scoreNum').textContent = String(r.score);
-    $('scoreDen').textContent = 'out of ' + r.total;
+    // Show animated SVG radial score gauge
+    if (radialWrap) radialWrap.hidden = false;
+    $('scoreBox').hidden = true;
+
+    const pct = Math.round(((r.score || 0) / r.total) * 100);
+    const radius = 52;
+    const circumference = 2 * Math.PI * radius; // ~326.72
+    const offset = circumference - (pct / 100) * circumference;
+
+    if (radialBar) {
+      radialBar.style.strokeDasharray = `${circumference}`;
+      radialBar.style.strokeDashoffset = `${circumference}`;
+      setTimeout(() => {
+        radialBar.style.strokeDashoffset = `${offset}`;
+        radialBar.style.stroke = pct >= 75 ? 'var(--ok)' : pct >= 50 ? 'var(--accent)' : 'var(--bad)';
+      }, 100);
+    }
+
+    let currentPct = 0;
+    const countTimer = setInterval(() => {
+      currentPct += Math.ceil((pct - currentPct) / 6);
+      if (currentPct >= pct) {
+        currentPct = pct;
+        clearInterval(countTimer);
+      }
+      if (pctNum) pctNum.textContent = `${currentPct}%`;
+    }, 25);
+
+    if (fracNum) fracNum.textContent = `${r.score} / ${r.total}`;
+
     const bits = [`${r.correctCount} correct`, `${r.mistakeCount} wrong`];
     if (r.blankCount) bits.push(`${r.blankCount} unanswered`);
     $('doneNote').textContent = bits.join('  ·  ');
+
+    // Launch celebratory confetti and chord chime!
+    setTimeout(() => {
+      launchConfetti();
+      playChime();
+    }, 250);
   }
 
   const details = r.detail || [];
