@@ -220,6 +220,7 @@
   </section>
 
   <section id="scExam" hidden>
+    <div id="stepperDots" class="stepper-dots"></div>
     <div class="card solo" id="qCard">
       <p class="eyebrow" id="qMeta">Question</p>
       <div class="qtext" id="qText"></div>
@@ -244,6 +245,16 @@
     <div class="bento">
       <div class="card cell-minor center">
         <p class="eyebrow">Submitted</p>
+        <div class="score-radial-wrap" id="scoreRadialWrap" hidden>
+          <svg class="score-radial-svg" viewBox="0 0 120 120">
+            <circle class="score-radial-track" cx="60" cy="60" r="52"></circle>
+            <circle class="score-radial-bar" id="scoreRadialBar" cx="60" cy="60" r="52"></circle>
+          </svg>
+          <div class="score-radial-text">
+            <span class="score-radial-val" id="scorePercentNum">0%</span>
+            <span class="score-radial-label" id="scoreFractionNum">0 / 0</span>
+          </div>
+        </div>
         <div class="score" id="scoreBox" hidden>
           <b id="scoreNum">0</b><span id="scoreDen"></span>
         </div>
@@ -262,6 +273,7 @@
     </div>
   </section>
 
+  <canvas id="fxCanvas" class="fx-canvas"></canvas>
 </main>
 
 <!-- Strict behavior warning modal (tab-switch violation) -->
