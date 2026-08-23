@@ -1044,3 +1044,113 @@
   }
 }
 
+/* ================================================================
+   Multi-Mode Exam Delivery, Cinematic Transition & Exit Button
+   ================================================================ */
+
+.btn-exit {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 5px 11px; font-size: 0.8125rem; font-weight: 600;
+  border-radius: 999px;
+  background: var(--bad-soft);
+  color: var(--bad);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  cursor: pointer;
+  transition: all .2s ease;
+  margin-inline-end: 8px;
+}
+.btn-exit:hover {
+  background: var(--bad);
+  color: #fff;
+  border-color: transparent;
+  transform: scale(1.03);
+}
+
+.multi-q-card {
+  position: relative;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+  border-radius: var(--r-lg);
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border: 1px solid var(--edge);
+  box-shadow: var(--shadow-sm);
+  transition: border-color .2s, box-shadow .2s;
+}
+.multi-q-card:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+.multi-q-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px;
+}
+.multi-q-no {
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--accent);
+}
+.multi-q-status {
+  font-size: 0.75rem; font-weight: 600; padding: 2px 8px;
+  border-radius: 999px; background: var(--sunk); color: var(--fg-3);
+  transition: all .2s ease;
+}
+.multi-q-status.answered {
+  background: var(--ok-soft); color: var(--ok);
+}
+
+/* ---- Cinematic Dramatic Section Transition Overlay ---- */
+.section-transition-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: radial-gradient(circle at center, rgba(15, 17, 23, 0.96) 0%, rgba(6, 7, 11, 0.99) 100%);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .5s cubic-bezier(.4, 0, .2, 1);
+}
+.section-transition-overlay.active {
+  opacity: 1; pointer-events: auto;
+}
+.transition-content {
+  text-align: center; max-width: 90vw;
+  animation: cinematicDramaticPulse 2s ease-in-out infinite alternate;
+}
+.transition-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.8125rem; font-weight: 700; letter-spacing: .25em;
+  text-transform: uppercase; color: var(--bad);
+  margin-bottom: 12px;
+  text-shadow: 0 0 12px rgba(220, 38, 38, 0.6);
+}
+.transition-title {
+  font-size: clamp(2rem, 6vw, 3.5rem); font-weight: 900;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: #FFFFFF;
+  margin: 0 0 8px;
+  text-shadow: 0 4px 24px rgba(0,0,0,0.8), 0 0 20px rgba(255,255,255,0.3);
+}
+.transition-type {
+  font-size: 1.25rem; font-weight: 600; letter-spacing: .12em;
+  color: rgba(255,255,255,0.7); text-transform: uppercase;
+  margin-bottom: 24px;
+}
+.transition-pulse-line {
+  inline-size: 140px; block-size: 3px; margin: 0 auto;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--bad), #fff, var(--bad), transparent);
+  box-shadow: 0 0 16px var(--bad);
+  animation: laserScan 1.6s ease-in-out infinite;
+}
+
+@keyframes cinematicDramaticPulse {
+  0%   { transform: scale(0.96); filter: brightness(0.9); }
+  100% { transform: scale(1.02); filter: brightness(1.15); }
+}
+@keyframes laserScan {
+  0%   { inline-size: 40px; opacity: .4; }
+  50%  { inline-size: 200px; opacity: 1; }
+  100% { inline-size: 40px; opacity: .4; }
+}
+
+
