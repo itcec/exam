@@ -198,6 +198,22 @@
 
 /* ---------------------------------------------------------------- */
 @layer mesh {
+  .neat-bg-canvas {
+    position: fixed;
+    inset: 0;
+    inline-size: 100vw;
+    block-size: 100vh;
+    z-index: -2;
+    pointer-events: none;
+    opacity: 0.92;
+    transition: opacity 0.5s ease, filter 0.5s ease;
+  }
+
+  [data-theme="dark"] .neat-bg-canvas {
+    opacity: 0.40;
+    filter: brightness(0.68) contrast(1.18) saturate(1.15);
+  }
+
   /* Soft glows behind everything, with gentle aurora drift */
   body::before {
     content: "";
@@ -209,7 +225,7 @@
       radial-gradient(circle at 20% 15%, var(--mesh-1) 0%, transparent 48%),
       radial-gradient(circle at 80% 80%, var(--mesh-2) 0%, transparent 46%),
       radial-gradient(circle at 65% 35%, var(--mesh-3) 0%, transparent 54%),
-      var(--bg-deep);
+      transparent;
     animation: auroraDrift 28s ease-in-out infinite alternate;
   }
 
