@@ -1,0 +1,301 @@
+/* ==================================================================
+   fx.css — shared interaction styling for both portals.
+
+   Loaded after each portal's own stylesheet and declared in the same
+   @layer list, so it slots in beside them rather than winning by being
+   last. It contributes two layers of its own:
+
+     fx        the pointer, ripple, ambient canvas, entrances
+     fx-a11y   focus, skip link, reduced-motion — outranks everything,
+               because a preference the user has stated in their OS is
+               not a suggestion
+
+   Every colour here comes from the host page's tokens, so this file
+   never needs to know which theme is on.
+   ================================================================== */
+
+@layer tokens, base, mesh, layout, bento, components, motion, appbar, fx, fx-a11y;
+
+@layer fx {
+
+  /* ---------------- screen-reader only ---------------- */
+
+  .sr-only {
+    position: absolute;
+    inline-size: 1px; block-size: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* ---------------- skip link ----------------
+     First thing in the tab order on every screen, so a keyboard or
+     switch user is not walked through the whole toolbar to reach the
+     question they are answering. */
+
+  .skip-link {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 50%;
+    translate: -50% -140%;
+    z-index: 200;
+    padding: 12px 22px;
+    border-radius: 0 0 var(--r-sm, 12px) var(--r-sm, 12px);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 0.875rem;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: var(--shadow);
+    transition: translate .18s cubic-bezier(.4, 0, .2, 1);
+  }
+  .skip-link:focus-visible { translate: -50% 0; }
+
+  /* ---------------- ambient mote field ----------------
+     Behind the glass and behind the mesh, above nothing. Never
+     interactive: it must not eat a tap meant for a card. */
+
+  .fx-ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    inline-size: 100%;
+    block-size: 100%;
+    pointer-events: none;
+  }
+
+  /* ---------------- the pointer ----------------
+     Two parts: a soft light pinned to the cursor, and a ring that
+     arrives a moment later. Both are decoration over the real cursor,
+     which stays visible — replacing it outright breaks text selection
+     affordances and every OS accessibility cursor setting. */
+
+  .fx-cursor,
+  .fx-cursor-ring {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: 9998;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .3s ease;
+    will-change: transform;
+  }
+  body.fx-cursor-on .fx-cursor,
+  body.fx-cursor-on .fx-cursor-ring { opacity: 1; }
+
+  .fx-cursor {
+    inline-size: 320px; block-size: 320px;
+    margin: -160px 0 0 -160px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-soft) 0%, transparent 62%);
+    filter: blur(14px);
+  }
+
+  .fx-cursor-ring {
+    inline-size: 26px; block-size: 26px;
+    margin: -13px 0 0 -13px;
+    border: 1.5px solid var(--accent-line);
+    border-radius: 50%;
+    transition: opacity .3s ease, width .22s cubic-bezier(.34, 1.56, .64, 1),
+                height .22s cubic-bezier(.34, 1.56, .64, 1),
+                margin .22s cubic-bezier(.34, 1.56, .64, 1),
+                background-color .22s ease, border-color .22s ease;
+  }
+  /* Over something clickable it opens up and fills. */
+  .fx-cursor-ring.hot {
+    inline-size: 44px; block-size: 44px;
+    margin: -22px 0 0 -22px;
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .fx-cursor-ring.down {
+    inline-size: 20px; block-size: 20px;
+    margin: -10px 0 0 -10px;
+    background: var(--accent-soft);
+  }
+
+  /* ---------------- ripple ---------------- */
+
+  .fx-ink {
+    position: absolute;
+    z-index: -1;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .22;
+    pointer-events: none;
+    transform: scale(0);
+    animation: fxInk .55s cubic-bezier(.25, .8, .3, 1) forwards;
+  }
+  @keyframes fxInk {
+    to { transform: scale(1); opacity: 0; }
+  }
+
+  /* ---------------- entrances ---------------- */
+
+  .fx-in {
+    animation: fxIn .42s cubic-bezier(.22, 1, .36, 1) both;
+    animation-delay: var(--fx-delay, 0ms);
+  }
+  @keyframes fxIn {
+    from { opacity: 0; transform: translateY(14px) scale(.985); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* ---------------- sound toggle ---------------- */
+
+  [data-sound-toggle] .fx-mute { opacity: 0; transition: opacity .2s ease; }
+  [data-sound-toggle] .fx-wave-1,
+  [data-sound-toggle] .fx-wave-2 { transition: opacity .2s ease; transform-origin: 11px 12px; }
+
+  :root[data-sound="off"] [data-sound-toggle] .fx-wave-1,
+  :root[data-sound="off"] [data-sound-toggle] .fx-wave-2 { opacity: 0; }
+  :root[data-sound="off"] [data-sound-toggle] .fx-mute   { opacity: 1; }
+
+  :root[data-sound="on"] [data-sound-toggle] { color: var(--accent); border-color: var(--accent-line); }
+  /* One short pulse out of the waves when it is switched on. */
+  :root[data-sound="on"] [data-sound-toggle] .fx-wave-2 { animation: fxWave 1.8s ease-in-out infinite; }
+  @keyframes fxWave {
+    0%, 70%, 100% { opacity: 1; }
+    35%           { opacity: .35; }
+  }
+
+  /* ---------------- shared polish ----------------
+     Small, consistent responses to being touched. Applied by class so
+     both portals inherit the same feel. */
+
+  .btn, .btn-sm, .icon-btn, .opt, .chip, .pick, .filter-tab, .close-btn,
+  .appbar-tab, .exam-card {
+    overflow: hidden;                       /* clips the ripple */
+    isolation: isolate;                     /* so the ink can sit behind */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn-primary:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn-primary:active:not(:disabled) { transform: translateY(0) scale(.97); }
+
+  /* A card the whole of which is a control should say so on hover. */
+  .card.liftable { cursor: pointer; }
+
+  /* The lock the modal layer sets, so the page behind cannot be scrolled
+     out from under a dialog. */
+  :root[data-modal="open"] body { overflow: hidden; }
+
+  /* ---------------- toasts ----------------
+     Bottom centre, above the app bar and clear of the home indicator. */
+
+  .fx-toasts {
+    position: fixed;
+    inset-block-end: calc(78px + env(safe-area-inset-bottom, 0px));
+    inset-inline: 0;
+    z-index: 120;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding-inline: 16px;
+    pointer-events: none;
+  }
+
+  .fx-toast {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    inline-size: min(100%, 440px);
+    padding: 13px 12px 13px 16px;
+    border-radius: var(--r-md, 14px);
+    border: 1px solid var(--edge);
+    border-inline-start: 3px solid var(--accent);
+    background: var(--glass-hi);
+    backdrop-filter: blur(var(--blur, 16px)) saturate(1.5);
+    -webkit-backdrop-filter: blur(var(--blur, 16px)) saturate(1.5);
+    box-shadow: var(--shadow);
+    color: var(--fg);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    pointer-events: auto;
+    animation: fxToastIn .3s cubic-bezier(.34, 1.56, .64, 1) both;
+  }
+  .fx-toast.ok  { border-inline-start-color: var(--ok); }
+  .fx-toast.bad { border-inline-start-color: var(--bad); }
+  .fx-toast > span { flex: 1; overflow-wrap: anywhere; white-space: pre-line; }
+  .fx-toast.out { animation: fxToastOut .22s ease forwards; }
+
+  .fx-toast-x {
+    flex: 0 0 auto;
+    inline-size: 30px; block-size: 30px;
+    display: grid; place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--fg-3);
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+  .fx-toast-x:hover { color: var(--fg); background: var(--sunk); }
+
+  @keyframes fxToastIn  { from { opacity: 0; transform: translateY(16px) scale(.96); } }
+  @keyframes fxToastOut { to   { opacity: 0; transform: translateY(8px) scale(.98); } }
+
+  /* ---------------- state flashes ----------------
+     A shake on a refusal and a pulse on a success, so the outcome is
+     carried by movement as well as by colour. */
+
+  .fx-shake { animation: fxShake .4s cubic-bezier(.36, .07, .19, .97) both; }
+  @keyframes fxShake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+  }
+
+  .fx-pulse { animation: fxPulse .5s cubic-bezier(.34, 1.56, .64, 1) both; }
+  @keyframes fxPulse {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.04); }
+    100% { transform: scale(1); }
+  }
+}
+
+/* ==================================================================
+   fx-a11y — last layer, so a stated preference wins over any effect
+   declared above it, in either portal's stylesheet or in this one.
+   ================================================================== */
+
+@layer fx-a11y {
+
+  /* A single, consistent focus ring everywhere. Both portals had their
+     own, and controls built at run time had none at all. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--focus, currentColor);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  /* Windows high-contrast strips author colours; the ring must survive. */
+  @media (forced-colors: active) {
+    :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+      outline: 3px solid Highlight;
+    }
+    .opt[aria-checked="true"],
+    .appbar-tab[aria-current="page"] { forced-color-adjust: none; outline: 2px solid Highlight; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fx-cursor, .fx-cursor-ring, .fx-ambient { display: none !important; }
+    .fx-ink { display: none !important; }
+    .fx-in, .fx-shake, .fx-pulse { animation: none !important; }
+    .fx-toast { animation: none !important; }
+    .skip-link { transition: none; }
+    .btn-primary:hover:not(:disabled) { transform: none; }
+  }
+
+  /* The mote field is the one continuous cost on the page. Drop it where
+     the CSS already gives up blur — same devices, same reason. */
+  @media (pointer: coarse) and (width < 480px) {
+    .fx-ambient { display: none; }
+  }
+}
