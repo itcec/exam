@@ -11,7 +11,23 @@ import {
   onAuthStateChanged, setPersistence, browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
-import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN } from './config.js';
+import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig } from './config.js';
+
+/* ---- config guard (runs before Firebase) ---- */
+(function () {
+  const err = validateConfig();
+  if (!err) return;
+  // Students see a generic message — no technical hint about what's missing.
+  document.getElementById('fatalTitle').textContent = 'The exam site is unavailable';
+  document.getElementById('fatalText').textContent =
+    'The exam site is missing an important setting. ' +
+    'Please ask your teacher about this matter.';
+  document.querySelectorAll('section').forEach(s => { s.hidden = true; });
+  document.getElementById('scFatal').hidden = false;
+  // The specific code only appears in DevTools so a teacher can self-diagnose.
+  console.error('[Proctor] config error: ' + err + ' — fill in docs/config.js');
+  throw new Error(err);
+}());
 
 const $ = id => document.getElementById(id);
 
@@ -67,6 +83,21 @@ function fatal(title, msg) {
   show('scFatal');
 }
 $('btnReload').onclick = () => location.reload();
+
+/* ---------------- configuration gate ----------------
+
+   A half-filled config.js is a teacher's mistake, not a student's, so the
+   student is told only that the site is not ready and who to ask. The code
+   naming the missing value goes to the developer console, where the teacher
+   can find it and nobody else will look. */
+
+const configError = validateConfig();
+if (configError) {
+  fatal('The exam site is unavailable',
+    'The exam site is missing an important setting. ' +
+    'Please ask your teacher about this matter.');
+  throw new Error(configError);   // console only — never shown on screen
+}
 
 /* ---------------- api ----------------
 
@@ -687,7 +718,7 @@ function render() {
     const hint = document.createElement('p');
     hint.className = 'muted small';
     hint.textContent = q.expect
-      ? `List ${q.expect} — one per line. Order does not matter.`
+      ? `List ${q.expect} (${q.expect} pt${q.expect === 1 ? '' : 's'}) — one per line. Order does not matter.`
       : 'One per line. Order does not matter.';
 
     const ta = document.createElement('textarea');
@@ -811,10 +842,30 @@ function readAnswer() {
   return f ? f.value.trim() : '';
 }
 
+let _unansweredConfirmed = false;
+
 function answer() {
   const q = current();
   if (!q) return;
-  S.answers[q.no] = readAnswer();
+  const val = readAnswer();
+  const isBlank = (val === '' || val == null || (typeof val === 'object' && Object.keys(val).length === 0));
+
+  if (isBlank && !_unansweredConfirmed) {
+    // Show unanswered alert modal
+    $('blankConfirmModal').hidden = false;
+    $('btnStayAndAnswer').onclick = () => {
+      $('blankConfirmModal').hidden = true;
+    };
+    $('btnSkipAnyway').onclick = () => {
+      $('blankConfirmModal').hidden = true;
+      _unansweredConfirmed = true;
+      answer();
+    };
+    return;
+  }
+
+  _unansweredConfirmed = false;
+  S.answers[q.no] = val;
   S.perQ[q.no] = Math.round((Date.now() - S.qStarted) / 1000);
   S.pos++;
   step();
@@ -908,6 +959,9 @@ function autosave() {
 /* ---------------- submit ---------------- */
 
 function finish() {
+  // A timer can run out while the student is on another tab. Close that
+  // event now, or the last focus loss is submitted with no end time.
+  closeAway();
   stopQuestion();
   if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
   if (S.globalTick) { clearInterval(S.globalTick); S.globalTick = null; }
@@ -941,7 +995,11 @@ async function send() {
 }
 $('btnRetry').onclick = send;
 
+let _lastDoneResult = null;
+let _activeFilter = 'all';
+
 function done(r) {
+  _lastDoneResult = r;
   $('doneTitle').textContent = 'Exam submitted';
   const mode = r.revealMode || 'none';
 
@@ -957,64 +1015,208 @@ function done(r) {
     $('doneNote').textContent = bits.join('  ·  ');
   }
 
-  const wrap = $('reviewWrap');
-  wrap.replaceChildren();
-  const revCard = $('reviewCard');
-  if (revCard) revCard.hidden = !(r.detail && r.detail.length);
-  if (r.detail?.length) {
-    const head = document.createElement('p');
-    head.className = 'eyebrow';
-    head.textContent = mode === 'full' ? 'Every question' : 'What you missed';
-    const list = document.createElement('div');
-    list.className = 'review';
+  const details = r.detail || [];
+  const correctCount = details.filter(d => d.correct).length;
+  const blankCount = details.filter(d => !d.given || d.given === '(blank)').length;
+  const wrongCount = details.length - correctCount - blankCount;
 
-    for (const d of r.detail) {
-      const part = !d.correct && d.credit > 0;
-      const box = document.createElement('div');
-      box.className = 'rev' + (d.correct ? ' ok' : part ? ' part' : '');
+  if ($('cntAll')) $('cntAll').textContent = details.length;
+  if ($('cntCorrect')) $('cntCorrect').textContent = correctCount;
+  if ($('cntWrong')) $('cntWrong').textContent = Math.max(0, wrongCount);
+  if ($('cntBlank')) $('cntBlank').textContent = blankCount;
 
-      const q = document.createElement('div');
-      q.className = 'q';
-      q.textContent = `${d.no}. ${d.question}`;
-      if (d.detail) {
-        const got = document.createElement('span');
-        got.className = 'part-tag';
-        got.textContent = d.detail;
-        q.append(' ', got);
-      }
-
-      const a = document.createElement('div');
-      a.className = 'a';
-      a.append('Your answer: ');
-      const ab = document.createElement('b');
-      ab.textContent = d.given || '(blank)';
-      a.append(ab);
-
-      box.append(q, a);
-
-      if (d.expected != null) {
-        const e = document.createElement('div');
-        e.className = 'a';
-        e.append('Correct answer: ');
-        const eb = document.createElement('b');
-        eb.textContent = d.expected;
-        e.append(eb);
-        box.append(e);
-      }
-      list.append(box);
-    }
-    wrap.append(head, list);
-  }
+  renderReviewList('all');
   show('scDone');
 }
 
-/* ---------------- behaviour logging (recorded, never punished) ---------------- */
+function renderReviewList(filter) {
+  _activeFilter = filter;
+  document.querySelectorAll('#reviewFilterTabs .filter-tab').forEach(btn => {
+    const active = btn.dataset.filter === filter;
+    btn.classList.toggle('on', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
 
-const flag = kind => {
-  if (S.token && !S.finished) S.flags.push(kind + '@' + new Date().toISOString().slice(11, 19));
-};
-document.addEventListener('visibilitychange', () => { if (document.hidden) flag('left-page'); });
-addEventListener('blur', () => flag('lost-focus'));
+  const r = _lastDoneResult;
+  const wrap = $('reviewWrap');
+  wrap.replaceChildren();
+  const revCard = $('reviewCard');
+  if (!r || !r.detail || !r.detail.length) {
+    if (revCard) revCard.hidden = true;
+    return;
+  }
+  if (revCard) revCard.hidden = false;
+
+  let items = r.detail;
+  if (filter === 'correct') items = items.filter(d => d.correct);
+  else if (filter === 'wrong') items = items.filter(d => !d.correct && d.given && d.given !== '(blank)');
+  else if (filter === 'blank') items = items.filter(d => !d.given || d.given === '(blank)');
+
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted small';
+    empty.style.padding = '12px 0';
+    empty.textContent = `No ${filter} questions in this review.`;
+    wrap.append(empty);
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'review';
+
+  for (const d of items) {
+    const isBlank = !d.given || d.given === '(blank)';
+    const part = !d.correct && d.credit > 0;
+    const box = document.createElement('div');
+    box.className = 'rev' + (d.correct ? ' ok' : isBlank ? '' : part ? ' part' : '');
+
+    const q = document.createElement('div');
+    q.className = 'q';
+    q.textContent = `${d.no}. ${d.question}`;
+    if (d.detail) {
+      const got = document.createElement('span');
+      got.className = 'part-tag';
+      got.textContent = d.detail;
+      q.append(' ', got);
+    }
+
+    const a = document.createElement('div');
+    a.className = 'a';
+    a.append('Your answer: ');
+    const ab = document.createElement('b');
+    ab.textContent = d.given || '(blank)';
+    a.append(ab);
+
+    box.append(q, a);
+
+    if (d.expected != null) {
+      const e = document.createElement('div');
+      e.className = 'a';
+      e.append('Correct answer: ');
+      const eb = document.createElement('b');
+      eb.textContent = d.expected;
+      e.append(eb);
+      box.append(e);
+    }
+    list.append(box);
+  }
+  wrap.append(list);
+}
+
+document.querySelectorAll('#reviewFilterTabs .filter-tab').forEach(btn => {
+  btn.onclick = () => renderReviewList(btn.dataset.filter);
+});
+
+/* ---------------- strict behaviour monitoring & warning modal ----------------
+
+   Strict tab-switch policy ported from v1:
+   - Warning 1 & 2: Shows behavior warning modal with 20s auto-resume countdown.
+   - Warning 3: Submits the exam automatically and ends the session.
+   - Every event records exact timestamp evidence for teacher review. */
+
+let awayAt = null;
+let behaviorWarnings = 0;
+let warningCountdownRemaining = 20;
+let warningCountdownInterval = null;
+let violationLock = false;
+
+/** Format a timestamp as a short local time string, e.g. "10:14:32 AM" */
+function fmtTime(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function leftPage() {
+  if (awayAt || !S.token || S.finished) return;
+  awayAt = Date.now();
+}
+
+/** Closes the open focus-loss event, if there is one. */
+function closeAway() {
+  if (!awayAt) return;
+  const back = Date.now();
+  const gapSec = Math.round((back - awayAt) / 1000);
+  const gapLabel = gapSec >= 60
+    ? Math.floor(gapSec / 60) + 'm ' + (gapSec % 60) + 's'
+    : gapSec + 's';
+  S.flags.push({
+    type: 'focus-loss',
+    leftAt:      new Date(awayAt).toISOString(),
+    returnedAt:  new Date(back).toISOString(),
+    gapSeconds:  gapSec,
+    label: 'Left ' + fmtTime(awayAt) + ' · Returned ' + fmtTime(back) + ' · Away ' + gapLabel
+  });
+  awayAt = null;
+}
+
+function handleViolation(msg) {
+  if (!S.token || S.finished || violationLock) return;
+  violationLock = true;
+  leftPage();
+
+  behaviorWarnings++;
+
+  const wModal = $('warningModal');
+  const wText = $('warningModalText');
+  const wCountdown = $('warningModalCountdown');
+
+  if (behaviorWarnings <= 2) {
+    warningCountdownRemaining = 20;
+    if (wText) {
+      wText.textContent = msg || `Behavior warning ${behaviorWarnings}/2: You switched away or minimized the exam tab. Further violations will automatically submit your exam.`;
+    }
+    if (wCountdown) wCountdown.textContent = `Auto-resuming in ${warningCountdownRemaining}s…`;
+    if (wModal) wModal.hidden = false;
+
+    if (warningCountdownInterval) clearInterval(warningCountdownInterval);
+    warningCountdownInterval = setInterval(() => {
+      warningCountdownRemaining--;
+      if (wCountdown) wCountdown.textContent = `Auto-resuming in ${warningCountdownRemaining}s…`;
+      if (warningCountdownRemaining <= 0) {
+        clearInterval(warningCountdownInterval);
+        warningCountdownInterval = null;
+        if (wModal) wModal.hidden = true;
+        closeAway();
+        violationLock = false;
+      }
+    }, 1000);
+
+    $('btnResumeExam').onclick = () => {
+      if (warningCountdownInterval) { clearInterval(warningCountdownInterval); warningCountdownInterval = null; }
+      if (wModal) wModal.hidden = true;
+      closeAway();
+      violationLock = false;
+    };
+  } else {
+    // 3rd violation -> auto submit
+    if (wText) wText.textContent = 'Third violation detected: You have repeatedly switched away from the exam. Your exam is now being submitted.';
+    if (wCountdown) wCountdown.textContent = 'Submitting…';
+    if (wModal) wModal.hidden = false;
+    setTimeout(() => {
+      if (wModal) wModal.hidden = true;
+      closeAway();
+      violationLock = false;
+      finish();
+    }, 2200);
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) handleViolation();
+  else closeAway();
+});
+addEventListener('blur', () => {
+  if (document.hasFocus && !document.hasFocus()) handleViolation();
+});
+addEventListener('focus', closeAway);
+
+// Disable right click context menu during active exam
+document.addEventListener('contextmenu', e => {
+  if (S.token && !S.finished) {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+  }
+});
 
 /* ---------------- mobile keyboard ----------------
    Nothing is position:fixed, so the keyboard cannot cover a control. This
@@ -1031,7 +1233,100 @@ document.addEventListener('focusin', e => {
   if (e.target?.tagName === 'INPUT') setTimeout(() => nudge(e.target), 180);
 });
 
-/* ---------------- leaving the page ---------------- */
+/* ---- app bar navigation ----
+
+   Map each logical "tab" to the set of screen IDs it owns.
+   Screens not listed here hide the bar entirely (loading, error, onboarding). */
+
+const TAB_SCREENS = {
+  home:    ['scStart'],
+  exams:   ['scBrief', 'scResume', 'scSending', 'scDone'],
+  history: ['scHistory'],      // future dedicated screen; for now same as home
+  account: ['scRegister', 'scPick', 'scNotListed']
+};
+
+// Reverse map: screenId → tab name
+const SCREEN_TAB = {};
+for (const [tab, screens] of Object.entries(TAB_SCREENS)) {
+  for (const sc of screens) SCREEN_TAB[sc] = tab;
+}
+
+// Screens where the bar should be completely hidden
+const BAR_HIDDEN_SCREENS = new Set(['scLoading', 'scSignIn', 'scFatal', 'scExam']);
+
+/**
+ * Set the active tab button. Pass null to deactivate all (bar hidden).
+ */
+function setTab(name) {
+  document.querySelectorAll('.appbar-tab').forEach(btn => {
+    btn.setAttribute('aria-selected', btn.dataset.tab === name ? 'true' : 'false');
+  });
+}
+
+/**
+ * Wrap the existing show() so the bar and active tab update on every
+ * screen transition automatically.
+ */
+const _originalShow = show;   // eslint-disable-line no-undef
+// Reassign show in the module scope so all existing callers see the wrapper.
+// (show is already defined earlier in this file as a regular function.)
+window._pShowBar = function pShowBar(id) {
+  _originalShow(id);          // run the original screen flip
+  const barEl = $('appBar');
+  if (!barEl) return;
+
+  if (BAR_HIDDEN_SCREENS.has(id)) {
+    barEl.hidden = true;
+    return;
+  }
+
+  barEl.hidden = false;
+  const tab = SCREEN_TAB[id] || null;
+  setTab(tab);
+};
+
+// Tab button click handlers
+document.querySelectorAll('.appbar-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    // Navigate to the first screen owned by this tab
+    const target = TAB_SCREENS[tab]?.[0];
+    if (!target) return;
+    // scHistory: if no dedicated history screen yet, go to scStart
+    const dest = target === 'scHistory' ? 'scStart' : target;
+    window._pShowBar(dest);
+  });
+});
+
+/* ---- iOS keyboard detection ----
+
+   When the software keyboard opens, visualViewport shrinks vertically.
+   We detect this and set data-keyboard on <html> which the CSS uses to
+   slide the app bar off-screen so it can't overlap the focused input. */
+
+if (window.visualViewport) {
+  let keyboardTimer = null;
+  visualViewport.addEventListener('resize', () => {
+    // The keyboard is "open" when viewport height drops more than 25%
+    const keyboardOpen = visualViewport.height < window.innerHeight * 0.75;
+    if (keyboardOpen) {
+      document.documentElement.dataset.keyboard = 'open';
+      if (keyboardTimer) clearTimeout(keyboardTimer);
+    } else {
+      // Small delay avoids a flash when the keyboard is still animating out
+      keyboardTimer = setTimeout(() => {
+        delete document.documentElement.dataset.keyboard;
+      }, 80);
+    }
+    // Also nudge the focused element into view (pre-existing behaviour,
+    // moved here to share the single resize listener)
+    const active = document.activeElement;
+    if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA') {
+      setTimeout(() => active.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+    }
+  });
+}
+
 
 addEventListener('beforeunload', e => {
   if (!S.token || S.finished) return;
