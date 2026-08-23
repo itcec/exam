@@ -735,6 +735,38 @@ $('resultsExamPicker').onchange = async function () {
       <div><p class="eyebrow">Flagged</p><p class="stat-num-sm">${r.flagged ?? '—'}</p></div>
       <div><p class="eyebrow">Average</p><p class="stat-num-sm">${r.average != null ? r.average + '/' + r.total : '—'}</p></div>
     </div>`;
+
+    if (r.rows?.length && r.total > 0) {
+      const valid = r.rows.filter(row => row.score != null);
+      if (valid.length) {
+        const hiCount = valid.filter(row => (row.score / r.total) >= 0.80).length;
+        const midCount = valid.filter(row => (row.score / r.total) >= 0.50 && (row.score / r.total) < 0.80).length;
+        const lowCount = valid.filter(row => (row.score / r.total) < 0.50).length;
+        const totalValid = valid.length;
+
+        const hiPct = Math.round((hiCount / totalValid) * 100);
+        const midPct = Math.round((midCount / totalValid) * 100);
+        const lowPct = Math.max(0, 100 - hiPct - midPct);
+
+        const spectrum = document.createElement('div');
+        spectrum.className = 'spectrum-wrap';
+        spectrum.innerHTML = `
+          <p class="eyebrow" style="margin-bottom:0;margin-top:12px;">Score Distribution</p>
+          <div class="spectrum-bar">
+            <div class="spectrum-seg hi" style="width:${hiPct}%;" title="High (>=80%): ${hiCount}"></div>
+            <div class="spectrum-seg mid" style="width:${midPct}%;" title="Pass (50-79%): ${midCount}"></div>
+            <div class="spectrum-seg low" style="width:${lowPct}%;" title="Review (<50%): ${lowCount}"></div>
+          </div>
+          <div class="spectrum-legend">
+            <span><b style="background:var(--ok);"></b> High (≥80%): ${hiCount}</span>
+            <span><b style="background:var(--accent);"></b> Pass (50-79%): ${midCount}</span>
+            <span><b style="background:var(--bad);"></b> Review (&lt;50%): ${lowCount}</span>
+          </div>
+        `;
+        summary.append(spectrum);
+      }
+    }
+
     wrap.append(summary);
     if (r.rows?.length) {
       const tCard = document.createElement('div');
