@@ -239,8 +239,31 @@
               <option value="per-section">One timer per section (Scroll per section with cinematic transition)</option>
               <option value="per-question">One timer per question (Step 1 by 1 with question timer)</option>
             </select>
-            <p id="tTimerModeHint" class="muted small" style="margin-top:4px;">
-              Questions will be delivered continuously on one page. Total exam duration is set in Step 2.
+
+            <!-- Whole Exam Timer Setup -->
+            <div id="tWholeExamTimerRow" style="margin-top:10px;">
+              <label class="lbl" style="font-size:0.75rem;">Total Exam Timer Setup</label>
+              <div class="two" style="max-width:260px;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <input type="number" id="tWholeExamMins" min="0" max="600" value="30" class="field" style="text-align:center; font-weight:700;">
+                  <span class="muted small" style="font-weight:600;">mins</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <input type="number" id="tWholeExamSecs" min="0" max="59" value="0" class="field" style="text-align:center; font-weight:700;">
+                  <span class="muted small" style="font-weight:600;">secs</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Exam Order Selection -->
+            <div id="tExamOrderRow" style="margin-top:10px;">
+              <label class="lbl" for="tExamOrderSelect" style="font-size:0.75rem;">Question Order</label>
+              <select class="field" id="tExamOrderSelect" style="font-weight:600;">
+              </select>
+            </div>
+
+            <p id="tTimerModeHint" class="muted small" style="margin-top:8px;">
+              Questions will be delivered continuously on one page. Total exam duration is set above.
             </p>
           </div>
 
