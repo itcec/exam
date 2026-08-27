@@ -897,24 +897,103 @@ function builderClock(k) {
   return m ? m + 'm ' + (s ? s + 's' : '') : s + 's';
 }
 
+function updateBuilderOrderOptions(mode) {
+  const sel = $('tExamOrderSelect');
+  const row = $('tExamOrderRow');
+  const timerRow = $('tWholeExamTimerRow');
+  if (!sel || !row || !timerRow) return;
+
+  const cur = sel.value;
+  if (mode === 'whole-exam') {
+    timerRow.hidden = false;
+    row.hidden = false;
+    sel.innerHTML = `
+      <option value="shuffled">Shuffled all</option>
+      <option value="shuffle-within-type">Shuffled within each type</option>
+      <option value="logical">Logical — same order</option>
+    `;
+    if (cur) sel.value = cur;
+  } else if (mode === 'per-section') {
+    timerRow.hidden = true;
+    row.hidden = true;
+  } else if (mode === 'per-question') {
+    timerRow.hidden = true;
+    row.hidden = false;
+    sel.innerHTML = `
+      <option value="shuffle-within-type">Shuffled inside section but cinematic to transition after each section</option>
+      <option value="shuffled">Shuffled all</option>
+      <option value="logical">Order (same order as below)</option>
+    `;
+    if (cur && ['shuffle-within-type', 'shuffled', 'logical'].includes(cur)) sel.value = cur;
+  }
+}
+
 function buildBuilderStep1() {
   const host = $('tTypeList');
   if (!host) return;
   host.replaceChildren();
   const mode = currentBuilderTimerMode();
+  updateBuilderOrderOptions(mode);
 
   BUILDER_TYPES.forEach(t => {
     const p = builderPlan[t.key];
     const wrap = document.createElement('div');
     wrap.className = 'type' + (p.on ? ' on' : '');
     const timerSum = mode === 'whole-exam' ? '' : (mode === 'per-section' ? ' · Sec: ' + builderClock(t.key) : ' · ' + builderClock(t.key) + '/q');
-    const timerInputsHtml = mode === 'whole-exam' ? '' :
-      `<div class="two" style="margin-bottom:8px;">
-        <div class="fld"><span class="lbl-s">${mode === 'per-section' ? 'Section Mins' : 'Minutes/Q'}</span>
-          <input class="field" type="number" min="0" max="60" value="${p.mins}" data-f="mins" data-k="${t.key}"></div>
-        <div class="fld"><span class="lbl-s">${mode === 'per-section' ? 'Section Secs' : 'Seconds/Q'}</span>
-          <input class="field" type="number" min="0" max="59" value="${p.secs}" data-f="secs" data-k="${t.key}"></div>
-      </div>`;
+
+    let bodyHtml = '';
+    if (mode === 'whole-exam') {
+      bodyHtml = `
+        <div class="two">
+          <div class="fld"><span class="lbl-s">How many questions</span>
+            <input class="field" type="number" min="1" max="100" value="${p.count}" data-f="count" data-k="${t.key}"></div>
+          <div class="fld"><span class="lbl-s">Difficulty</span>
+            <select class="field" data-f="level" data-k="${t.key}">
+              <option value="easy">Easy</option>
+              <option value="average">Average</option>
+              <option value="hard">Hard</option>
+            </select></div>
+        </div>
+      `;
+    } else if (mode === 'per-section') {
+      bodyHtml = `
+        <div class="two" style="margin-bottom:8px;">
+          <div class="fld"><span class="lbl-s">Section Mins</span>
+            <input class="field" type="number" min="0" max="60" value="${p.mins}" data-f="mins" data-k="${t.key}"></div>
+          <div class="fld"><span class="lbl-s">Section Secs</span>
+            <input class="field" type="number" min="0" max="59" value="${p.secs}" data-f="secs" data-k="${t.key}"></div>
+        </div>
+        <div class="two">
+          <div class="fld"><span class="lbl-s">How many questions</span>
+            <input class="field" type="number" min="1" max="100" value="${p.count}" data-f="count" data-k="${t.key}"></div>
+          <div class="fld"><span class="lbl-s">Difficulty</span>
+            <select class="field" data-f="level" data-k="${t.key}">
+              <option value="easy">Easy</option>
+              <option value="average">Average</option>
+              <option value="hard">Hard</option>
+            </select></div>
+        </div>
+      `;
+    } else {
+      bodyHtml = `
+        <div class="two" style="margin-bottom:8px;">
+          <div class="fld"><span class="lbl-s">Minutes/Q</span>
+            <input class="field" type="number" min="0" max="60" value="${p.mins}" data-f="mins" data-k="${t.key}"></div>
+          <div class="fld"><span class="lbl-s">Seconds/Q</span>
+            <input class="field" type="number" min="0" max="59" value="${p.secs}" data-f="secs" data-k="${t.key}"></div>
+        </div>
+        <div class="two">
+          <div class="fld"><span class="lbl-s">How many questions</span>
+            <input class="field" type="number" min="1" max="100" value="${p.count}" data-f="count" data-k="${t.key}"></div>
+          <div class="fld"><span class="lbl-s">Difficulty</span>
+            <select class="field" data-f="level" data-k="${t.key}">
+              <option value="easy">Easy</option>
+              <option value="average">Average</option>
+              <option value="hard">Hard</option>
+            </select></div>
+        </div>
+      `;
+    }
 
     wrap.innerHTML = `
       <label class="head">
@@ -923,30 +1002,13 @@ function buildBuilderStep1() {
         <span class="sum">${p.on ? p.count + timerSum : 'off'}</span>
       </label>
       <div class="body" ${p.on ? '' : 'hidden'}>
-        <div class="fld"><span class="lbl-s">How many questions</span>
-          <input class="field" type="number" min="1" max="100" value="${p.count}" data-f="count" data-k="${t.key}"></div>
-        ${timerInputsHtml}
-        <div class="two">
-          <div class="fld"><span class="lbl-s">Difficulty</span>
-            <select class="field" data-f="level" data-k="${t.key}">
-              <option value="easy">Easy</option>
-              <option value="average">Average</option>
-              <option value="hard">Hard</option>
-            </select></div>
-          <div class="fld"><span class="lbl-s">Order</span>
-            <select class="field" data-f="order" data-k="${t.key}">
-              <option value="shuffled">Shuffled</option>
-              <option value="logical">Logical</option>
-            </select></div>
-        </div>
+        ${bodyHtml}
       </div>
     `;
     host.appendChild(wrap);
 
     const selLvl = wrap.querySelector('select[data-f=level]');
     if (selLvl) selLvl.value = p.level;
-    const selOrd = wrap.querySelector('select[data-f=order]');
-    if (selOrd) selOrd.value = p.order;
   });
 
   refreshBuilderTally();
@@ -1003,7 +1065,7 @@ if ($('tExamTimerModeSelect')) {
   $('tExamTimerModeSelect').addEventListener('change', () => {
     const mode = currentBuilderTimerMode();
     const hints = {
-      'whole-exam': 'Questions will be delivered continuously on one page. Total exam duration is set in Step 2.',
+      'whole-exam': 'Questions will be delivered continuously on one page. Total exam duration is set above.',
       'per-section': 'Questions are delivered section by section. Each section gets its own timer and a dramatic transition screen.',
       'per-question': 'Questions are delivered 1 by 1 with an individual countdown timer per question.'
     };
@@ -1446,12 +1508,25 @@ if ($('btnCloseAddQuestions')) {
 }
 
 /* Submit Questions */
+if ($('tWholeExamMins')) {
+  $('tWholeExamMins').addEventListener('input', () => {
+    if ($('tWholeExamMinsInput')) $('tWholeExamMinsInput').value = $('tWholeExamMins').value;
+  });
+}
+if ($('tWholeExamMinsInput')) {
+  $('tWholeExamMinsInput').addEventListener('input', () => {
+    if ($('tWholeExamMins')) $('tWholeExamMins').value = $('tWholeExamMinsInput').value;
+  });
+}
+
 if ($('btnTAddAll')) {
   $('btnTAddAll').onclick = async () => {
     const paste = collectAllBuilderQuestions();
     const mode = $('tAddQMode') ? $('tAddQMode').value : 'append';
     const timerMode = currentBuilderTimerMode();
-    const wholeMins = $('tWholeExamMinsInput') ? parseInt($('tWholeExamMinsInput').value, 10) || 30 : 30;
+    const wholeMins = ($('tWholeExamMins') && parseInt($('tWholeExamMins').value, 10)) ||
+                      ($('tWholeExamMinsInput') && parseInt($('tWholeExamMinsInput').value, 10)) || 30;
+    const orderVal = $('tExamOrderSelect') ? $('tExamOrderSelect').value : 'shuffled';
 
     const btn = $('btnTAddAll');
     btn.disabled = true; btn.textContent = 'Importing…';
@@ -1462,7 +1537,8 @@ if ($('btnTAddAll')) {
         paste,
         mode,
         timerMode,
-        wholeExamMins: wholeMins
+        wholeExamMins: wholeMins,
+        order: orderVal
       });
       if (!r.ok) { toast(r.message || 'Import failed', 'bad'); return; }
       closeModal($('addQuestionsModal'));
