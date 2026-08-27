@@ -71,6 +71,12 @@ if ($('menuSyncAll')) {
     syncAllData();
   };
 }
+if ($('menuManageAccess')) {
+  $('menuManageAccess').onclick = () => {
+    $('teacherMenuDropdown').hidden = true;
+    openManageAccessModal();
+  };
+}
 if ($('menuTheme')) {
   $('menuTheme').onclick = () => {
     $('teacherMenuDropdown').hidden = true;
@@ -450,6 +456,7 @@ onAuthStateChanged(auth, async user => {
     $('topRole').textContent = `${rolePrefix} (${r.email || user.email})`;
     $('topRole').title = r.isAdmin ? 'Administrator (Full Access)' : 'Teacher (My Exams & Students)';
     if ($('menuContainer')) $('menuContainer').hidden = false;
+    if ($('menuManageAccess')) $('menuManageAccess').hidden = !r.isAdmin;
 
     // Cache the whole workbook snapshot in memory and sessionStorage
     CACHE.isAdmin   = r.isAdmin || false;
@@ -2001,6 +2008,242 @@ function exportCSV(rows, code) {
 
 function esc(s) {
   return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+/* ================================================================
+   Teacher Portal Access & Roles Modal (Admin Only)
+   ================================================================ */
+
+let _accessEmails = [];
+
+function isValidEmail(e) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim());
+}
+
+async function openManageAccessModal() {
+  if (!CACHE.isAdmin) {
+    toast('Only administrators can manage portal access.', 'bad');
+    return;
+  }
+  _accessEmails = [];
+  openModal($('manageAccessModal'), $('btnAddAccessEmail'));
+  if ($('tAccessMsg')) $('tAccessMsg').innerHTML = '';
+  if ($('tAccessList')) $('tAccessList').innerHTML = '<p class="muted small center" style="padding:12px;">Loading access list…</p>';
+
+  try {
+    const r = await api('teacherListAccounts', { idToken: await idToken() });
+    if (!r.ok) {
+      if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">${esc(r.message)}</div>`;
+      return;
+    }
+    _accessEmails = Array.isArray(r.accounts) ? r.accounts.slice() : [];
+    renderAccessList();
+  } catch (err) {
+    if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">${esc(err.message || err)}</div>`;
+  }
+}
+
+function updateAccessTally() {
+  const valid = _accessEmails.filter(e => e.trim().length > 0);
+  if ($('tAccessTotalChip')) {
+    $('tAccessTotalChip').innerHTML = `Configured: <b>${valid.length}</b>`;
+  }
+  if ($('tAccessAdminChip') && $('tAccessAdminEmail')) {
+    if (valid.length > 0) {
+      $('tAccessAdminChip').hidden = false;
+      $('tAccessAdminEmail').textContent = valid[0];
+    } else {
+      $('tAccessAdminChip').hidden = true;
+    }
+  }
+}
+
+function renderAccessList() {
+  const container = $('tAccessList');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (_accessEmails.length === 0) {
+    container.innerHTML = `
+      <div style="padding:16px;text-align:center;border:1px dashed var(--edge);border-radius:6px;background:var(--glass);">
+        <p class="muted small" style="margin:0 0 4px;"><b>No accounts configured yet</b></p>
+        <p class="muted small" style="margin:0;font-size:0.75rem;">Click <b>+ Add Teacher Email</b> or use <b>Bulk Add</b> to grant access.</p>
+      </div>`;
+    updateAccessTally();
+    return;
+  }
+
+  _accessEmails.forEach((email, index) => {
+    const isAdmin = (index === 0);
+    const row = document.createElement('div');
+    row.className = 'account-row' + (isAdmin ? ' is-admin' : '');
+
+    const roleTagHtml = isAdmin
+      ? '<span class="role-tag admin" title="System Administrator">👑 Admin</span>'
+      : '<span class="role-tag teacher" title="Teacher (Own exams & students)">👨‍🏫 Teacher</span>';
+
+    let actionsHtml = '';
+    if (!isAdmin) {
+      actionsHtml += `<button type="button" class="btn-make-admin" data-action="make-admin" data-index="${index}" title="Promote to Administrator">👑 Make Admin</button>`;
+    }
+    if (index > 1) {
+      actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="move-up" data-index="${index}" title="Move Up" style="padding:2px 6px;font-size:10px;">▲</button>`;
+    }
+    actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="delete" data-index="${index}" title="Remove account" style="color:var(--bad);padding:2px 6px;font-size:11px;">✕</button>`;
+
+    row.innerHTML = `
+      <div class="role-indicator">${roleTagHtml}</div>
+      <div class="email-input-wrapper">
+        <input type="email" class="field mono ${email && !isValidEmail(email) ? 'invalid' : ''}" value="${esc(email)}" placeholder="e.g. ${isAdmin ? 'admin@school.edu' : 'teacher@school.edu'}" data-index="${index}" style="font-size:12px;padding:5px 8px;inline-size:100%;" spellcheck="false">
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">${actionsHtml}</div>`;
+
+    container.appendChild(row);
+  });
+
+  updateAccessTally();
+}
+
+if ($('tAccessList')) {
+  $('tAccessList').addEventListener('input', (e) => {
+    if (e.target && e.target.tagName === 'INPUT') {
+      const idx = parseInt(e.target.getAttribute('data-index'), 10);
+      const val = e.target.value.trim().toLowerCase();
+      _accessEmails[idx] = val;
+      if (val && !isValidEmail(val)) {
+        e.target.classList.add('invalid');
+      } else {
+        e.target.classList.remove('invalid');
+      }
+      updateAccessTally();
+    }
+  });
+
+  $('tAccessList').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const action = btn.getAttribute('data-action');
+    const index = parseInt(btn.getAttribute('data-index'), 10);
+
+    if (action === 'make-admin') {
+      const target = _accessEmails.splice(index, 1)[0];
+      _accessEmails.unshift(target);
+      renderAccessList();
+      toast(`👑 ${target || 'Account'} is now designated as Administrator.`, 'ok');
+    } else if (action === 'delete') {
+      _accessEmails.splice(index, 1);
+      renderAccessList();
+    } else if (action === 'move-up') {
+      if (index > 1) {
+        const tmp = _accessEmails[index - 1];
+        _accessEmails[index - 1] = _accessEmails[index];
+        _accessEmails[index] = tmp;
+        renderAccessList();
+      }
+    }
+  });
+}
+
+if ($('btnAddAccessEmail')) {
+  $('btnAddAccessEmail').onclick = () => {
+    _accessEmails.push('');
+    renderAccessList();
+    const inputs = $('tAccessList').querySelectorAll('input[type="email"]');
+    if (inputs.length > 0) inputs[inputs.length - 1].focus();
+  };
+}
+
+if ($('btnApplyAccessBulk')) {
+  $('btnApplyAccessBulk').onclick = () => {
+    const raw = $('tAccessBulkInput').value;
+    if (!raw.trim()) return;
+
+    const parsed = raw.split(/[\n,;]+/)
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.length > 0);
+
+    if (!parsed.length) return;
+
+    let addedCount = 0;
+    parsed.forEach(e => {
+      if (_accessEmails.indexOf(e) === -1) {
+        _accessEmails.push(e);
+        addedCount++;
+      }
+    });
+
+    $('tAccessBulkInput').value = '';
+    if ($('tAccessBulkBox')) $('tAccessBulkBox').open = false;
+    renderAccessList();
+    toast(`Added ${addedCount} new email(s).`, 'ok');
+  };
+}
+
+if ($('btnClearAllAccess')) {
+  $('btnClearAllAccess').onclick = () => {
+    if (_accessEmails.length === 0) return;
+    if (confirm('Are you sure you want to clear all accounts?\n\nThis will lock the Teacher Portal for everyone.')) {
+      _accessEmails = [];
+      renderAccessList();
+      toast('Cleared all accounts. Click Save to apply.', 'warn');
+    }
+  };
+}
+
+if ($('btnCloseManageAccess')) $('btnCloseManageAccess').onclick = () => closeModal($('manageAccessModal'));
+if ($('btnCancelManageAccess')) $('btnCancelManageAccess').onclick = () => closeModal($('manageAccessModal'));
+
+if ($('btnSaveManageAccess')) {
+  $('btnSaveManageAccess').onclick = async () => {
+    const cleanList = [];
+    const seen = {};
+
+    for (let i = 0; i < _accessEmails.length; i++) {
+      const em = _accessEmails[i].trim().toLowerCase();
+      if (!em) continue;
+
+      if (!isValidEmail(em)) {
+        if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">Invalid email format: "<b>${esc(em)}</b>".</div>`;
+        return;
+      }
+      if (seen[em]) {
+        if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">Duplicate email found: "<b>${esc(em)}</b>".</div>`;
+        return;
+      }
+      seen[em] = true;
+      cleanList.push(em);
+    }
+
+    $('btnSaveManageAccess').disabled = true;
+    $('btnSaveManageAccess').textContent = 'Saving…';
+    if ($('tAccessMsg')) $('tAccessMsg').innerHTML = '<p class="muted small">Saving settings…</p>';
+
+    try {
+      const r = await api('teacherSaveAccounts', {
+        idToken: await idToken(),
+        accounts: cleanList
+      });
+
+      $('btnSaveManageAccess').disabled = false;
+      $('btnSaveManageAccess').textContent = 'Save Access Settings';
+
+      if (!r.ok) {
+        if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">${esc(r.message)}</div>`;
+        return;
+      }
+
+      _accessEmails = Array.isArray(r.accounts) ? r.accounts.slice() : cleanList;
+      renderAccessList();
+      toast('✓ Teacher access settings saved!', 'ok');
+      closeModal($('manageAccessModal'));
+    } catch (err) {
+      $('btnSaveManageAccess').disabled = false;
+      $('btnSaveManageAccess').textContent = 'Save Access Settings';
+      if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">${esc(err.message || err)}</div>`;
+    }
+  };
 }
