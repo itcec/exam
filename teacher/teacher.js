@@ -1320,11 +1320,6 @@ function autoSplitMasterPaste(raw) {
 }
 
 function buildBuilderStep2() {
-  const mode = currentBuilderTimerMode();
-  if ($('tWholeExamTimerCard')) {
-    $('tWholeExamTimerCard').hidden = (mode !== 'whole-exam');
-  }
-
   const mp = buildMasterPrompt();
   if ($('tMasterPromptPreview')) $('tMasterPromptPreview').textContent = mp;
   if ($('btnTCopyMaster')) {
@@ -1515,24 +1510,12 @@ if ($('btnCloseAddQuestions')) {
 }
 
 /* Submit Questions */
-if ($('tWholeExamMins')) {
-  $('tWholeExamMins').addEventListener('input', () => {
-    if ($('tWholeExamMinsInput')) $('tWholeExamMinsInput').value = $('tWholeExamMins').value;
-  });
-}
-if ($('tWholeExamMinsInput')) {
-  $('tWholeExamMinsInput').addEventListener('input', () => {
-    if ($('tWholeExamMins')) $('tWholeExamMins').value = $('tWholeExamMinsInput').value;
-  });
-}
-
 if ($('btnTAddAll')) {
   $('btnTAddAll').onclick = async () => {
     const paste = collectAllBuilderQuestions();
     const mode = $('tAddQMode') ? $('tAddQMode').value : 'append';
     const timerMode = currentBuilderTimerMode();
-    const wholeMins = ($('tWholeExamMins') && parseInt($('tWholeExamMins').value, 10)) ||
-                      ($('tWholeExamMinsInput') && parseInt($('tWholeExamMinsInput').value, 10)) || 30;
+    const wholeMins = ($('tWholeExamMins') && parseInt($('tWholeExamMins').value, 10)) || 30;
     const orderVal = $('tExamOrderSelect') ? $('tExamOrderSelect').value : 'shuffled';
 
     const btn = $('btnTAddAll');
