@@ -125,6 +125,10 @@
           <label class="lbl" for="newExamTitle">Exam Title</label>
           <input class="field" id="newExamTitle" placeholder="e.g. Midterm Examination in Web Development">
         </div>
+        <div>
+          <label class="lbl" for="newExamEdp">EDP Code (Optional — if blank, uses sections)</label>
+          <input class="field mono" id="newExamEdp" placeholder="e.g. 10234">
+        </div>
         <div class="two">
           <div>
             <label class="lbl" for="newExamCourse">Target Course</label>
@@ -352,6 +356,7 @@
     <div class="filter-row">
       <select class="field-sm" id="filterCourse"><option value="">All courses</option></select>
       <select class="field-sm" id="filterSection"><option value="">All sections</option></select>
+      <select class="field-sm" id="filterEdp"><option value="">All EDP codes</option></select>
     </div>
     <div id="studentTable" class="stack"></div>
     <div class="modal-backdrop" id="addStudentsModal" hidden>
@@ -361,6 +366,10 @@
         <div class="two">
           <div><label class="lbl" for="addCourse">Course</label><select class="field" id="addCourse"></select></div>
           <div><label class="lbl" for="addSection">Section</label><select class="field" id="addSection"></select></div>
+        </div>
+        <div style="margin-bottom:8px;">
+          <label class="lbl" for="addEdp">EDP Code (Optional)</label>
+          <input class="field mono" id="addEdp" placeholder="e.g. 10234">
         </div>
         <label class="lbl" for="addPaste">Class list</label>
         <textarea class="field mono" id="addPaste" rows="8" placeholder="Dela Cruz, Juan A.&#10;Reyes, Maria Isabel"></textarea>
@@ -388,7 +397,10 @@
           <div><label class="lbl" for="editStudentCourse">Course</label><input class="field" id="editStudentCourse" required></div>
           <div><label class="lbl" for="editStudentSection">Section</label><input class="field" id="editStudentSection" required></div>
         </div>
-        <div><label class="lbl" for="editStudentYear">Year Level</label><input class="field" id="editStudentYear" placeholder="e.g. 1ST"></div>
+        <div class="two">
+          <div><label class="lbl" for="editStudentYear">Year Level</label><input class="field" id="editStudentYear" placeholder="e.g. 1ST"></div>
+          <div><label class="lbl" for="editStudentEdp">EDP Code</label><input class="field mono" id="editStudentEdp" placeholder="e.g. 10234"></div>
+        </div>
         <div><label class="lbl" for="editStudentEmail">Linked Email (Leave blank if unlinked)</label><input class="field mono" id="editStudentEmail" placeholder="student@gmail.com"></div>
         <div class="actions" style="margin-top:12px;">
           <button class="btn btn-ghost" id="btnCancelEditStudent" type="button">Cancel</button>
