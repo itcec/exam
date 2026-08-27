@@ -1319,6 +1319,70 @@
   inline-size: min(100%, 720px);
 }
 
+/* Teacher Portal Access Manager Styles */
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  transition: border-color .15s ease, background .15s ease;
+}
+.account-row.is-admin {
+  background: rgba(234, 179, 8, 0.08);
+  border-color: rgba(234, 179, 8, 0.4);
+}
+.role-indicator {
+  flex-shrink: 0;
+  inline-size: 80px;
+}
+.role-tag {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: var(--r-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  inline-size: 100%;
+  justify-content: center;
+}
+.role-tag.admin {
+  background: rgba(234, 179, 8, 0.18);
+  color: #b45309;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+}
+[data-theme="dark"] .role-tag.admin {
+  color: #fde047;
+}
+.role-tag.teacher {
+  background: var(--glass-hi);
+  color: var(--fg-2);
+  border: 1px solid var(--edge);
+}
+.email-input-wrapper {
+  flex: 1;
+  min-inline-size: 0;
+}
+.btn-make-admin {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: var(--r-xs);
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  color: #b45309;
+  cursor: pointer;
+}
+[data-theme="dark"] .btn-make-admin {
+  color: #fde047;
+}
+.btn-make-admin:hover {
+  background: rgba(234, 179, 8, 0.22);
+}
+
 /* Student management row and buttons */
 .student-card {
   display: flex;
