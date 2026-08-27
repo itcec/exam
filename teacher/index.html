@@ -41,6 +41,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
         <span>Sync / Refresh All</span>
       </button>
+      <button class="menu-item" id="menuManageAccess" type="button" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>👑 Manage Portal Access</span>
+      </button>
       <button class="menu-item" id="menuTheme" type="button">
         <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg>
         <span>Switch Theme</span>
@@ -459,6 +463,52 @@
     </div>
     <div id="resultsContent"><div class="card center solo muted small">Select an exam above to view results.</div></div>
   </section>
+
+  <!-- Manage Teacher Access Modal (Admin only) -->
+  <div class="modal-backdrop" id="manageAccessModal" hidden>
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <h3>👑 Teacher Portal Access & Roles</h3>
+        <button class="close-btn" id="btnCloseManageAccess" type="button">✕</button>
+      </div>
+      <p class="muted small" style="margin-bottom:12px;">
+        Configure Google email accounts allowed to access the portal. The <b>first account is the Administrator</b> (sees all exams and students); other accounts are <b>Teachers</b> (see their own created exams).
+      </p>
+      
+      <div class="tally" id="tAccessTally" style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+        <span class="chip" id="tAccessTotalChip">Configured: <b>0</b></span>
+        <span class="chip" id="tAccessAdminChip" style="background:var(--admin-bg, #FEF8E8);color:var(--admin-gold, #9A6B0A);border-color:var(--admin-border, #F3DEAC);font-weight:600;">👑 Admin: <b id="tAccessAdminEmail">—</b></span>
+      </div>
+
+      <div id="tAccessList" class="account-list" style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;margin-bottom:12px;">
+        <!-- Account rows rendered dynamically -->
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+        <button class="btn-sm btn-outline" id="btnAddAccessEmail" type="button">+ Add Teacher Email</button>
+      </div>
+
+      <details class="bulk-box" id="tAccessBulkBox" style="margin-bottom:12px;background:var(--card, #fff);border:1px solid var(--line, #e2e8f0);border-radius:6px;padding:8px 10px;">
+        <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--muted, #64748b);">Paste multiple emails (Bulk Add)</summary>
+        <div style="margin-top:8px;">
+          <textarea class="field mono" id="tAccessBulkInput" placeholder="admin@school.edu, teacher1@school.edu&#10;teacher2@school.edu" rows="2" style="font-size:12px;width:100%;"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+            <button class="btn-sm btn-ghost" id="btnApplyAccessBulk" type="button">Add Parsed Emails</button>
+          </div>
+        </div>
+      </details>
+
+      <div id="tAccessMsg" style="margin-bottom:8px;"></div>
+
+      <div class="actions" style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+        <button class="btn btn-ghost bad" id="btnClearAllAccess" type="button" style="color:var(--bad, #dc2626);font-size:12px;">Lock Portal (Clear All)</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" id="btnCancelManageAccess" type="button">Cancel</button>
+          <button class="btn btn-primary" id="btnSaveManageAccess" type="button">Save Access Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
 <nav class="appbar" id="tAppBar" aria-label="Main" hidden>
   <button class="appbar-tab" id="tTabDashboard" data-tab="dashboard" type="button">
