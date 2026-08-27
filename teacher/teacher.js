@@ -39,7 +39,6 @@ const activeTheme = () => document.documentElement.dataset.theme || (prefersDark
 
 function labelTheme() {
   const lbl = activeTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-  if ($('btnTheme')) $('btnTheme').setAttribute('aria-label', lbl);
   if ($('menuTheme')) $('menuTheme').setAttribute('aria-label', lbl);
 }
 
@@ -518,7 +517,7 @@ function doSignOut() {
   signOut(auth).then(() => location.reload());
 }
 $('btnTDeniedOut').onclick = doSignOut;
-if ($('btnSignOut')) $('btnSignOut').onclick = doSignOut;
+if ($('menuSignOut')) $('menuSignOut').onclick = doSignOut;
 
 /* Global Full Sync */
 async function syncAllData() {
@@ -546,7 +545,7 @@ async function syncAllData() {
     toast(e.message, 'bad');
   }
 }
-if ($('btnSyncAll')) $('btnSyncAll').onclick = syncAllData;
+if ($('menuSyncAll')) $('menuSyncAll').onclick = syncAllData;
 
 /* ================================================================
    Dashboard
@@ -640,6 +639,7 @@ function renderExamCards(exams) {
       <div class="exam-card-meta">
         ${ex.questions ?? '—'} question${ex.questions === 1 ? '' : 's'}
         ${ex.subject ? ' · ' + esc(ex.subject) : ''}
+        ${ex.edpCode ? ' · EDP ' + esc(ex.edpCode) : (ex.sections && ex.sections.length ? ' · Sec: ' + esc(ex.sections.join(',')) : '')}
         ${ex.opensAt ? ' · Opens ' + esc(ex.opensAt) : ''}
         ${ex.closesAt ? ' · Closes ' + esc(ex.closesAt) : ''}
       </div>
@@ -706,6 +706,13 @@ $('btnNewExam').onclick = () => {
   $('newExamCode').value = '';
   $('newExamTitle').value = '';
   $('newExamSubject').value = '';
+  if ($('newExamEdp')) $('newExamEdp').value = '';
+  $('newExamCourse').value = '';
+  $('newExamYear').value = '';
+  $('newExamTimerMode').value = 'per-question';
+  $('newExamDuration').value = '45';
+  $('newExamTries').value = '1';
+  $('newExamStatus').value = 'draft';
   openModal($('newExamModal'), $('newExamCode'));
 };
 
@@ -724,6 +731,7 @@ $('btnSubmitNewExam').onclick = async () => {
 
   const title = $('newExamTitle').value.trim();
   const subject = $('newExamSubject').value.trim().toUpperCase();
+  const edpCode = $('newExamEdp')?.value.trim() || '';
   const course = $('newExamCourse').value;
   const year = $('newExamYear').value;
   const timerMode = $('newExamTimerMode').value;
@@ -738,7 +746,7 @@ $('btnSubmitNewExam').onclick = async () => {
   try {
     const payload = {
       idToken: await idToken(),
-      code, title, subject, course, year, timerMode,
+      code, title, subject, edpCode, course, year, timerMode,
       defaultTimer: timerMode === 'per-question' ? duration : 45,
       wholeExamMinutes: timerMode === 'whole-exam' ? duration : 30,
       tries, status
@@ -1204,8 +1212,10 @@ function autoSplitMasterPaste(raw) {
       const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
       if (singleKey === 'WB') {
         const wb = extractWordBankFromText(clean);
-        if ($('tPool_WB')) $('tPool_WB').value = wb.pool;
-        if ($('tSrc_WB')) $('tSrc_WB').value = wb.questions || clean;
+        const poolEl = $('tPool_' + singleKey);
+        const srcEl = $('tSrc_' + singleKey);
+        if (poolEl) poolEl.value = wb.pool;
+        if (srcEl) srcEl.value = wb.questions || clean;
       } else {
         if ($('tSrc_' + singleKey)) $('tSrc_' + singleKey).value = clean;
       }
@@ -1222,8 +1232,10 @@ function autoSplitMasterPaste(raw) {
 
     if (m.key === 'WB') {
       const wb = extractWordBankFromText(content);
-      if ($('tPool_WB')) $('tPool_WB').value = wb.pool;
-      if ($('tSrc_WB')) $('tSrc_WB').value = wb.questions || content;
+      const poolEl = $('tPool_' + m.key);
+      const srcEl = $('tSrc_' + m.key);
+      if (poolEl) poolEl.value = wb.pool;
+      if (srcEl) srcEl.value = wb.questions || content;
     } else {
       const field = $('tSrc_' + m.key);
       if (field) field.value = content;
@@ -1493,22 +1505,28 @@ const DEFAULT_SECTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
 function populateStudentFilters(students) {
   const customCourses  = (students || []).map(s => s.course).filter(Boolean);
   const customSections = (students || []).map(s => s.section).filter(Boolean);
+  const customEdps     = (students || []).map(s => s.edpCode).filter(Boolean);
   const courses  = [...new Set([...DEFAULT_COURSES, ...customCourses])].sort();
   const sections = [...new Set([...DEFAULT_SECTIONS, ...customSections])].sort((a,b)=>+a-+b);
+  const edps     = [...new Set(customEdps)].sort();
   const fill = (sel, items) => {
+    if (!sel) return;
     while (sel.options.length > 1) sel.remove(1);
     items.forEach(v => { const o = new Option(v, v); sel.add(o); });
   };
   fill($('filterCourse'),  courses);
   fill($('filterSection'), sections);
+  fill($('filterEdp'),     edps);
 }
 
 function renderStudentTable(students) {
-  const course   = $('filterCourse').value;
-  const section  = $('filterSection').value;
+  const course   = $('filterCourse')?.value || '';
+  const section  = $('filterSection')?.value || '';
+  const edp      = $('filterEdp')?.value || '';
   const filtered = (students || []).filter(s =>
     (!course  || s.course  === course) &&
-    (!section || String(s.section) === section)
+    (!section || String(s.section) === section) &&
+    (!edp     || String(s.edpCode || '') === edp)
   );
   const wrap = $('studentTable');
   wrap.replaceChildren();
@@ -1527,7 +1545,7 @@ function renderStudentTable(students) {
     info.className = 'student-info';
     info.innerHTML = `
       <div class="student-name">${esc(s.lastName)}, ${esc(s.firstName)}</div>
-      <div class="student-meta">${esc(s.course || '')} ${s.section ? '· Section ' + s.section : ''} ${s.year ? '· ' + s.year : ''}</div>
+      <div class="student-meta">${esc(s.course || '')} ${s.section ? '· Section ' + s.section : ''} ${s.edpCode ? '· EDP ' + esc(s.edpCode) : ''} ${s.year ? '· ' + s.year : ''}</div>
       <div class="student-email ${s.email ? 'linked' : ''}">${s.email ? '📧 ' + esc(s.email) : '⚪ Unclaimed (No Google account linked)'}</div>
     `;
 
@@ -1563,6 +1581,7 @@ function openEditStudent(s) {
   $('editStudentFirst').value = s.firstName || '';
   $('editStudentCourse').value = s.course || '';
   $('editStudentSection').value = s.section || '';
+  if ($('editStudentEdp')) $('editStudentEdp').value = s.edpCode || '';
   $('editStudentYear').value = s.year || '';
   $('editStudentEmail').value = s.email || '';
   $('editStudentOut').replaceChildren();
@@ -1580,6 +1599,7 @@ if ($('btnSaveEditStudent')) {
       firstName: $('editStudentFirst').value.trim(),
       course: $('editStudentCourse').value.trim(),
       section: $('editStudentSection').value.trim(),
+      edpCode: $('editStudentEdp')?.value.trim() || '',
       year: $('editStudentYear').value.trim(),
       email: $('editStudentEmail').value.trim()
     };
@@ -1648,10 +1668,17 @@ $('filterCourse').onchange = $('filterSection').onchange = () => {
   play('tap');
   renderStudentTable(CACHE.students || []);
 };
+if ($('filterEdp')) {
+  $('filterEdp').onchange = () => {
+    play('tap');
+    renderStudentTable(CACHE.students || []);
+  };
+}
 
 /* Add students modal */
 $('btnAddStudents').onclick = () => {
   populateAddModal();
+  if ($('addEdp')) $('addEdp').value = '';
   openModal($('addStudentsModal'), $('addCourse'));
 };
 $('btnCloseAdd').onclick = () => {
@@ -1662,13 +1689,14 @@ $('btnCloseAdd').onclick = () => {
 $('btnCheckStudents').onclick = async () => {
   const course  = $('addCourse').value;
   const section = $('addSection').value;
+  const edpCode = $('addEdp')?.value.trim() || '';
   const paste   = $('addPaste').value.trim();
   if (!course || !section || !paste) {
     toast('Fill in Course and Section, and paste the class list.', 'bad');
     return;
   }
   try {
-    const r = await api('teacherCheckStudents', { idToken: await idToken(), course, section, paste });
+    const r = await api('teacherCheckStudents', { idToken: await idToken(), course, section, edpCode, paste });
     if (!r.ok) { $('addOut').textContent = r.message || 'Error'; return; }
 
     const lines = [r.count + ' new student' + (r.count === 1 ? '' : 's') + ' would be added.'];
@@ -1690,9 +1718,10 @@ $('btnCheckStudents').onclick = async () => {
 $('btnDoAdd').onclick = async () => {
   const course  = $('addCourse').value;
   const section = $('addSection').value;
+  const edpCode = $('addEdp')?.value.trim() || '';
   const paste   = $('addPaste').value.trim();
   try {
-    const r = await api('teacherAddStudents', { idToken: await idToken(), course, section, paste });
+    const r = await api('teacherAddStudents', { idToken: await idToken(), course, section, edpCode, paste });
     if (r.ok) {
       closeModal($('addStudentsModal'));
       $('addOut').replaceChildren();
