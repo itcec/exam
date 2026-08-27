@@ -702,7 +702,11 @@ function renderExams(exams) {
     wrap.append(p);
     return;
   }
-  for (const e of exams) {
+
+  const edpExams = exams.filter(e => e.category === 'edp' || (e.edpCode && !e.sections?.length));
+  const secExams = exams.filter(e => !edpExams.includes(e));
+
+  const buildCard = (e) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'pick';
@@ -725,6 +729,13 @@ function renderExams(exams) {
 
     const meta = document.createElement('div');
     meta.className = 'pick-meta';
+
+    const catBadge = document.createElement('span');
+    catBadge.className = 'pick-tag';
+    catBadge.style.borderColor = 'var(--accent)';
+    catBadge.style.color = 'var(--accent)';
+    catBadge.textContent = e.categoryLabel || (e.category === 'edp' ? `EDP ${e.edpCode}` : (e.sections?.length ? `Section ${e.sections.join(',')}` : 'General'));
+    meta.append(catBadge);
 
     if (e.questions) {
       const qTag = document.createElement('span');
@@ -750,10 +761,28 @@ function renderExams(exams) {
       feedback('select', 10);
       S.picked = e.code;
       $('codeInput').value = '';
-      for (const k of wrap.children) k.setAttribute?.('aria-pressed', 'false');
+      for (const k of wrap.querySelectorAll('.pick')) k.setAttribute?.('aria-pressed', 'false');
       b.setAttribute('aria-pressed', 'true');
     };
-    wrap.append(b);
+    return b;
+  };
+
+  if (edpExams.length && secExams.length) {
+    const edpHead = document.createElement('div');
+    edpHead.className = 'cat-group-header';
+    edpHead.style.cssText = 'font-size:0.75rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-top:6px;';
+    edpHead.textContent = '📋 EDP Code Exams';
+    wrap.append(edpHead);
+    edpExams.forEach(e => wrap.append(buildCard(e)));
+
+    const secHead = document.createElement('div');
+    secHead.className = 'cat-group-header';
+    secHead.style.cssText = 'font-size:0.75rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-top:14px;';
+    secHead.textContent = '👥 Section Exams';
+    wrap.append(secHead);
+    secExams.forEach(e => wrap.append(buildCard(e)));
+  } else {
+    exams.forEach(e => wrap.append(buildCard(e)));
   }
 }
 
