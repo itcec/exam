@@ -446,10 +446,14 @@ onAuthStateChanged(auth, async user => {
     }
 
     $('topRole').hidden = false;
-    $('topRole').textContent = r.email || user.email;
+    const rolePrefix = r.isAdmin ? '👑 Admin' : 'Teacher';
+    $('topRole').textContent = `${rolePrefix} (${r.email || user.email})`;
+    $('topRole').title = r.isAdmin ? 'Administrator (Full Access)' : 'Teacher (My Exams & Students)';
     if ($('menuContainer')) $('menuContainer').hidden = false;
 
     // Cache the whole workbook snapshot in memory and sessionStorage
+    CACHE.isAdmin   = r.isAdmin || false;
+    CACHE.email     = r.email || user.email || '';
     CACHE.dashboard = r.dashboard;
     CACHE.exams     = r.exams || [];
     CACHE.students  = r.students || [];
@@ -640,6 +644,7 @@ function renderExamCards(exams) {
         ${ex.questions ?? '—'} question${ex.questions === 1 ? '' : 's'}
         ${ex.subject ? ' · ' + esc(ex.subject) : ''}
         ${ex.edpCode ? ' · EDP ' + esc(ex.edpCode) : (ex.sections && ex.sections.length ? ' · Sec: ' + esc(ex.sections.join(',')) : '')}
+        ${ex.createdBy ? ' · By ' + esc(ex.createdBy) : ''}
         ${ex.opensAt ? ' · Opens ' + esc(ex.opensAt) : ''}
         ${ex.closesAt ? ' · Closes ' + esc(ex.closesAt) : ''}
       </div>
@@ -1505,7 +1510,7 @@ const DEFAULT_SECTIONS = Array.from({ length: 20 }, (_, i) => String(i + 1));
 function populateStudentFilters(students) {
   const customCourses  = (students || []).map(s => s.course).filter(Boolean);
   const customSections = (students || []).map(s => s.section).filter(Boolean);
-  const customEdps     = (students || []).map(s => s.edpCode).filter(Boolean);
+  const customEdps     = (students || []).flatMap(s => String(s.edpCode || '').split(/[,;/]+/).map(x => x.trim()).filter(Boolean));
   const courses  = [...new Set([...DEFAULT_COURSES, ...customCourses])].sort();
   const sections = [...new Set([...DEFAULT_SECTIONS, ...customSections])].sort((a,b)=>+a-+b);
   const edps     = [...new Set(customEdps)].sort();
@@ -1526,7 +1531,7 @@ function renderStudentTable(students) {
   const filtered = (students || []).filter(s =>
     (!course  || s.course  === course) &&
     (!section || String(s.section) === section) &&
-    (!edp     || String(s.edpCode || '') === edp)
+    (!edp     || String(s.edpCode || '').split(/[,;/]+/).map(x => x.trim()).includes(edp))
   );
   const wrap = $('studentTable');
   wrap.replaceChildren();
