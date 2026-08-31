@@ -92,10 +92,22 @@
         <h1 class="h1">Choose your exam</h1>
       </div>
       <div class="stack" id="examList"></div>
-      <div class="stack-s">
-        <label class="lbl" for="codeInput">Or type the code</label>
+
+      <!-- Add EDP Class control if exam is not listed -->
+      <div class="stack-s" style="margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line2, #ccc);">
+        <label class="lbl" for="edpInput">Don't see your exam? Enter Class EDP Code</label>
+        <div style="display:flex; gap:8px;">
+          <input class="field mono" id="edpInput" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 10234">
+          <button class="btn btn-ghost" id="btnAddEdp" type="button" style="white-space:nowrap;">Add Class</button>
+        </div>
+        <p class="msg ok small" id="edpOk" hidden></p>
+        <p class="err small" id="edpErr" hidden></p>
+      </div>
+
+      <div class="stack-s" style="margin-top: 14px;">
+        <label class="lbl" for="codeInput">Or type the exam / EDP code</label>
         <input class="field" id="codeInput" type="text" autocomplete="off"
-               autocapitalize="characters" spellcheck="false" placeholder="e.g. PRELIM1">
+               autocapitalize="characters" spellcheck="false" placeholder="e.g. PRELIM1 or 10234">
       </div>
       <p class="err" id="startErr" hidden></p>
       <button class="btn btn-primary" id="btnContinue" type="button">Continue</button>
@@ -123,9 +135,38 @@
       <p class="eyebrow">Signed in as</p>
       <p id="whoName" class="h1" hidden></p>
       <p id="whoEmail" class="muted small" style="word-break:break-all"></p>
+      <div id="whoMetaBadges" style="display:flex; flex-wrap:wrap; gap:6px; margin: 10px 0;"></div>
+
       <hr class="hr">
-      <p class="muted small">Your score is recorded under this account. Sign
-        out only if this is not you.</p>
+
+      <!-- Student self-editable profile -->
+      <div class="stack-s">
+        <h2 style="font-size:1rem; margin:0 0 4px;">Student Profile Details</h2>
+        <p class="muted small" style="margin:0 0 10px;">Update your Student ID Number, Section, or Year level below.</p>
+
+        <div class="stack-s">
+          <label class="lbl" for="accStudentId">Student ID Number</label>
+          <input class="field mono" id="accStudentId" type="text" placeholder="e.g. 2024-00123">
+        </div>
+
+        <div class="two">
+          <div class="stack-s">
+            <label class="lbl" for="accYear">Year level</label>
+            <select class="field" id="accYear"></select>
+          </div>
+          <div class="stack-s">
+            <label class="lbl" for="accSection">Section</label>
+            <select class="field" id="accSection"></select>
+          </div>
+        </div>
+
+        <p class="msg ok small" id="accOk" hidden></p>
+        <p class="err small" id="accErr" hidden></p>
+        <button class="btn btn-primary" id="btnSaveAccount" type="button">Save Profile</button>
+      </div>
+
+      <hr class="hr">
+      <p class="muted small">Your score is recorded under this account. Sign out only if this is not you.</p>
       <button class="btn btn-ghost" id="btnSignOut" type="button">Sign out</button>
     </div>
   </section>
@@ -147,6 +188,17 @@
           <label class="lbl" for="regFirst">First name</label>
           <input class="field" id="regFirst" type="text" autocomplete="given-name"
                  autocapitalize="words" placeholder="Juan">
+        </div>
+      </div>
+
+      <div class="two">
+        <div class="stack-s">
+          <label class="lbl" for="regStudentId">Student ID Number</label>
+          <input class="field mono" id="regStudentId" type="text" placeholder="e.g. 2024-00123">
+        </div>
+        <div class="stack-s">
+          <label class="lbl" for="regEdp">Class EDP Code (Optional)</label>
+          <input class="field mono" id="regEdp" type="text" placeholder="e.g. 10234">
         </div>
       </div>
 
