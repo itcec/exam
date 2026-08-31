@@ -420,9 +420,42 @@ async function boot() {
   if (r.lastName || r.firstName) {
     $('whoName').textContent = [r.lastName, r.firstName].filter(Boolean).join(', ');
     $('whoName').hidden = false;
-    const bits = [r.year, r.course, r.section ? 'Section ' + r.section : '']
-      .filter(Boolean).join('  ·  ');
+    const bits = [
+      r.studentId ? 'ID: ' + r.studentId : '',
+      r.course,
+      r.section ? 'Section ' + r.section : '',
+      r.year,
+      r.edpCode ? 'EDP: ' + r.edpCode : ''
+    ].filter(Boolean).join('  ·  ');
     if (bits) $('whoEmail').textContent = bits + '\n' + r.email;
+  }
+
+  // Populate account tab
+  if ($('accStudentId')) $('accStudentId').value = r.studentId || '';
+  if (r.options) {
+    fillSelect('accYear', r.options.years || [], r.year);
+    fillSelect('accSection', r.options.sections || [], r.section);
+  }
+
+  const badgesWrap = $('whoMetaBadges');
+  if (badgesWrap) {
+    badgesWrap.replaceChildren();
+    const addBadge = (txt, color) => {
+      const span = document.createElement('span');
+      span.className = 'pick-tag';
+      if (color) { span.style.borderColor = color; span.style.color = color; }
+      span.textContent = txt;
+      badgesWrap.append(span);
+    };
+    if (r.studentId) addBadge('ID ' + r.studentId);
+    if (r.course) addBadge(r.course);
+    if (r.section) addBadge('Section ' + r.section);
+    if (r.year) addBadge(r.year);
+    if (r.edpCode) {
+      String(r.edpCode).split(/[,;/]+/).map(s => s.trim()).filter(Boolean).forEach(edp => {
+        addBadge('EDP ' + edp, 'var(--accent)');
+      });
+    }
   }
 
   // Not on the class list yet — sign them up rather than turning them away.
@@ -554,6 +587,8 @@ function showRegister(r) {
   fillSelect('regCourse', o.courses, r.course);
   fillSelect('regSection', o.sections, r.section);
 
+  if ($('regStudentId')) $('regStudentId').value = r.studentId || '';
+  if ($('regEdp')) $('regEdp').value = r.edpCode || '';
   $('regLast').value = r.lastName || '';
   $('regFirst').value = r.firstName || '';
   $('regEmail').textContent = 'Signed in as ' + r.email;
@@ -568,15 +603,17 @@ if ($('btnRegister')) {
     const profile = {
       lastName:  $('regLast')?.value?.trim() || '',
       firstName: $('regFirst')?.value?.trim() || '',
+      studentId: $('regStudentId')?.value?.trim() || '',
+      edpCode:   $('regEdp')?.value?.trim() || '',
       year:      $('regYear')?.value || '',
       course:    $('regCourse')?.value || '',
       section:   $('regSection')?.value || ''
     };
 
     const err = $('regErr');
-    if (Object.values(profile).some(v => !v)) {
+    if (!profile.lastName || !profile.firstName || !profile.year || !profile.course || !profile.section) {
       if (err) {
-        err.textContent = 'Please fill in every box before continuing.';
+        err.textContent = 'Please fill in Name, Year, Course, and Section before continuing.';
         err.hidden = false;
       }
       return;
@@ -591,6 +628,9 @@ if ($('btnRegister')) {
         if (err) {
           err.textContent = res.message || 'Could not check the class list.';
           err.hidden = false;
+          if (res.requiresEdp && $('regEdp')) {
+            $('regEdp').focus();
+          }
         }
         return;
       }
@@ -632,8 +672,12 @@ function showPick(candidates) {
 
     const m = document.createElement('span');
     m.className = 'n';
-    m.textContent = [c.course, c.section ? 'Section ' + c.section : '']
-      .filter(Boolean).join('  ·  ');
+    m.textContent = [
+      c.studentId ? 'ID ' + c.studentId : '',
+      c.course,
+      c.section ? 'Section ' + c.section : '',
+      c.edpCode ? 'EDP ' + c.edpCode : ''
+    ].filter(Boolean).join('  ·  ');
 
     b.append(n, m);
     b.onclick = () => claim(c);
@@ -671,6 +715,77 @@ async function claim(candidate) {
 }
 
 if ($('btnPickBack')) $('btnPickBack').onclick = () => { pickErr(''); show('scRegister'); };
+
+/* ---------------- Student EDP Self-Enrollment & Profile Update ---------------- */
+
+if ($('btnAddEdp')) {
+  $('btnAddEdp').onclick = async () => {
+    const edpCode = ($('edpInput')?.value || '').trim();
+    const okEl = $('edpOk');
+    const errEl = $('edpErr');
+    if (okEl) okEl.hidden = true;
+    if (errEl) errEl.hidden = true;
+
+    if (!edpCode) {
+      if (errEl) { errEl.textContent = 'Please enter a valid EDP code.'; errEl.hidden = false; }
+      return;
+    }
+
+    const b = $('btnAddEdp');
+    b.disabled = true; b.textContent = 'Adding…';
+    try {
+      const res = await api('enrollEdp', { idToken: await idToken(), edpCode });
+      if (!res.ok) {
+        if (errEl) { errEl.textContent = res.message || 'Could not add this EDP code.'; errEl.hidden = false; }
+        return;
+      }
+      if (okEl) { okEl.textContent = res.message || 'Class added successfully!'; okEl.hidden = false; }
+      feedback('ok', 10);
+      play('chime');
+      if (res.exams) renderExams(res.exams);
+      if ($('edpInput')) $('edpInput').value = '';
+      boot();
+    } catch {
+      if (errEl) { errEl.textContent = 'Could not reach server. Check connection.'; errEl.hidden = false; }
+    } finally {
+      b.disabled = false; b.textContent = 'Add Class';
+    }
+  };
+}
+
+if ($('btnSaveAccount')) {
+  $('btnSaveAccount').onclick = async () => {
+    const studentId = $('accStudentId')?.value?.trim() || '';
+    const year = $('accYear')?.value || '';
+    const section = $('accSection')?.value || '';
+    const okEl = $('accOk');
+    const errEl = $('accErr');
+    if (okEl) okEl.hidden = true;
+    if (errEl) errEl.hidden = true;
+
+    const b = $('btnSaveAccount');
+    b.disabled = true; b.textContent = 'Saving…';
+    try {
+      const res = await api('studentUpdateProfile', {
+        idToken: await idToken(),
+        studentId, year, section
+      });
+      if (!res.ok) {
+        if (errEl) { errEl.textContent = res.message || 'Could not update profile.'; errEl.hidden = false; }
+        return;
+      }
+      if (okEl) { okEl.textContent = 'Profile saved successfully!'; okEl.hidden = false; }
+      feedback('ok', 10);
+      play('chime');
+      if (res.exams) renderExams(res.exams);
+      boot();
+    } catch {
+      if (errEl) { errEl.textContent = 'Could not reach server. Check connection.'; errEl.hidden = false; }
+    } finally {
+      b.disabled = false; b.textContent = 'Save Profile';
+    }
+  };
+}
 
 /**
  * Nothing matched. There is no self-add — an unlisted student is the
