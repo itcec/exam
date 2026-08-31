@@ -1616,7 +1616,7 @@ function renderStudentTable(students) {
     info.className = 'student-info';
     info.innerHTML = `
       <div class="student-name">${esc(s.lastName)}, ${esc(s.firstName)}</div>
-      <div class="student-meta">${esc(s.course || '')} ${s.section ? '· Section ' + s.section : ''} ${s.edpCode ? '· EDP ' + esc(s.edpCode) : ''} ${s.year ? '· ' + s.year : ''}</div>
+      <div class="student-meta">${s.studentId ? '<span class="pill-id" style="font-weight:600;">ID: ' + esc(s.studentId) + '</span> · ' : ''}${esc(s.course || '')} ${s.section ? '· Section ' + s.section : ''} ${s.edpCode ? '· EDP ' + esc(s.edpCode) : ''} ${s.year ? '· ' + s.year : ''}</div>
       <div class="student-email ${s.email ? 'linked' : ''}">${s.email ? '📧 ' + esc(s.email) : '⚪ Unclaimed (No Google account linked)'}</div>
     `;
 
@@ -1653,6 +1653,7 @@ function openEditStudent(s) {
   $('editStudentCourse').value = s.course || '';
   $('editStudentSection').value = s.section || '';
   if ($('editStudentEdp')) $('editStudentEdp').value = s.edpCode || '';
+  if ($('editStudentId')) $('editStudentId').value = s.studentId || '';
   $('editStudentYear').value = s.year || '';
   $('editStudentEmail').value = s.email || '';
   $('editStudentOut').replaceChildren();
@@ -1671,6 +1672,7 @@ if ($('btnSaveEditStudent')) {
       course: $('editStudentCourse').value.trim(),
       section: $('editStudentSection').value.trim(),
       edpCode: $('editStudentEdp')?.value.trim() || '',
+      studentId: $('editStudentId')?.value.trim() || '',
       year: $('editStudentYear').value.trim(),
       email: $('editStudentEmail').value.trim()
     };
