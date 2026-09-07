@@ -9,8 +9,14 @@
 
 @layer tokens {
   :root {
-    --sans: 'Inter', system-ui, -apple-system, sans-serif;
-    --mono: 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
+    /* The same stack the student site uses. Both portals already share
+       fx.js and fx.css so the two do not read as different products; the
+       type is part of that. Roboto Mono headed the mono stack and was never
+       fetched by anything, so it only ever resolved to the next name down. */
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+            Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Code",
+            Consolas, "Liberation Mono", Menlo, monospace;
     --blur: 18px;
     --r-sm: 10px;
     --r-md: 14px;

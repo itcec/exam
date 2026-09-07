@@ -973,9 +973,14 @@ function brief(r) {
     f.append(dt, dd);
   };
   fact('Questions', String(S.questions.length));
+  // Three delivery modes, three different promises about the clock. Saying
+  // "each question is timed" ahead of a section-timed exam is a promise the
+  // next screen breaks.
   fact('Time', S.timerMode === 'whole-exam'
     ? Math.round((r.msRemaining || 0) / 60000) + ' minutes total'
-    : 'Each question is timed');
+    : S.timerMode === 'per-section'
+      ? 'Each section is timed'
+      : 'Each question is timed');
   fact('Attempt', r.attemptNo + (r.maxAttempts > 1 ? ' of ' + r.maxAttempts : ''));
   if (r.student?.lastName || r.student?.firstName) {
     fact('Name', [r.student.lastName, r.student.firstName].filter(Boolean).join(', '));

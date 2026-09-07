@@ -218,8 +218,12 @@
     pointer-events: auto;
     animation: fxToastIn .3s cubic-bezier(.34, 1.56, .64, 1) both;
   }
-  .fx-toast.ok  { border-inline-start-color: var(--ok); }
-  .fx-toast.bad { border-inline-start-color: var(--bad); }
+  .fx-toast.ok   { border-inline-start-color: var(--ok); }
+  .fx-toast.bad  { border-inline-start-color: var(--bad); }
+  /* Both portals already raise warn toasts. Without this they arrive
+     looking exactly like a plain note, which is the one thing a warning
+     must not do. --warn is not defined on every page, so ok is the floor. */
+  .fx-toast.warn { border-inline-start-color: var(--warn, var(--ok)); }
   .fx-toast > span { flex: 1; overflow-wrap: anywhere; white-space: pre-line; }
   .fx-toast.out { animation: fxToastOut .22s ease forwards; }
 

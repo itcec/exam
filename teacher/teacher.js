@@ -85,9 +85,13 @@ if ($('menuTheme')) {
   };
 }
 if ($('menuSignOut')) {
+  // doSignOut is declared further down; a function declaration is hoisted, so
+  // this closure has it by the time anything can click. Assigned once, here —
+  // a second assignment further down used to silently drop the line above it,
+  // leaving the menu hanging open over the page.
   $('menuSignOut').onclick = () => {
     $('teacherMenuDropdown').hidden = true;
-    signOut(auth).then(() => location.reload());
+    doSignOut();
   };
 }
 labelTheme();
@@ -446,8 +450,10 @@ onAuthStateChanged(auth, async user => {
 
     if (!r.ok) {
       if (r.authFailed) { await signOut(auth); show('scTSignIn'); return; }
-      if (!r.authorized) { show('scTDenied'); return; }
-      show('scTDenied');
+      // requireTeacher_ says which of the two it is — no list configured at
+      // all, or this address not on it — and the fix differs. Show its words.
+      deny('Access denied', r.message ||
+        'Your account is not authorised to manage this exam system.');
       return;
     }
 
@@ -475,10 +481,23 @@ onAuthStateChanged(auth, async user => {
 
     showTab('dashboard');
   } catch (err) {
+    // A dropped connection is not a refusal. Saying "Access denied" to a
+    // teacher whose wifi blinked has them emailing their administrator
+    // about a permission they already have. Same screen — it carries the
+    // only escape hatch there is — but the truth on it.
     console.error('[teacher] bootstrap error', err);
-    show('scTDenied');
+    deny('Cannot reach the exam server',
+      (err && err.message) ||
+      'The portal could not load your workbook. Check your connection and reload.');
   }
 });
+
+/** The refusal screen, with a reason on it rather than one fixed sentence. */
+function deny(title, text) {
+  if ($('tDeniedTitle')) $('tDeniedTitle').textContent = title;
+  if ($('tDeniedText'))  $('tDeniedText').textContent  = text;
+  show('scTDenied');
+}
 
 /* Sign in */
 let _signingIn = false;
@@ -528,7 +547,6 @@ function doSignOut() {
   signOut(auth).then(() => location.reload());
 }
 $('btnTDeniedOut').onclick = doSignOut;
-if ($('menuSignOut')) $('menuSignOut').onclick = doSignOut;
 
 /* Global Full Sync */
 async function syncAllData() {
@@ -556,7 +574,6 @@ async function syncAllData() {
     toast(e.message, 'bad');
   }
 }
-if ($('menuSyncAll')) $('menuSyncAll').onclick = syncAllData;
 
 /* ================================================================
    Dashboard
@@ -722,9 +739,11 @@ $('btnNewExam').onclick = () => {
   $('newExamCourse').value = '';
   $('newExamYear').value = '';
   $('newExamTimerMode').value = 'per-question';
-  $('newExamDuration').value = '45';
   $('newExamTries').value = '1';
   $('newExamStatus').value = 'draft';
+  // Through the handler, or the duration label keeps whatever the last open
+  // left behind — "Minutes for whole exam" above a box holding 45 seconds.
+  $('newExamTimerMode').onchange();
   openModal($('newExamModal'), $('newExamCode'));
 };
 
@@ -759,7 +778,9 @@ $('btnSubmitNewExam').onclick = async () => {
     const payload = {
       idToken: await idToken(),
       code, title, subject, edpCode, course, year, timerMode,
-      defaultTimer: timerMode === 'per-question' ? duration : 45,
+      // Per-section still falls back to a per-question clock for any
+      // question whose own Seconds cell is blank, so the box is not ignored.
+      defaultTimer: timerMode === 'whole-exam' ? 45 : duration,
       wholeExamMinutes: timerMode === 'whole-exam' ? duration : 30,
       tries, status
     };
@@ -921,15 +942,20 @@ function updateBuilderOrderOptions(mode) {
     `;
     if (cur) sel.value = cur;
   } else if (mode === 'per-section') {
+    // Section delivery groups the questions by type, so there is no order
+    // left to choose. The select is still filled: hidden is not empty, and
+    // it is read on submit whether the teacher can see it or not.
     timerRow.hidden = true;
     row.hidden = true;
+    sel.innerHTML = `<option value="shuffle-within-type">Shuffled within each section</option>`;
+    sel.value = 'shuffle-within-type';
   } else if (mode === 'per-question') {
     timerRow.hidden = true;
     row.hidden = false;
     sel.innerHTML = `
-      <option value="shuffle-within-type">Shuffled inside section but cinematic to transition after each section</option>
       <option value="shuffled">Shuffled all</option>
-      <option value="logical">Order (same order as below)</option>
+      <option value="shuffle-within-type">Shuffled within each type</option>
+      <option value="logical">Logical — same order as below</option>
     `;
     if (cur && ['shuffle-within-type', 'shuffled', 'logical'].includes(cur)) sel.value = cur;
   }
@@ -1351,6 +1377,11 @@ function buildBuilderStep2() {
   if (!host) return;
   host.replaceChildren();
 
+  // Read once, here. This used to be a bare `mode` with nothing bound to it
+  // in this function, which threw a ReferenceError on the first panel and
+  // left step 2 of the builder permanently blank.
+  const mode = currentBuilderTimerMode();
+
   activeBuilderTypes().forEach(t => {
     const k = t.key, p = builderPlan[k];
     const pan = document.createElement('div');
@@ -1364,6 +1395,12 @@ function buildBuilderStep2() {
           <textarea class="field mono" id="tPool_WB" rows="3" placeholder="word1&#10;word2&#10;word3"></textarea>
         </div>`
       : '';
+    const maFieldHtml = (k === 'MA')
+      ? `<div class="fld" style="margin-bottom:8px;">
+          <span class="lbl-s">Instruction shown to the student</span>
+          <input class="field" id="tInstr_MA" placeholder="Match the term to its meaning.">
+        </div>`
+      : '';
 
     pan.innerHTML = `
       <div class="head">
@@ -1374,6 +1411,7 @@ function buildBuilderStep2() {
       <div class="body">
         <p class="muted small" style="margin-bottom:6px;">${BUILDER_INPUT_HINT[k] || ''}</p>
         ${wbFieldHtml}
+        ${maFieldHtml}
         <textarea class="field mono" id="tSrc_${k}" rows="5" placeholder="Paste questions here..."></textarea>
         <div class="actions" style="margin-top:8px;">
           <button class="btn btn-outline btn-sm" type="button" data-check="${k}">🔍 Check syntax</button>
@@ -1398,7 +1436,41 @@ function buildBuilderStep2() {
   updateTotalAddButton();
 }
 
-function checkBuilderSection(k, btn) {
+/**
+ * One batch, in the shape Compile.gs parses — the same object the Sheets
+ * sidebar sends. `mode` names the type, which is what stops the parser
+ * guessing: a batch declared Identification is never split on a stray "a.",
+ * and a True-or-false batch does not need a marker on every line.
+ */
+function builderSpec(k) {
+  return {
+    mode: k,
+    text: ($('tSrc_' + k) || {}).value || '',
+    pool: ($('tPool_' + k) || {}).value || '',
+    instruction: ($('tInstr_' + k) || {}).value || '',
+    seconds: builderSecondsOf(k)
+  };
+}
+
+/** Every switched-on type that has something pasted into it. */
+function collectBuilderSpecs() {
+  return activeBuilderTypes()
+    .map(t => builderSpec(t.key))
+    .filter(s => s.text.trim());
+}
+
+/** How many items the server said it read out of one section, or 0. */
+const builderChecked = {};
+
+/**
+ * Asks the server what it makes of this section.
+ *
+ * This used to count lines in the browser and always report success, which
+ * told a teacher "12 questions parsed and ready" about twelve lines the
+ * importer would go on to reject. The count and the problems both have to
+ * come from the parser that will actually do the writing.
+ */
+async function checkBuilderSection(k, btn) {
   const field = $('tSrc_' + k);
   if (!field) return;
   const raw = field.value.trim();
@@ -1408,6 +1480,7 @@ function checkBuilderSection(k, btn) {
   const target = parseInt(builderPlan[k].count, 10) || 10;
 
   if (!raw) {
+    builderChecked[k] = 0;
     if (out) out.replaceChildren();
     if (badge) badge.textContent = `0 of ${target}`;
     if (pan) pan.classList.remove('done');
@@ -1415,40 +1488,53 @@ function checkBuilderSection(k, btn) {
     return;
   }
 
-  // Count lines / pairs
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-  let count = lines.length;
-  if (k === 'MA') count = 1; // 1 matching set
+  const was = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
 
-  if (badge) badge.textContent = `${count} of ${target}`;
-  if (pan) pan.classList.toggle('done', count >= 1);
-  if (out) {
-    out.innerHTML = `<div class="msg ok" style="padding:6px 10px; border-radius:6px; background:var(--ok-soft); color:var(--ok); font-size:0.75rem;">✓ ${count} question(s) parsed and ready.</div>`;
-  }
-  updateTotalAddButton();
-}
+  try {
+    const r = await api('teacherCheckQuestions', {
+      idToken: await idToken(),
+      code: _currentDetailExamCode,
+      specs: [builderSpec(k)]
+    });
 
-function collectAllBuilderQuestions() {
-  const parts = [];
-  const mode = currentBuilderTimerMode();
-
-  activeBuilderTypes().forEach(t => {
-    const k = t.key;
-    const field = $('tSrc_' + k);
-    if (!field) return;
-    const text = field.value.trim();
-    if (!text) return;
-
-    if (k === 'WB') {
-      const pool = $('tPool_WB') ? $('tPool_WB').value.trim() : '';
-      if (pool) parts.push(`=== WORD BANK ===\n${pool}`);
-      parts.push(`=== QUESTIONS ===\n${text}`);
-    } else {
-      parts.push(`=== ${t.name.toUpperCase()} ===\n${text}`);
+    if (!r.ok) {
+      builderChecked[k] = 0;
+      if (pan) pan.classList.remove('done');
+      if (out) out.innerHTML = `<div class="msg bad" style="padding:6px 10px;border-radius:6px;color:var(--bad);font-size:0.75rem;">${esc(r.message || 'Could not check this section.')}</div>`;
+      return;
     }
-  });
 
-  return parts.join('\n\n');
+    const count = r.count || 0;
+    builderChecked[k] = count;
+    if (badge) badge.textContent = `${count} of ${target}`;
+    if (pan) pan.classList.toggle('done', count > 0 && !(r.problems || []).length);
+
+    if (out) {
+      const bits = [];
+      // Short of what was asked for is worth saying — it is the usual sign
+      // the AI stopped early or a line came back in the wrong shape.
+      const tone = (r.problems || []).length ? 'warn' : (count < target ? 'warn' : 'ok');
+      const colour = tone === 'ok' ? 'var(--ok)' : 'var(--warn)';
+      bits.push(`<div class="msg ${tone}" style="padding:6px 10px;border-radius:6px;color:${colour};font-size:0.75rem;">` +
+        (count ? `✓ ${count} question(s) read` : 'Nothing usable was found here') +
+        (count && count !== target ? ` — you asked for ${target}` : '') + '.</div>');
+
+      (r.problems || []).slice(0, 5).forEach(p => {
+        bits.push(`<div class="muted small" style="margin-top:4px;">line ${esc(p.line)}: ${esc(p.msg || p.why || '')}</div>`);
+      });
+      if ((r.problems || []).length > 5) {
+        bits.push(`<div class="muted small">…and ${r.problems.length - 5} more.</div>`);
+      }
+      out.innerHTML = bits.join('');
+    }
+  } catch (err) {
+    builderChecked[k] = 0;
+    if (out) out.innerHTML = `<div class="msg bad" style="padding:6px 10px;border-radius:6px;color:var(--bad);font-size:0.75rem;">${esc(err.message || 'Could not reach the exam server.')}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = was; }
+    updateTotalAddButton();
+  }
 }
 
 function updateTotalAddButton() {
@@ -1512,7 +1598,9 @@ if ($('btnCloseAddQuestions')) {
 /* Submit Questions */
 if ($('btnTAddAll')) {
   $('btnTAddAll').onclick = async () => {
-    const paste = collectAllBuilderQuestions();
+    const specs = collectBuilderSpecs();
+    if (!specs.length) { toast('Paste some questions first.', 'bad'); return; }
+
     const mode = $('tAddQMode') ? $('tAddQMode').value : 'append';
     const timerMode = currentBuilderTimerMode();
     const wholeMins = ($('tWholeExamMins') && parseInt($('tWholeExamMins').value, 10)) || 30;
@@ -1524,15 +1612,26 @@ if ($('btnTAddAll')) {
       const r = await api('teacherAddQuestions', {
         idToken: await idToken(),
         code: _currentDetailExamCode,
-        paste,
+        // One batch per type, each naming its own type — not one blob for
+        // the parser to guess its way through.
+        specs,
         mode,
         timerMode,
         wholeExamMins: wholeMins,
         order: orderVal
       });
       if (!r.ok) { toast(r.message || 'Import failed', 'bad'); return; }
+
+      // A row the importer could not read is written to the sheet's Mistakes
+      // column, but nobody reopens the tab to find that out.
+      if (r.problems?.length) {
+        toast([`Imported ${r.added} question(s), with ${r.problems.length} to look at:`]
+          .concat(r.problems.slice(0, 5).map(p => '• line ' + p.line + ': ' + (p.msg || p.why || '')))
+          .join('\n'), 'warn', 9000);
+      } else {
+        toast(`Successfully imported ${r.added} question(s) into ${_currentDetailExamCode}!`, 'ok');
+      }
       closeModal($('addQuestionsModal'));
-      toast(`Successfully imported ${r.added} question(s) into ${_currentDetailExamCode}!`, 'ok');
       play('submit');
       if ($('detailQCount')) $('detailQCount').textContent = r.total;
       if (CACHE.exams) {
@@ -1616,7 +1715,7 @@ function renderStudentTable(students) {
     info.className = 'student-info';
     info.innerHTML = `
       <div class="student-name">${esc(s.lastName)}, ${esc(s.firstName)}</div>
-      <div class="student-meta">${s.studentId ? '<span class="pill-id" style="font-weight:600;">ID: ' + esc(s.studentId) + '</span> · ' : ''}${esc(s.course || '')} ${s.section ? '· Section ' + s.section : ''} ${s.edpCode ? '· EDP ' + esc(s.edpCode) : ''} ${s.year ? '· ' + s.year : ''}</div>
+      <div class="student-meta">${s.studentId ? '<span class="pill-id" style="font-weight:600;">ID: ' + esc(s.studentId) + '</span> · ' : ''}${esc(s.course || '')} ${s.section ? '· Section ' + esc(s.section) : ''} ${s.edpCode ? '· EDP ' + esc(s.edpCode) : ''} ${s.year ? '· ' + esc(s.year) : ''}</div>
       <div class="student-email ${s.email ? 'linked' : ''}">${s.email ? '📧 ' + esc(s.email) : '⚪ Unclaimed (No Google account linked)'}</div>
     `;
 

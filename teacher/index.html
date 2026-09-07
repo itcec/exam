@@ -7,9 +7,10 @@
 <meta name="robots" content="noindex">
 <title>Exam Management</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- No webfont. The student site has always used the system stack — school
+     wifi does not need a round-trip to Google before the page has type, and
+     a teacher on the same wifi is not owed a worse deal than their class.
+     gstatic stays: that is the Firebase SDK, not a font. -->
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="stylesheet" href="teacher.css">
 <link rel="stylesheet" href="../fx.css">
@@ -75,8 +76,8 @@
   </section>
   <section id="scTDenied" hidden>
     <div class="card solo">
-      <h1 class="h1">Access denied</h1>
-      <p class="muted">Your account is not authorised to manage this exam system. Ask your administrator to add your email in the Google Sheet under Setup › Configure teacher access.</p>
+      <h1 class="h1" id="tDeniedTitle">Access denied</h1>
+      <p class="muted" id="tDeniedText">Your account is not authorised to manage this exam system. Ask your administrator to add your email in the Google Sheet under Setup › Configure teacher access.</p>
       <button class="btn btn-ghost" id="btnTDeniedOut" type="button">Sign in as someone else</button>
     </div>
   </section>
