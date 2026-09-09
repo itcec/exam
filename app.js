@@ -16,7 +16,7 @@ import {
   initFx, play, haptic, feedback, announce, confetti, revealIn,
   openModal, closeModal, mountSoundToggle, reducedMotion
 } from './fx.js';
-import { NeatGradient } from 'https://esm.sh/@firecms/neat';
+let NeatGradient = null;
 
 const $ = id => document.getElementById(id);
 
@@ -81,11 +81,28 @@ mountSoundToggle($('btnTheme'));
 
 let studentNeatGradientInstance = null;
 
-function initStudentNeatGradient() {
+async function initStudentNeatGradient() {
   const canvas = $('student-neat-gradient');
   if (!canvas) return;
 
   try {
+    if (!NeatGradient) {
+      try {
+        const mod = await import('./neat.js');
+        NeatGradient = mod.NeatGradient;
+      } catch (localErr) {
+        console.warn('[NeatGradient] Local neat.js load failed, attempting CDN fallback:', localErr);
+        try {
+          const mod = await import('https://esm.sh/@firecms/neat');
+          NeatGradient = mod.NeatGradient;
+        } catch (cdnErr) {
+          console.warn('[NeatGradient] Failed to load Neat gradient library:', cdnErr);
+          return;
+        }
+      }
+    }
+    if (!NeatGradient) return;
+
     const config = {
       colors: [
         { color: '#167CB3', enabled: true },

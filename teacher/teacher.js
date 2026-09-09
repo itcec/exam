@@ -16,7 +16,7 @@ import {
   initFx, play, feedback, announce, toast, revealIn, countTo,
   openModal, closeModal, mountSoundToggle
 } from '../fx.js';
-import { NeatGradient } from 'https://esm.sh/@firecms/neat';
+let NeatGradient = null;
 
 /* ---- config guard ---- */
 (function () {
@@ -105,11 +105,28 @@ initFx();
 
 let neatGradientInstance = null;
 
-function initNeatGradient() {
+async function initNeatGradient() {
   const canvas = $('neat-gradient');
   if (!canvas) return;
 
   try {
+    if (!NeatGradient) {
+      try {
+        const mod = await import('../neat.js');
+        NeatGradient = mod.NeatGradient;
+      } catch (localErr) {
+        console.warn('[NeatGradient] Local neat.js load failed, attempting CDN fallback:', localErr);
+        try {
+          const mod = await import('https://esm.sh/@firecms/neat');
+          NeatGradient = mod.NeatGradient;
+        } catch (cdnErr) {
+          console.warn('[NeatGradient] Failed to load Neat gradient library:', cdnErr);
+          return;
+        }
+      }
+    }
+    if (!NeatGradient) return;
+
     const config = {
       colors: [
         { color: '#FFFFFF', enabled: true },
