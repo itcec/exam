@@ -757,6 +757,20 @@ function renderExamCards(exams) {
     detailBtn.onclick = (e) => { e.stopPropagation(); feedback('nav', 8); openExamDetail(ex); };
     actionRow.append(detailBtn);
 
+    // Quick Delete
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-sm btn-outline btn-danger';
+    delBtn.type = 'button';
+    delBtn.textContent = '🗑️';
+    delBtn.title = 'Delete ' + ex.code;
+    delBtn.setAttribute('aria-label', 'Delete ' + ex.code);
+    delBtn.onclick = (e) => {
+      e.stopPropagation();
+      feedback('tap', 8);
+      openDeleteModal(ex);
+    };
+    actionRow.append(delBtn);
+
     card.addEventListener('click', () => { feedback('nav', 8); openExamDetail(ex); });
     wrap.append(card);
   });
