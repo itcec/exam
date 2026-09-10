@@ -395,93 +395,6 @@
       </div>
     </div>
 
-    <!-- Manage EDP Codes Modal -->
-    <div class="modal-backdrop" id="edpCodesModal" hidden>
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3 id="edpModalTitle">Manage EDP Codes</h3>
-          <button class="close-btn" id="btnCloseEdpModal" type="button">✕</button>
-        </div>
-        <div class="hint" style="margin-bottom:12px;">
-          Assign multiple EDP codes to this single exam so students enrolled under different sections or schedules for the same subject can all access and take this exam.
-        </div>
-        <div class="fld" style="margin-bottom:12px;">
-          <label class="lbl">Currently Assigned EDP Codes</label>
-          <div id="edpChipsList" class="chips-container" style="display:flex; gap:6px; flex-wrap:wrap; min-height:40px; padding:8px; border:1px solid var(--edge); border-radius:var(--r-md); background:var(--sunk); align-items:center;">
-            <span class="muted small" id="edpChipsEmpty">No EDP codes assigned yet (using sections).</span>
-          </div>
-        </div>
-        <div class="fld" style="margin-bottom:12px;">
-          <label class="lbl" for="inputNewEdp">Add EDP Code(s)</label>
-          <div style="display:flex; gap:6px;">
-            <input class="field mono" id="inputNewEdp" placeholder="e.g. 10234, 10235">
-            <button class="btn btn-outline" id="btnAddEdpCode" type="button">+ Add</button>
-          </div>
-          <span class="muted small" style="display:block; margin-top:4px;">Tip: You can paste a comma-separated list of EDP codes.</span>
-        </div>
-        <div id="edpModalMsg" style="margin-bottom:12px;"></div>
-        <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
-          <button class="btn btn-outline" id="btnCancelEdpModal" type="button">Cancel</button>
-          <button class="btn btn-accent" id="btnSaveEdpCodes" type="button">Save EDP Codes</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Duplicate Exam Modal -->
-    <div class="modal-backdrop" id="duplicateExamModal" hidden>
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3 id="dupModalTitle">Duplicate Exam</h3>
-          <button class="close-btn" id="btnCloseDupModal" type="button">✕</button>
-        </div>
-        <div class="hint" style="margin-bottom:12px;">
-          Create a copy of this exam with all questions, categories, and delivery blueprint. The duplicate will be saved as a <b>Draft</b> so you can adjust and review it before releasing.
-        </div>
-        <div class="fld" style="margin-bottom:10px;">
-          <label class="lbl" for="dupNewCode">New Exam Code</label>
-          <input class="field mono" id="dupNewCode" placeholder="e.g. CS101_MIDTERM_SEC2" required>
-        </div>
-        <div class="fld" style="margin-bottom:10px;">
-          <label class="lbl" for="dupNewTitle">New Title</label>
-          <input class="field" id="dupNewTitle" placeholder="e.g. CS101 Midterm Exam (Section B)">
-        </div>
-        <div class="fld" style="margin-bottom:12px;">
-          <label class="lbl" for="dupNewEdp">EDP Code(s) for the duplicate</label>
-          <input class="field mono" id="dupNewEdp" placeholder="e.g. 20456, 20457">
-          <span class="muted small" style="display:block; margin-top:4px;">Optional — EDP code(s) for the new class section.</span>
-        </div>
-        <div id="dupModalMsg" style="margin-bottom:12px;"></div>
-        <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
-          <button class="btn btn-outline" id="btnCancelDupModal" type="button">Cancel</button>
-          <button class="btn btn-accent" id="btnSubmitDuplicate" type="button">Duplicate Exam</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Delete Exam Confirmation Modal -->
-    <div class="modal-backdrop" id="deleteExamModal" hidden>
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3 style="color:var(--bad);">🗑️ Delete Exam</h3>
-          <button class="close-btn" id="btnCloseDeleteModal" type="button">✕</button>
-        </div>
-        <div class="hint" style="background:rgba(220,53,69,0.1); border:1px solid var(--bad); color:var(--bad); margin-bottom:12px; padding:10px; border-radius:var(--r-md);">
-          <b>Warning: This cannot be undone!</b><br>
-          Deleting this exam will permanently remove the exam sheet, all questions, configuration, and results.
-        </div>
-        <p class="small" id="deleteModalPrompt" style="margin-bottom:8px;">
-          Please type the exam code to confirm deletion:
-        </p>
-        <div class="fld" style="margin-bottom:12px;">
-          <input class="field mono" id="inputConfirmDeleteCode" placeholder="Type exam code here">
-        </div>
-        <div id="deleteModalMsg" style="margin-bottom:12px;"></div>
-        <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
-          <button class="btn btn-outline" id="btnCancelDeleteModal" type="button">Cancel</button>
-          <button class="btn btn-danger" id="btnConfirmDeleteExam" type="button" disabled style="background:var(--bad); color:#fff;">Permanently Delete Exam</button>
-        </div>
-      </div>
-    </div>
   </section>
   <section id="scTStudents" hidden>
     <div class="section-header">
@@ -618,6 +531,94 @@
           <button class="btn btn-ghost" id="btnCancelManageAccess" type="button">Cancel</button>
           <button class="btn btn-primary" id="btnSaveManageAccess" type="button">Save Access Settings</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage EDP Codes Modal -->
+  <div class="modal-backdrop" id="edpCodesModal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="edpModalTitle">Manage EDP Codes</h3>
+        <button class="close-btn" id="btnCloseEdpModal" type="button">✕</button>
+      </div>
+      <div class="hint" style="margin-bottom:12px;">
+        Assign multiple EDP codes to this single exam so students enrolled under different sections or schedules for the same subject can all access and take this exam.
+      </div>
+      <div class="fld" style="margin-bottom:12px;">
+        <label class="lbl">Currently Assigned EDP Codes</label>
+        <div id="edpChipsList" class="chips-container" style="display:flex; gap:6px; flex-wrap:wrap; min-height:40px; padding:8px; border:1px solid var(--edge); border-radius:var(--r-md); background:var(--sunk); align-items:center;">
+          <span class="muted small" id="edpChipsEmpty">No EDP codes assigned yet (using sections).</span>
+        </div>
+      </div>
+      <div class="fld" style="margin-bottom:12px;">
+        <label class="lbl" for="inputNewEdp">Add EDP Code(s)</label>
+        <div style="display:flex; gap:6px;">
+          <input class="field mono" id="inputNewEdp" placeholder="e.g. 10234, 10235">
+          <button class="btn btn-outline" id="btnAddEdpCode" type="button">+ Add</button>
+        </div>
+        <span class="muted small" style="display:block; margin-top:4px;">Tip: You can paste a comma-separated list of EDP codes.</span>
+      </div>
+      <div id="edpModalMsg" style="margin-bottom:12px;"></div>
+      <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-outline" id="btnCancelEdpModal" type="button">Cancel</button>
+        <button class="btn btn-accent" id="btnSaveEdpCodes" type="button">Save EDP Codes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Duplicate Exam Modal -->
+  <div class="modal-backdrop" id="duplicateExamModal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="dupModalTitle">Duplicate Exam</h3>
+        <button class="close-btn" id="btnCloseDupModal" type="button">✕</button>
+      </div>
+      <div class="hint" style="margin-bottom:12px;">
+        Create a copy of this exam with all questions, categories, and delivery blueprint. The duplicate will be saved as a <b>Draft</b> so you can adjust and review it before releasing.
+      </div>
+      <div class="fld" style="margin-bottom:10px;">
+        <label class="lbl" for="dupNewCode">New Exam Code</label>
+        <input class="field mono" id="dupNewCode" placeholder="e.g. CS101_MIDTERM_SEC2" required>
+      </div>
+      <div class="fld" style="margin-bottom:10px;">
+        <label class="lbl" for="dupNewTitle">New Title</label>
+        <input class="field" id="dupNewTitle" placeholder="e.g. CS101 Midterm Exam (Section B)">
+      </div>
+      <div class="fld" style="margin-bottom:12px;">
+        <label class="lbl" for="dupNewEdp">EDP Code(s) for the duplicate</label>
+        <input class="field mono" id="dupNewEdp" placeholder="e.g. 20456, 20457">
+        <span class="muted small" style="display:block; margin-top:4px;">Optional — EDP code(s) for the new class section.</span>
+      </div>
+      <div id="dupModalMsg" style="margin-bottom:12px;"></div>
+      <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-outline" id="btnCancelDupModal" type="button">Cancel</button>
+        <button class="btn btn-accent" id="btnSubmitDuplicate" type="button">Duplicate Exam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Exam Confirmation Modal -->
+  <div class="modal-backdrop" id="deleteExamModal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 style="color:var(--bad);">🗑️ Delete Exam</h3>
+        <button class="close-btn" id="btnCloseDeleteModal" type="button">✕</button>
+      </div>
+      <div class="hint" style="background:rgba(220,53,69,0.1); border:1px solid var(--bad); color:var(--bad); margin-bottom:12px; padding:10px; border-radius:var(--r-md);">
+        <b>Warning: This cannot be undone!</b><br>
+        Deleting this exam will permanently remove the exam sheet, all questions, configuration, and results.
+      </div>
+      <p class="small" id="deleteModalPrompt" style="margin-bottom:8px;">
+        Please type the exam code to confirm deletion:
+      </p>
+      <div class="fld" style="margin-bottom:12px;">
+        <input class="field mono" id="inputConfirmDeleteCode" placeholder="Type exam code here">
+      </div>
+      <div id="deleteModalMsg" style="margin-bottom:12px;"></div>
+      <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-outline" id="btnCancelDeleteModal" type="button">Cancel</button>
+        <button class="btn btn-danger" id="btnConfirmDeleteExam" type="button" disabled style="background:var(--bad); color:#fff;">Permanently Delete Exam</button>
       </div>
     </div>
   </div>
