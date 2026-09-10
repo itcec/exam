@@ -1713,3 +1713,109 @@ pre.prompt {
   margin-top: 3px;
   font-size: 0.75rem;
 }
+
+/* EDP Code Chips */
+.chip-edp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  background: var(--glass);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.chip-edp .chip-remove {
+  background: none;
+  border: none;
+  color: var(--fg-3);
+  cursor: pointer;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.chip-edp .chip-remove:hover {
+  color: var(--bad);
+}
+
+/* Danger Button */
+.btn-danger {
+  background: rgba(220, 53, 69, 0.1);
+  color: var(--bad);
+  border: 1px solid var(--bad);
+}
+
+.btn-danger:hover {
+  background: var(--bad);
+  color: #fff;
+}
+
+/* Results Proctoring Filter Pills & Cheat Badges */
+.btn-filter {
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  color: var(--fg-2);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: all .15s ease;
+}
+
+.btn-filter:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.btn-filter.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pill-try {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  background: var(--sunk);
+  color: var(--fg-2);
+}
+
+.cheat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  background: rgba(220, 53, 69, 0.15);
+  border: 1px solid var(--bad);
+  color: var(--bad);
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.cheat-timeline {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: rgba(220, 53, 69, 0.06);
+  border-left: 3px solid var(--bad);
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  line-height: 1.4;
+  color: var(--fg-2);
+}
+
+.clean-session {
+  color: var(--ok);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}

@@ -691,25 +691,63 @@ function renderExamCards(exams) {
       </div>
       <div class="exam-card-actions"></div>`;
 
-    // Held by reference. The old id was built with esc() but read back with
-    // CSS.escape(), which disagree, and two exams would collide on it anyway.
+    // Held by reference.
     const actionRow = card.querySelector('.exam-card-actions');
-    const statuses = ['open', 'draft', 'closed'];
-    statuses.forEach(st => {
-      if (st === ex.status) return;
-      const btn = document.createElement('button');
-      btn.className = 'btn-sm btn-outline';
-      btn.type = 'button';
-      btn.textContent = st === 'open' ? '▶ Open' : st === 'draft' ? '✏ Draft' : '■ Close';
-      btn.setAttribute('aria-label',
-        (st === 'open' ? 'Open' : st === 'draft' ? 'Move to draft' : 'Close') + ' ' + ex.code);
-      btn.onclick = async (e) => {
+    const isOpen = ex.status === 'open';
+
+    // Quick Active / Offline toggle
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'btn-sm btn-outline';
+    toggleBtn.type = 'button';
+    toggleBtn.textContent = isOpen ? '⏸ Set Offline' : '▶ Set Active';
+    toggleBtn.setAttribute('aria-label', (isOpen ? 'Set offline' : 'Set active') + ' ' + ex.code);
+    toggleBtn.onclick = async (e) => {
+      e.stopPropagation();
+      feedback('tap', 8);
+      await setExamStatus(ex.code, isOpen ? 'closed' : 'open', card);
+    };
+    actionRow.append(toggleBtn);
+
+    // Draft option
+    if (ex.status !== 'draft') {
+      const draftBtn = document.createElement('button');
+      draftBtn.className = 'btn-sm btn-outline';
+      draftBtn.type = 'button';
+      draftBtn.textContent = '✏ Draft';
+      draftBtn.setAttribute('aria-label', 'Move ' + ex.code + ' to draft');
+      draftBtn.onclick = async (e) => {
         e.stopPropagation();
         feedback('tap', 8);
-        await setExamStatus(ex.code, st, card);
+        await setExamStatus(ex.code, 'draft', card);
       };
-      actionRow.append(btn);
-    });
+      actionRow.append(draftBtn);
+    }
+
+    // Quick EDP Code Manage
+    const edpBtn = document.createElement('button');
+    edpBtn.className = 'btn-sm btn-outline';
+    edpBtn.type = 'button';
+    edpBtn.textContent = '🏷️ EDP';
+    edpBtn.setAttribute('aria-label', 'Manage EDP codes for ' + ex.code);
+    edpBtn.onclick = (e) => {
+      e.stopPropagation();
+      feedback('tap', 8);
+      openEdpModal(ex);
+    };
+    actionRow.append(edpBtn);
+
+    // Quick Duplicate
+    const dupBtn = document.createElement('button');
+    dupBtn.className = 'btn-sm btn-outline';
+    dupBtn.type = 'button';
+    dupBtn.textContent = '📋 Copy';
+    dupBtn.setAttribute('aria-label', 'Duplicate ' + ex.code);
+    dupBtn.onclick = (e) => {
+      e.stopPropagation();
+      feedback('tap', 8);
+      openDuplicateModal(ex);
+    };
+    actionRow.append(dupBtn);
 
     const detailBtn = document.createElement('button');
     detailBtn.className = 'btn-sm btn-outline';
@@ -726,8 +764,9 @@ function renderExamCards(exams) {
 }
 
 function statusChip(status) {
-  const cls = status === 'open' ? 'chip-open' : status === 'draft' ? 'chip-draft' : 'chip-closed';
-  const lbl = status === 'open' ? 'Open' : status === 'draft' ? 'Draft' : 'Closed';
+  const s = String(status || '').toLowerCase();
+  const cls = (s === 'open' || s === 'active') ? 'chip-open' : s === 'draft' ? 'chip-draft' : 'chip-closed';
+  const lbl = (s === 'open' || s === 'active') ? 'Active (Open)' : s === 'draft' ? 'Draft' : 'Offline (Closed)';
   return `<span class="chip ${cls}">${lbl}</span>`;
 }
 
@@ -818,25 +857,302 @@ $('btnSubmitNewExam').onclick = async () => {
 };
 
 /* ================================================================
-   Exam Detail
+   Exam Detail, Multi-EDP, Duplicate & Delete Logic
    ================================================================ */
 
 let _currentDetailExamCode = '';
+let _currentDetailExam = null;
+let _currentEditingEdpCodes = [];
+let _allResultRows = [];
+let _currentResultsTotal = 0;
+let _currentResultsFilter = 'all';
+let _currentResultsSearch = '';
+let _autoRefreshTimer = null;
 
 async function openExamDetail(ex) {
   _currentDetailExamCode = ex.code;
+  _currentDetailExam = ex;
   $('detailCode').textContent = ex.code + (ex.title ? ' — ' + ex.title : '');
+  updateDetailStatsAndControls(ex);
+  show('scTExamDetail');
+  await loadExamResults(ex.code);
+}
+
+function updateDetailStatsAndControls(ex) {
   $('detailStats').innerHTML = `
     <div><p class="eyebrow">Status</p>${statusChip(ex.status)}</div>
     <div><p class="eyebrow">Questions</p><p class="stat-num-sm" id="detailQCount">${ex.questions ?? '—'}</p></div>
     <div><p class="eyebrow">Finished</p><p class="stat-num-sm" id="detailFinished">…</p></div>
     <div><p class="eyebrow">Average</p><p class="stat-num-sm" id="detailAvg">…</p></div>`;
 
-  show('scTExamDetail');
-  await loadExamResults(ex.code);
+  if ($('btnToggleActiveDetail')) {
+    const isOpen = ex.status === 'open';
+    $('btnToggleActiveDetail').textContent = isOpen ? '⏸ Set Offline' : '▶ Set Active';
+    $('btnToggleActiveDetail').onclick = async () => {
+      const newStatus = isOpen ? 'closed' : 'open';
+      await setExamStatus(ex.code, newStatus);
+      ex.status = newStatus;
+      updateDetailStatsAndControls(ex);
+    };
+  }
+
+  updateDetailEdpBadges(ex);
+
+  if ($('btnManageEdpDetail')) $('btnManageEdpDetail').onclick = () => openEdpModal(ex);
+  if ($('btnManageEdpInline')) $('btnManageEdpInline').onclick = () => openEdpModal(ex);
+  if ($('btnDuplicateExamDetail')) $('btnDuplicateExamDetail').onclick = () => openDuplicateModal(ex);
+  if ($('btnDeleteExamDetail')) $('btnDeleteExamDetail').onclick = () => openDeleteModal(ex);
 }
 
-$('btnExamBack').onclick = () => { show('scTExams'); };
+function updateDetailEdpBadges(ex) {
+  const container = $('detailEdpBadges');
+  if (!container) return;
+  container.replaceChildren();
+
+  let codes = [];
+  if (Array.isArray(ex.edpCodes) && ex.edpCodes.length) {
+    codes = ex.edpCodes;
+  } else if (ex.edpCode) {
+    codes = String(ex.edpCode).split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  }
+
+  if (!codes.length) {
+    container.innerHTML = '<span class="muted small">No EDP code set (open to all configured sections).</span>';
+    return;
+  }
+
+  codes.forEach(c => {
+    const b = document.createElement('span');
+    b.className = 'chip-edp';
+    b.textContent = 'EDP ' + c;
+    container.append(b);
+  });
+}
+
+/* Manage EDP Codes Modal */
+function openEdpModal(ex) {
+  _currentDetailExamCode = ex.code;
+  _currentDetailExam = ex;
+  if ($('edpModalTitle')) $('edpModalTitle').textContent = 'Manage EDP Codes — ' + ex.code;
+
+  let list = [];
+  if (Array.isArray(ex.edpCodes) && ex.edpCodes.length) {
+    list = [...ex.edpCodes];
+  } else if (ex.edpCode) {
+    list = String(ex.edpCode).split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+  }
+  _currentEditingEdpCodes = list;
+  renderEdpChips();
+  if ($('inputNewEdp')) $('inputNewEdp').value = '';
+  if ($('edpModalMsg')) $('edpModalMsg').replaceChildren();
+  openModal($('edpCodesModal'), $('inputNewEdp'));
+}
+
+function renderEdpChips() {
+  const wrap = $('edpChipsList');
+  if (!wrap) return;
+  wrap.replaceChildren();
+  if (!_currentEditingEdpCodes.length) {
+    const empty = document.createElement('span');
+    empty.className = 'muted small';
+    empty.id = 'edpChipsEmpty';
+    empty.textContent = 'No EDP codes assigned yet (using sections).';
+    wrap.append(empty);
+    return;
+  }
+  _currentEditingEdpCodes.forEach((edp, idx) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip-edp';
+    chip.innerHTML = `<span>${esc(edp)}</span>`;
+    const rmBtn = document.createElement('button');
+    rmBtn.type = 'button';
+    rmBtn.className = 'chip-remove';
+    rmBtn.setAttribute('aria-label', 'Remove EDP code ' + edp);
+    rmBtn.innerHTML = '×';
+    rmBtn.onclick = () => {
+      _currentEditingEdpCodes.splice(idx, 1);
+      renderEdpChips();
+    };
+    chip.append(rmBtn);
+    wrap.append(chip);
+  });
+}
+
+function addEdpFromInput() {
+  const input = $('inputNewEdp');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+  const parts = val.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+  parts.forEach(p => {
+    if (!_currentEditingEdpCodes.includes(p)) {
+      _currentEditingEdpCodes.push(p);
+    }
+  });
+  input.value = '';
+  renderEdpChips();
+}
+
+if ($('btnAddEdpCode')) $('btnAddEdpCode').onclick = addEdpFromInput;
+if ($('inputNewEdp')) {
+  $('inputNewEdp').onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addEdpFromInput(); }
+  };
+}
+
+if ($('btnCloseEdpModal')) $('btnCloseEdpModal').onclick = () => closeModal($('edpCodesModal'));
+if ($('btnCancelEdpModal')) $('btnCancelEdpModal').onclick = () => closeModal($('edpCodesModal'));
+
+if ($('btnSaveEdpCodes')) {
+  $('btnSaveEdpCodes').onclick = async () => {
+    addEdpFromInput();
+    const btn = $('btnSaveEdpCodes');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const r = await api('teacherUpdateEdp', {
+        idToken: await idToken(),
+        code: _currentDetailExamCode,
+        edpCodes: _currentEditingEdpCodes
+      });
+      if (!r.ok) {
+        if ($('edpModalMsg')) $('edpModalMsg').innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(r.message || 'Failed to update EDP codes')}</div>`;
+        return;
+      }
+      closeModal($('edpCodesModal'));
+      toast('EDP codes updated for ' + _currentDetailExamCode + '!', 'ok');
+      play('pop');
+
+      if (CACHE.exams) {
+        const ex = CACHE.exams.find(e => e.code === _currentDetailExamCode);
+        if (ex) {
+          ex.edpCode = r.edpCode;
+          ex.edpCodes = r.edpCodes;
+          updateDetailEdpBadges(ex);
+          renderExamCards(CACHE.exams);
+        }
+      }
+      if (_currentDetailExam && _currentDetailExam.code === _currentDetailExamCode) {
+        _currentDetailExam.edpCode = r.edpCode;
+        _currentDetailExam.edpCodes = r.edpCodes;
+        updateDetailEdpBadges(_currentDetailExam);
+      }
+    } catch (err) {
+      if ($('edpModalMsg')) $('edpModalMsg').innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Save EDP Codes';
+    }
+  };
+}
+
+/* Duplicate Exam Modal */
+function openDuplicateModal(ex) {
+  _currentDetailExamCode = ex.code;
+  _currentDetailExam = ex;
+  if ($('dupModalTitle')) $('dupModalTitle').textContent = 'Duplicate Exam — ' + ex.code;
+  if ($('dupNewCode')) $('dupNewCode').value = ex.code + '_COPY';
+  if ($('dupNewTitle')) $('dupNewTitle').value = (ex.title || ex.code) + ' (Copy)';
+  if ($('dupNewEdp')) $('dupNewEdp').value = ex.edpCode || '';
+  if ($('dupModalMsg')) $('dupModalMsg').replaceChildren();
+  openModal($('duplicateExamModal'), $('dupNewCode'));
+}
+
+if ($('btnCloseDupModal')) $('btnCloseDupModal').onclick = () => closeModal($('duplicateExamModal'));
+if ($('btnCancelDupModal')) $('btnCancelDupModal').onclick = () => closeModal($('duplicateExamModal'));
+
+if ($('btnSubmitDuplicate')) {
+  $('btnSubmitDuplicate').onclick = async () => {
+    const newCode = $('dupNewCode')?.value.trim().toUpperCase() || '';
+    const newTitle = $('dupNewTitle')?.value.trim() || '';
+    const newEdp = $('dupNewEdp')?.value.trim() || '';
+
+    if (!newCode) {
+      if ($('dupModalMsg')) $('dupModalMsg').innerHTML = '<div class="msg bad" style="color:var(--bad);">Exam code is required.</div>';
+      return;
+    }
+
+    const btn = $('btnSubmitDuplicate');
+    btn.disabled = true; btn.textContent = 'Duplicating…';
+    try {
+      const r = await api('teacherDuplicateExam', {
+        idToken: await idToken(),
+        sourceCode: _currentDetailExamCode,
+        newCode,
+        title: newTitle,
+        edpCode: newEdp
+      });
+      if (!r.ok) {
+        if ($('dupModalMsg')) $('dupModalMsg').innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(r.message || 'Duplication failed')}</div>`;
+        return;
+      }
+      closeModal($('duplicateExamModal'));
+      toast('Exam duplicated as ' + newCode + ' (Draft)!', 'ok');
+      play('submit');
+      await loadExams();
+    } catch (err) {
+      if ($('dupModalMsg')) $('dupModalMsg').innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Duplicate Exam';
+    }
+  };
+}
+
+/* Delete Exam Modal */
+function openDeleteModal(ex) {
+  _currentDetailExamCode = ex.code;
+  _currentDetailExam = ex;
+  if ($('deleteModalPrompt')) $('deleteModalPrompt').innerHTML = `Please type the exam code <b>${esc(ex.code)}</b> to confirm deletion:`;
+  if ($('inputConfirmDeleteCode')) $('inputConfirmDeleteCode').value = '';
+  if ($('btnConfirmDeleteExam')) $('btnConfirmDeleteExam').disabled = true;
+  if ($('deleteModalMsg')) $('deleteModalMsg').replaceChildren();
+  openModal($('deleteExamModal'), $('inputConfirmDeleteCode'));
+}
+
+if ($('inputConfirmDeleteCode')) {
+  $('inputConfirmDeleteCode').oninput = (e) => {
+    const val = e.target.value.trim().toUpperCase();
+    if ($('btnConfirmDeleteExam')) {
+      $('btnConfirmDeleteExam').disabled = (val !== _currentDetailExamCode);
+    }
+  };
+}
+
+if ($('btnCloseDeleteModal')) $('btnCloseDeleteModal').onclick = () => closeModal($('deleteExamModal'));
+if ($('btnCancelDeleteModal')) $('btnCancelDeleteModal').onclick = () => closeModal($('deleteExamModal'));
+
+if ($('btnConfirmDeleteExam')) {
+  $('btnConfirmDeleteExam').onclick = async () => {
+    const btn = $('btnConfirmDeleteExam');
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    try {
+      const r = await api('teacherDeleteExam', {
+        idToken: await idToken(),
+        code: _currentDetailExamCode
+      });
+      if (!r.ok) {
+        if ($('deleteModalMsg')) $('deleteModalMsg').innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(r.message || 'Delete failed')}</div>`;
+        return;
+      }
+      closeModal($('deleteExamModal'));
+      toast('Exam ' + _currentDetailExamCode + ' deleted.', 'ok');
+      play('pop');
+      if (CACHE.exams) {
+        CACHE.exams = CACHE.exams.filter(e => e.code !== _currentDetailExamCode);
+        saveCache();
+        renderExamCards(CACHE.exams);
+      }
+      show('scTExams');
+    } catch (err) {
+      if ($('deleteModalMsg')) $('deleteModalMsg').innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Permanently Delete Exam';
+    }
+  };
+}
+
+$('btnExamBack').onclick = () => {
+  if (_autoRefreshTimer) { clearInterval(_autoRefreshTimer); _autoRefreshTimer = null; }
+  show('scTExams');
+};
 
 if ($('btnRefreshDetail')) {
   $('btnRefreshDetail').onclick = () => {
@@ -854,14 +1170,61 @@ async function loadExamResults(code) {
     if ($('detailFinished')) $('detailFinished').textContent = r.finished ?? '—';
     if ($('detailAvg'))      $('detailAvg').textContent      = r.average  != null ? r.average + '/' + r.total : '—';
 
-    const list = $('detailResultsList');
-    if (!r.rows?.length) { list.textContent = 'No submissions yet.'; return; }
-    renderResultsTable(list, r.rows, r.total);
+    _allResultRows = r.rows || [];
+    _currentResultsTotal = r.total || 0;
+
+    updateResultsFilterCounts();
+    applyResultsFilterAndRender();
   } catch (err) {
     console.error('[teacher] results', err);
   } finally {
     if (btn) btn.textContent = '🔄 Refresh';
   }
+}
+
+function updateResultsFilterCounts() {
+  const allCount = _allResultRows.length;
+  const flaggedCount = _allResultRows.filter(r => r.flagged || r.status === 'flagged').length;
+  const doneCount = _allResultRows.filter(r => r.done).length;
+  const busyCount = _allResultRows.filter(r => r.status === 'in-progress').length;
+
+  if ($('countResAll')) $('countResAll').textContent = allCount;
+  if ($('countResFlagged')) $('countResFlagged').textContent = flaggedCount;
+  if ($('countResDone')) $('countResDone').textContent = doneCount;
+  if ($('countResBusy')) $('countResBusy').textContent = busyCount;
+}
+
+function applyResultsFilterAndRender() {
+  const list = $('detailResultsList');
+  if (!list) return;
+
+  let filtered = _allResultRows;
+
+  if (_currentResultsFilter === 'flagged') {
+    filtered = filtered.filter(r => r.flagged || r.status === 'flagged');
+  } else if (_currentResultsFilter === 'done') {
+    filtered = filtered.filter(r => r.done);
+  } else if (_currentResultsFilter === 'in-progress') {
+    filtered = filtered.filter(r => r.status === 'in-progress');
+  }
+
+  if (_currentResultsSearch) {
+    const q = _currentResultsSearch.toLowerCase();
+    filtered = filtered.filter(r =>
+      String(r.name || '').toLowerCase().includes(q) ||
+      String(r.email || '').toLowerCase().includes(q) ||
+      String(r.course || '').toLowerCase().includes(q) ||
+      String(r.section || '').toLowerCase().includes(q) ||
+      String(r.notes || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="muted small" style="padding:16px; text-align:center;">No submissions matching current filter or search.</div>`;
+    return;
+  }
+
+  renderResultsTable(list, filtered, _currentResultsTotal);
 }
 
 /* ================================================================
@@ -2027,46 +2390,71 @@ if ($('btnRefreshResults')) {
 }
 
 function renderResultsTable(wrap, rows, total) {
+  wrap.replaceChildren();
   const tbl = document.createElement('table');
   tbl.className = 'results-table';
-  // scope= is what lets a screen reader read "Score" before each score cell
-  // instead of announcing a wall of unlabelled numbers.
   tbl.innerHTML = `<caption>${rows.length} submission${rows.length === 1 ? '' : 's'}</caption>
   <thead><tr>
-    <th scope="col">Name</th><th scope="col">Score</th><th scope="col">Status</th>
-    <th scope="col">Time (min)</th><th scope="col">Notes</th>
+    <th scope="col">Student</th>
+    <th scope="col">Score</th>
+    <th scope="col">Attempt</th>
+    <th scope="col">Status</th>
+    <th scope="col">Time</th>
+    <th scope="col">Anti-Cheat / Proctor Notes</th>
   </tr></thead>`;
   const tbody = document.createElement('tbody');
   rows.forEach(row => {
     const tr = document.createElement('tr');
-    if (row.flagged) tr.classList.add('flag-row');
-    // Statuses on the sheet are ok · late · flagged · in-progress · abandoned.
-    const statusIcon = row.flagged ? '🚩'
+    if (row.flagged || row.status === 'flagged') tr.classList.add('flag-row');
+
+    const statusIcon = (row.flagged || row.status === 'flagged') ? '🚩'
       : row.status === 'in-progress' ? '🔄'
       : row.status === 'late' ? '⏰'
       : row.done ? '✅' : '—';
 
-    const statusWord = row.flagged ? 'Flagged'
+    const statusWord = (row.flagged || row.status === 'flagged') ? 'Flagged'
       : row.status === 'in-progress' ? 'In progress'
       : row.status === 'late' ? 'Late'
       : row.done ? 'Done' : 'Not started';
 
-    tr.innerHTML = `
-      <th scope="row">${esc(row.name || '—')}</th>
-      <td>${row.score != null ? row.score + ' / ' + total : '—'}</td>
-      <td><span aria-hidden="true">${statusIcon}</span><span class="sr-only">${statusWord}</span></td>
-      <td>${row.minutes ?? '—'}</td>
-      <td class="notes-cell">${row.notes ? esc(row.notes) : ''}</td>`;
+    const metaParts = [];
+    if (row.course) metaParts.push(row.course);
+    if (row.section) metaParts.push('Sec ' + row.section);
+    if (row.email) metaParts.push(row.email);
+    const metaStr = metaParts.join(' · ');
 
-    // The server writes one focus-loss event per line, so keep the breaks.
-    if (row.notes) {
-      const detail = document.createElement('div');
-      detail.className = row.flagged ? 'flag-detail' : '';
-      detail.style.whiteSpace = 'pre-line';
-      detail.textContent = row.notes;
-      const td = tr.cells[4];
-      td.textContent = '';
-      td.append(detail);
+    tr.innerHTML = `
+      <th scope="row">
+        <div style="font-weight:600;">${esc(row.name || '—')}</div>
+        ${metaStr ? `<div class="muted small" style="font-weight:normal; margin-top:2px;">${esc(metaStr)}</div>` : ''}
+      </th>
+      <td><b>${row.score != null ? row.score + ' / ' + total : '—'}</b></td>
+      <td><span class="pill-try">Try #${row.attempt || 1}</span></td>
+      <td><span aria-hidden="true">${statusIcon}</span> <span style="font-size:0.8125rem;">${statusWord}</span></td>
+      <td>${row.minutes != null ? row.minutes + 'm' : '—'}</td>
+      <td class="notes-cell"></td>`;
+
+    const tdNotes = tr.cells[5];
+    if (row.flagged || row.status === 'flagged' || (row.notes && row.notes.trim())) {
+      const flagBox = document.createElement('div');
+      if (row.flagged || row.status === 'flagged') {
+        const badge = document.createElement('div');
+        badge.className = 'cheat-badge';
+        badge.textContent = '🚩 Suspected Tab Switching / Focus Loss';
+        flagBox.append(badge);
+      }
+      if (row.notes) {
+        const timeline = document.createElement('div');
+        timeline.className = 'cheat-timeline';
+        timeline.style.whiteSpace = 'pre-line';
+        timeline.textContent = row.notes;
+        flagBox.append(timeline);
+      }
+      tdNotes.append(flagBox);
+    } else if (row.done) {
+      tdNotes.innerHTML = `<span class="clean-session">✓ Clean session (No tab switch)</span>`;
+    } else {
+      tdNotes.innerHTML = `<span class="muted small">—</span>`;
     }
     tbody.append(tr);
   });
@@ -2087,9 +2475,9 @@ function csvCell(v) {
 }
 
 function exportCSV(rows, code) {
-  const headers = 'Name,Score,Status,Minutes,Notes';
+  const headers = 'Name,Email,Course,Section,Attempt,Score,Total,Status,Minutes,Notes';
   const lines = rows.map(r =>
-    [r.name, r.score, r.status, r.minutes, r.notes].map(csvCell).join(','));
+    [r.name, r.email, r.course, r.section, r.attempt || 1, r.score, r.total, r.status, r.minutes, r.notes].map(csvCell).join(','));
   // A BOM, or Excel reads the accented names in a Filipino roster as mojibake.
   const csv = '\ufeff' + [headers, ...lines].join('\r\n');
 
@@ -2101,6 +2489,56 @@ function exportCSV(rows, code) {
   // Without this the whole file stays in memory until the tab is closed.
   setTimeout(() => URL.revokeObjectURL(url), 4000);
   toast('Downloaded ' + code + '-results.csv', 'ok');
+}
+
+/* Results Toolbar Listeners */
+['all', 'flagged', 'done', 'in-progress'].forEach(mode => {
+  const btnId = mode === 'all' ? 'filterResAll'
+    : mode === 'flagged' ? 'filterResFlagged'
+    : mode === 'done' ? 'filterResDone' : 'filterResBusy';
+  const el = $(btnId);
+  if (el) {
+    el.onclick = () => {
+      _currentResultsFilter = mode;
+      document.querySelectorAll('#resultsFilterTabs .btn-filter').forEach(b => b.classList.remove('on'));
+      el.classList.add('on');
+      applyResultsFilterAndRender();
+    };
+  }
+});
+
+if ($('searchResultQuery')) {
+  $('searchResultQuery').oninput = (e) => {
+    _currentResultsSearch = e.target.value.trim();
+    applyResultsFilterAndRender();
+  };
+}
+
+if ($('chkAutoRefreshResults')) {
+  $('chkAutoRefreshResults').onchange = (e) => {
+    if (e.target.checked) {
+      toast('Live monitoring active (refreshing every 15s)', 'ok');
+      if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+      _autoRefreshTimer = setInterval(() => {
+        if (_currentDetailExamCode && !$('scTExamDetail').hidden) {
+          loadExamResults(_currentDetailExamCode);
+        }
+      }, 15000);
+    } else {
+      if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+      _autoRefreshTimer = null;
+    }
+  };
+}
+
+if ($('btnExportCSV')) {
+  $('btnExportCSV').onclick = () => {
+    if (_allResultRows.length && _currentDetailExamCode) {
+      exportCSV(_allResultRows, _currentDetailExamCode);
+    } else {
+      toast('No results to export.', 'bad');
+    }
+  };
 }
 
 /* ================================================================
