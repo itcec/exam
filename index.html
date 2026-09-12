@@ -73,7 +73,7 @@
         </svg>
         Continue with Google
       </button>
-      <p class="err small" id="signInErr" hidden></p>
+      <p class="err small" id="signInErr" role="alert" aria-live="assertive" hidden></p>
     </div>
   </section>
 
@@ -100,8 +100,8 @@
           <input class="field mono" id="edpInput" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 10234">
           <button class="btn btn-ghost" id="btnAddEdp" type="button" style="white-space:nowrap;">Add Class</button>
         </div>
-        <p class="msg ok small" id="edpOk" hidden></p>
-        <p class="err small" id="edpErr" hidden></p>
+        <p class="msg ok small" id="edpOk" role="status" aria-live="polite" hidden></p>
+        <p class="err small" id="edpErr" role="alert" hidden></p>
       </div>
 
       <div class="stack-s" style="margin-top: 14px;">
@@ -109,7 +109,7 @@
         <input class="field" id="codeInput" type="text" autocomplete="off"
                autocapitalize="characters" spellcheck="false" placeholder="e.g. PRELIM1 or 10234">
       </div>
-      <p class="err" id="startErr" hidden></p>
+      <p class="err" id="startErr" role="alert" hidden></p>
       <button class="btn btn-primary" id="btnContinue" type="button">Continue</button>
     </div>
   </section>
@@ -160,8 +160,8 @@
           </div>
         </div>
 
-        <p class="msg ok small" id="accOk" hidden></p>
-        <p class="err small" id="accErr" hidden></p>
+        <p class="msg ok small" id="accOk" role="status" aria-live="polite" hidden></p>
+        <p class="err small" id="accErr" role="alert" hidden></p>
         <button class="btn btn-primary" id="btnSaveAccount" type="button">Save Profile</button>
       </div>
 
@@ -219,7 +219,7 @@
       </div>
 
       <p class="muted small" id="regEmail" style="word-break:break-all"></p>
-      <p class="err" id="regErr" hidden></p>
+      <p class="err" id="regErr" role="alert" hidden></p>
 
       <div class="actions">
         <button class="btn btn-primary" id="btnRegister" type="button">Find my name</button>
@@ -236,7 +236,7 @@
         these are you, go back and check your spelling.</p>
       <div class="stack" id="pickList"></div>
       <button class="btn btn-ghost" id="btnPickBack" type="button">‹ Search again</button>
-      <p class="err" id="pickErr" hidden></p>
+      <p class="err" id="pickErr" role="alert" hidden></p>
     </div>
   </section>
 

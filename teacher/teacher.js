@@ -40,12 +40,23 @@ const activeTheme = () => document.documentElement.dataset.theme || (prefersDark
 function labelTheme() {
   const lbl = activeTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
   if ($('menuTheme')) $('menuTheme').setAttribute('aria-label', lbl);
+  if ($('btnTTheme')) {
+    $('btnTTheme').setAttribute('aria-label', lbl);
+    $('btnTTheme').textContent = activeTheme() === 'dark' ? '☀️' : '🌙';
+  }
 }
 
 function setTheme(t) {
   document.documentElement.dataset.theme = t;
   try { localStorage.setItem('exam_theme_v1', t); } catch {}
   labelTheme();
+}
+
+if ($('btnTTheme')) {
+  $('btnTTheme').onclick = () => {
+    feedback('tap', 8);
+    setTheme(activeTheme() === 'dark' ? 'light' : 'dark');
+  };
 }
 
 if ($('btnTeacherMenu')) {
@@ -55,6 +66,10 @@ if ($('btnTeacherMenu')) {
     const on = drop.hidden;
     drop.hidden = !on;
     $('btnTeacherMenu').setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (on) {
+      const firstItem = drop.querySelector('[role="menuitem"], button');
+      if (firstItem) firstItem.focus();
+    }
   };
 }
 document.addEventListener('click', (e) => {
@@ -62,6 +77,15 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('#menuContainer')) {
       $('teacherMenuDropdown').hidden = true;
       if ($('btnTeacherMenu')) $('btnTeacherMenu').setAttribute('aria-expanded', 'false');
+    }
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('teacherMenuDropdown') && !$('teacherMenuDropdown').hidden) {
+    $('teacherMenuDropdown').hidden = true;
+    if ($('btnTeacherMenu')) {
+      $('btnTeacherMenu').setAttribute('aria-expanded', 'false');
+      $('btnTeacherMenu').focus();
     }
   }
 });
@@ -670,18 +694,19 @@ function renderExamCards(exams) {
     wrap.append(p); return;
   }
   exams.forEach(ex => {
-    // A <button>, not a <div>: the whole card opens the exam, so it has to be
-    // reachable by Tab and operable by Enter and Space like anything else.
-    const card = document.createElement('button');
-    card.type = 'button';
+    // A <div> container, avoiding invalid nested <button> elements.
+    // The title itself is a reachable <button> for keyboard navigation, and the entire card
+    // remains clickable for mouse users without interfering with action buttons.
+    const card = document.createElement('div');
     card.className = 'card exam-card liftable';
-    card.setAttribute('aria-label', 'Open ' + (ex.title || ex.code) + ' results');
     card.innerHTML = `
       <div class="exam-card-top">
         <span class="exam-card-code">${esc(ex.code)}</span>
         ${statusChip(ex.status)}
       </div>
-      <div class="exam-card-title">${esc(ex.title || ex.code)}</div>
+      <div class="exam-card-title">
+        <button type="button" class="exam-title-btn" aria-label="Open ${esc(ex.title || ex.code)} results">${esc(ex.title || ex.code)}</button>
+      </div>
       <div class="exam-card-meta">
         ${ex.questions ?? '—'} question${ex.questions === 1 ? '' : 's'}
         ${ex.subject ? ' · ' + esc(ex.subject) : ''}
@@ -772,12 +797,15 @@ function renderExamCards(exams) {
     };
     actionRow.append(delBtn);
 
-    card.addEventListener('click', () => { feedback('nav', 8); openExamDetail(ex); });
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.exam-card-actions')) return;
+      feedback('nav', 8);
+      openExamDetail(ex);
+    });
     wrap.append(card);
   });
   revealIn(wrap);
 }
-
 function statusChip(status) {
   const s = String(status || '').toLowerCase();
   const cls = (s === 'open' || s === 'active') ? 'chip-open' : s === 'draft' ? 'chip-draft' : 'chip-closed';
@@ -793,7 +821,7 @@ async function setExamStatus(code, status, card) {
     // arrives with the actual list of what is wrong. Show it.
     toast([r.message || 'Could not update status.']
       .concat(r.errors?.length ? [''].concat(r.errors.map(e => '• ' + e)) : [])
-      .join('\n'), 'bad', 9000);
+      .join('\r\n'), 'bad', 9000);
   } catch (err) {
     console.error(err);
     toast(err.message || 'Could not reach the exam server.', 'bad');
@@ -866,6 +894,9 @@ $('btnSubmitNewExam').onclick = async () => {
         openQuestionBuilder();
         toast(`Exam "${code}" created. Add its questions here in the teacher portal.`, 'ok', 6000);
       } else {
+        // The server made the exam but the refreshed list did not include it
+        // yet. Do not misdirect the teacher to the Sheet; the portal remains
+        // the place to complete it after one refresh.
         toast(`Exam "${code}" created. Refresh Exams, open it, then add questions here in the teacher portal.`, 'ok', 6000);
       }
     } else {
@@ -1560,7 +1591,7 @@ function buildMasterPrompt() {
     '[PASTE YOUR LESSON OR REVIEW MATERIAL HERE]'
   );
 
-  return out.join('\n');
+  return out.join('\r\n');
 }
 
 function buildSingleTypePrompt(k) {
@@ -1589,7 +1620,7 @@ function buildSingleTypePrompt(k) {
     '─────────────────────────────',
     'THE CONTENTS ARE:'
   );
-  return out.join('\n');
+  return out.join('\r\n');
 }
 
 function copyPromptText(text, btn, okLabel = '✓ Copied!') {
@@ -1613,7 +1644,7 @@ function copyPromptText(text, btn, okLabel = '✓ Copied!') {
 
 function extractWordBankFromText(content) {
   if (!content) return { pool: '', questions: '' };
-  const text = content.replace(/\r\n/g, '\n').trim();
+  const text = content.replace(/\r\r\n/g, '\r\n').trim();
   const poolWords = [];
   let qLines = [];
 
@@ -1623,23 +1654,23 @@ function extractWordBankFromText(content) {
     const bankPart = text.slice(0, qHeaderIdx).replace(/(?:===\s*WORD\s*BANK\s*===|\[WORD\s*BANK\]|\bWORD\s*BANK:?|\bBANK:?)/gi, '').trim();
     const qPart = text.slice(qHeaderIdx).replace(/(?:===\s*QUESTIONS\s*===|\[QUESTIONS\]|\bQUESTIONS:?)/gi, '').trim();
 
-    bankPart.split('\n').forEach(line => {
+    bankPart.split('\r\n').forEach(line => {
       line = line.replace(/^[-*•\d.)]\s*/, '').trim();
       if (!line) return;
       if (line.includes(',')) line.split(',').forEach(w => { if (w.trim()) poolWords.push(w.trim()); });
       else if (line.includes(';')) line.split(';').forEach(w => { if (w.trim()) poolWords.push(w.trim()); });
       else poolWords.push(line);
     });
-    qLines = qPart.split('\n').map(l => l.trim()).filter(Boolean);
+    qLines = qPart.split('\r\n').map(l => l.trim()).filter(Boolean);
   } else {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = text.split('\r\n').map(l => l.trim()).filter(Boolean);
     let inBank = false;
     lines.forEach(line => {
       if (/^(?:===\s*WORD\s*BANK\s*===|\[WORD\s*BANK\]|\bWORD\s*BANK:?|\bBANK:?)/i.test(line)) {
         inBank = true;
         const rest = line.replace(/^(?:===\s*WORD\s*BANK\s*===|\[WORD\s*BANK\]|\bWORD\s*BANK:?|\bBANK:?)/i, '').trim();
         if (rest) {
-          rest.split(/[,;\n]/).forEach(w => {
+          rest.split(/[,;\r\n]/).forEach(w => {
             const clean = w.replace(/^[-*•\d.)]\s*/, '').trim();
             if (clean) poolWords.push(clean);
           });
@@ -1679,14 +1710,14 @@ function extractWordBankFromText(content) {
   });
 
   return {
-    pool: uniquePool.join('\n'),
-    questions: qLines.join('\n')
+    pool: uniquePool.join('\r\n'),
+    questions: qLines.join('\r\n')
   };
 }
 
 function autoSplitMasterPaste(raw) {
   if (!raw || !raw.trim()) return 0;
-  const text = raw.replace(/\r\n/g, '\n');
+  const text = raw.replace(/\r\r\n/g, '\r\n');
 
   const sectionPatterns = [
     { key: 'MC', pattern: /(?:===\s*(?:MULTIPLE\s*CHOICE|MC)\s*===|\[\s*(?:MULTIPLE\s*CHOICE|MC)\s*\])/i },
@@ -1712,7 +1743,7 @@ function autoSplitMasterPaste(raw) {
     const on = activeBuilderTypes();
     if (on.length === 1) {
       const singleKey = on[0].key;
-      const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+      const clean = text.replace(/^```[a-z]*\r\n?/i, '').replace(/\r\n?```$/i, '').trim();
       if (singleKey === 'WB') {
         const wb = extractWordBankFromText(clean);
         const poolEl = $('tPool_' + singleKey);
@@ -1731,7 +1762,7 @@ function autoSplitMasterPaste(raw) {
     const start = m.index + m.length;
     const end = (i + 1 < matches.length) ? matches[i + 1].index : text.length;
     let content = text.slice(start, end).trim();
-    content = content.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+    content = content.replace(/^```[a-z]*\r\n?/i, '').replace(/\r\n?```$/i, '').trim();
 
     if (m.key === 'WB') {
       const wb = extractWordBankFromText(content);
@@ -2033,7 +2064,7 @@ if ($('btnTAddAll')) {
       if (r.problems?.length) {
         toast([`Imported ${r.added} question(s), with ${r.problems.length} to look at:`]
           .concat(r.problems.slice(0, 5).map(p => '• line ' + p.line + ': ' + (p.msg || p.why || '')))
-          .join('\n'), 'warn', 9000);
+          .join('\r\n'), 'warn', 9000);
       } else {
         toast(`Successfully imported ${r.added} question(s) into ${_currentDetailExamCode}!`, 'ok');
       }
@@ -2057,6 +2088,9 @@ if ($('btnTAddAll')) {
    Per-question manager
    ================================================================ */
 let _managedQuestions = [];
+let _managedSelectedRow = null;
+let _managedSearchQuery = '';
+let _managedTypeFilter = 'ALL';
 
 const MANAGED_TYPE_LABELS = {
   MC: 'Multiple choice', TF: 'True or false', ID: 'Identification',
@@ -2064,7 +2098,7 @@ const MANAGED_TYPE_LABELS = {
 };
 
 function managedLines(value) {
-  return String(value || '').replace(/\r\n/g, '\n').split('\n').map(s => s.trim()).filter(Boolean);
+  return String(value || '').replace(/\r\r\n/g, '\r\n').split('\r\n').map(s => s.trim()).filter(Boolean);
 }
 
 function managedFormValue() {
@@ -2085,73 +2119,355 @@ function managedSpec(q) {
   if (q.type === 'MC') {
     text += ' ' + q.choices.map((choice, i) => String.fromCharCode(97 + i) + '. ' + choice).join(' ');
   } else if (q.type === 'MA') {
-    text = q.answers.join('\n');
+    text = q.answers.join('\r\n');
     instruction = q.question;
   } else if (q.type === 'WB') {
-    pool = q.choices.join('\n');
+    pool = q.choices.join('\r\n');
   }
   return { mode: q.type, text: text + ' | ' + q.answers.join(';'), pool, instruction, seconds: q.timer };
 }
 
+function applyManagedTypeUI(type) {
+  const wrapChoices = $('wrapManageChoices');
+  const lblChoices = $('lblManageChoices');
+  const txtChoices = $('manageQuestionChoices');
+  const lblAnswers = $('lblManageAnswers');
+  const txtAnswers = $('manageQuestionAnswers');
+  const tfToggle = $('manageTFToggle');
+  const hintAnswers = $('hintManageAnswers');
+  const badge = $('manageEditorBadge');
+
+  if (badge) {
+    badge.className = 'q-chip q-chip-' + String(type || 'mc').toLowerCase();
+    badge.textContent = MANAGED_TYPE_LABELS[type] || type;
+  }
+
+  if (type === 'TF') {
+    if (wrapChoices) wrapChoices.style.display = 'none';
+    if (tfToggle) tfToggle.style.display = 'flex';
+    if (lblAnswers) lblAnswers.innerHTML = 'Correct Answer <span class="muted">(Select True or False below)</span>';
+    if (hintAnswers) hintAnswers.textContent = 'Click True or False, or type it into the box.';
+    const curVal = (txtAnswers?.value || '').trim().toLowerCase();
+    document.querySelectorAll('#manageTFToggle .tf-btn').forEach(btn => {
+      const bVal = btn.getAttribute('data-val').toLowerCase();
+      btn.classList.toggle('selected', curVal.startsWith(bVal) || curVal === bVal);
+    });
+  } else if (type === 'ID') {
+    if (wrapChoices) wrapChoices.style.display = 'none';
+    if (tfToggle) tfToggle.style.display = 'none';
+    if (lblAnswers) lblAnswers.innerHTML = 'Accepted Answer(s) <span class="muted">(one per line for alternate spellings)</span>';
+    if (hintAnswers) hintAnswers.textContent = 'Case-insensitive. If multiple lines are provided, any of them earns full points.';
+  } else if (type === 'EN') {
+    if (wrapChoices) wrapChoices.style.display = 'none';
+    if (tfToggle) tfToggle.style.display = 'none';
+    if (lblAnswers) lblAnswers.innerHTML = 'Required Items <span class="muted">(one required item per line)</span>';
+    if (hintAnswers) hintAnswers.textContent = 'Students must list all lines to receive full credit.';
+  } else if (type === 'MA') {
+    if (wrapChoices) wrapChoices.style.display = 'block';
+    if (tfToggle) tfToggle.style.display = 'none';
+    if (lblChoices) lblChoices.innerHTML = 'Left Items / Premises <span class="muted">(one per line)</span>';
+    if (txtChoices) txtChoices.placeholder = 'Item 1\r\nItem 2\r\nItem 3';
+    if (lblAnswers) lblAnswers.innerHTML = 'Matching Right Items <span class="muted">(matching line-by-line to left)</span>';
+    if (txtAnswers) txtAnswers.placeholder = 'Match for Item 1\r\nMatch for Item 2\r\nMatch for Item 3';
+    if (hintAnswers) hintAnswers.textContent = 'Pairs are matched row-for-row (Line 1 matches Line 1).';
+  } else if (type === 'WB') {
+    if (wrapChoices) wrapChoices.style.display = 'block';
+    if (tfToggle) tfToggle.style.display = 'none';
+    if (lblChoices) lblChoices.innerHTML = 'Word Bank Pool <span class="muted">(pool of available words, one per line)</span>';
+    if (txtChoices) txtChoices.placeholder = 'Word 1\r\nWord 2\r\nWord 3\r\nDistractor 4';
+    if (lblAnswers) lblAnswers.innerHTML = 'Target Answer(s) <span class="muted">(one per blank)</span>';
+    if (hintAnswers) hintAnswers.textContent = 'The word bank options shown to the student during the exam.';
+  } else {
+    // Default MC
+    if (wrapChoices) wrapChoices.style.display = 'block';
+    if (tfToggle) tfToggle.style.display = 'none';
+    if (lblChoices) lblChoices.innerHTML = 'Choices / Options <span class="muted">(one option per line)</span>';
+    if (txtChoices) txtChoices.placeholder = 'Option A\r\nOption B\r\nOption C\r\nOption D';
+    if (lblAnswers) lblAnswers.innerHTML = 'Correct Answer <span class="muted">(e.g. A, B, or exact option text)</span>';
+    if (hintAnswers) hintAnswers.textContent = 'The correct option key (A, B, C, D) or the exact choice text.';
+  }
+}
+
+function updateManagedPreview() {
+  const box = $('manageQPreview');
+  if (!box) return;
+  const q = managedFormValue();
+
+  if (!q.question) {
+    box.innerHTML = '<span class="muted small">Type a question prompt above to preview student view…</span>';
+    return;
+  }
+
+  let html = `<div style="font-weight:600; margin-bottom:8px; line-height:1.4;">${esc(q.question)}</div>`;
+
+  if (q.type === 'MC') {
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const ansLower = q.answers.map(a => a.toLowerCase());
+    if (q.choices.length) {
+      html += '<div style="display:flex; flex-direction:column; gap:4px;">';
+      q.choices.forEach((c, idx) => {
+        const letter = letters[idx] || String(idx + 1);
+        const isKey = ansLower.includes(letter.toLowerCase()) || ansLower.includes(c.toLowerCase());
+        html += `
+          <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:4px; border:1px solid ${isKey ? 'var(--ok)' : 'var(--edge)'}; background:${isKey ? 'var(--ok-soft, rgba(4,120,87,0.08))' : 'var(--glass)'}; font-size:0.8rem;">
+            <b style="color:${isKey ? 'var(--ok)' : 'var(--accent)'};">${letter}.</b>
+            <span style="flex:1;">${esc(c)}</span>
+            ${isKey ? '<span style="color:var(--ok); font-weight:700; font-size:0.75rem;">✓ Correct Key</span>' : ''}
+          </div>`;
+      });
+      html += '</div>';
+    } else {
+      html += '<span class="muted small">Add choices above to preview multiple choice options…</span>';
+    }
+  } else if (q.type === 'TF') {
+    const ansStr = (q.answers[0] || '').toLowerCase();
+    const isT = ansStr === 'true' || ansStr === 't';
+    const isF = ansStr === 'false' || ansStr === 'f';
+    html += `
+      <div style="display:flex; gap:8px;">
+        <div style="flex:1; padding:6px; text-align:center; border-radius:4px; border:1px solid ${isT ? 'var(--ok)' : 'var(--edge)'}; background:${isT ? 'var(--ok-soft, rgba(4,120,87,0.08))' : 'var(--glass)'}; font-size:0.8rem; font-weight:600;">
+          True ${isT ? '<span style="color:var(--ok);">✓</span>' : ''}
+        </div>
+        <div style="flex:1; padding:6px; text-align:center; border-radius:4px; border:1px solid ${isF ? 'var(--ok)' : 'var(--edge)'}; background:${isF ? 'var(--ok-soft, rgba(4,120,87,0.08))' : 'var(--glass)'}; font-size:0.8rem; font-weight:600;">
+          False ${isF ? '<span style="color:var(--ok);">✓</span>' : ''}
+        </div>
+      </div>`;
+  } else if (q.type === 'ID') {
+    html += `
+      <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+        <input class="field" disabled placeholder="Student types identification answer here…" style="flex:1; font-size:0.8rem;">
+        <span class="muted small" style="font-size:0.75rem; white-space:nowrap;">Key: <b>${esc(q.answers.join(' | ') || 'None')}</b></span>
+      </div>`;
+  } else if (q.type === 'EN') {
+    html += `
+      <div style="margin-top:4px;">
+        <div class="muted small" style="margin-bottom:4px;">Expected Enumeration Answers:</div>
+        <ol style="margin:0; padding-left:20px; font-size:0.8rem;">
+          ${(q.answers.length ? q.answers : ['Item 1', 'Item 2']).map(a => `<li>${esc(a)}</li>`).join('')}
+        </ol>
+      </div>`;
+  } else if (q.type === 'MA') {
+    html += `
+      <div style="font-size:0.8rem; margin-top:4px;">
+        <table style="inline-size:100%; border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid var(--edge);"><th style="text-align:left; padding:2px 4px; font-size:0.75rem;">Premise</th><th style="text-align:left; padding:2px 4px; font-size:0.75rem;">Target Match</th></tr></thead>
+          <tbody>
+            ${(q.choices.length ? q.choices : ['Premise 1']).map((c, i) => `
+              <tr style="border-bottom:1px dashed var(--edge);">
+                <td style="padding:4px;">${esc(c)}</td>
+                <td style="padding:4px; font-weight:600; color:var(--accent);">${esc(q.answers[i] || '—')}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } else if (q.type === 'WB') {
+    html += `
+      <div style="font-size:0.8rem; margin-top:4px;">
+        <div class="muted small" style="margin-bottom:4px;">Word Pool:</div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
+          ${q.choices.map(c => `<span class="pill" style="font-size:0.75rem;">${esc(c)}</span>`).join('')}
+        </div>
+        <div class="muted small">Target Answer: <b>${esc(q.answers.join(', ') || '—')}</b></div>
+      </div>`;
+  }
+
+  box.innerHTML = html;
+}
+
 function renderManagedQuestionList() {
   const host = $('manageQuestionsList');
+  if (!host) return;
   host.replaceChildren();
-  if (!_managedQuestions.length) {
-    const empty = document.createElement('p');
-    empty.className = 'muted small';
-    empty.textContent = 'No questions yet. Use “Add another question” below to create the first one.';
-    host.append(empty); return;
+
+  // Filter list
+  const qQuery = _managedSearchQuery.toLowerCase().trim();
+  const filtered = _managedQuestions.filter(q => {
+    if (_managedTypeFilter !== 'ALL' && q.type !== _managedTypeFilter) return false;
+    if (qQuery) {
+      const qNoMatch = ('q' + q.no).includes(qQuery);
+      const textMatch = String(q.question || '').toLowerCase().includes(qQuery);
+      const ansMatch = (q.answers || []).some(a => String(a).toLowerCase().includes(qQuery));
+      return qNoMatch || textMatch || ansMatch;
+    }
+    return true;
+  });
+
+  // Calculate tally
+  const totalPts = _managedQuestions.reduce((acc, q) => acc + (parseFloat(q.points) || 1), 0);
+  if ($('manageQTally')) {
+    $('manageQTally').textContent = `${filtered.length} of ${_managedQuestions.length} question${_managedQuestions.length === 1 ? '' : 's'} · ${totalPts.toFixed(totalPts % 1 === 0 ? 0 : 1)} pts total`;
   }
-  _managedQuestions.forEach(q => {
-    const btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'btn btn-ghost';
-    btn.style.cssText = 'text-align:left; white-space:normal;';
-    btn.innerHTML = `<b>Q${esc(q.no)}</b> · ${esc(q.typeLabel || MANAGED_TYPE_LABELS[q.type] || q.type)} — ${esc(q.question)}`;
-    btn.onclick = () => fillManagedEditor(q);
-    host.append(btn);
+
+  if (!filtered.length) {
+    const empty = document.createElement('div');
+    empty.className = 'muted small';
+    empty.style.cssText = 'padding:24px 12px; text-align:center;';
+    empty.textContent = _managedQuestions.length
+      ? 'No questions match the active search or type filter.'
+      : 'No questions yet in this exam. Click "+ New Question" to create one.';
+    host.append(empty);
+    return;
+  }
+
+  filtered.forEach(q => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    const isSel = String(q.row) === String(_managedSelectedRow);
+    card.className = 'q-card-item' + (isSel ? ' is-selected' : '');
+    card.setAttribute('aria-selected', isSel ? 'true' : 'false');
+    card.setAttribute('role', 'option');
+
+    // Snippet
+    let snippet = '';
+    if (q.type === 'MC') {
+      snippet = `${q.choices?.length || 0} choices · Key: ${esc((q.answers || []).join(', ') || '—')}`;
+    } else if (q.type === 'TF') {
+      snippet = `Key: ${esc((q.answers || []).join(', ') || '—')}`;
+    } else if (q.type === 'ID') {
+      snippet = `Key: ${esc((q.answers || []).slice(0, 2).join(', ') || '—')}`;
+    } else if (q.type === 'EN') {
+      snippet = `${q.answers?.length || 0} required items`;
+    } else if (q.type === 'MA') {
+      snippet = `${q.answers?.length || 0} pairs`;
+    } else if (q.type === 'WB') {
+      snippet = `${q.choices?.length || 0} pool words`;
+    }
+
+    const typeChipClass = 'q-chip q-chip-' + String(q.type || 'mc').toLowerCase();
+    const typeLabel = q.type;
+
+    card.innerHTML = `
+      <div class="q-card-item-top">
+        <span class="q-card-num">Q${esc(q.no)}</span>
+        <span class="${typeChipClass}">${esc(typeLabel)}</span>
+        <span class="grow"></span>
+        <span class="q-card-meta">${esc(q.points || 1)} pt${q.points == 1 ? '' : 's'}${q.timer ? ' · ⏱ ' + esc(q.timer) + 's' : ''}</span>
+      </div>
+      <div class="q-card-prompt">${esc(q.question || 'Untitled question')}</div>
+      <div class="q-card-key">${snippet}</div>
+    `;
+
+    card.onclick = () => {
+      _managedSelectedRow = q.row;
+      fillManagedEditor(q);
+      renderManagedQuestionList();
+    };
+
+    host.append(card);
   });
 }
 
 function fillManagedEditor(q) {
-  $('manageQuestionsEditor').hidden = false;
+  _managedSelectedRow = q.row || 'new';
+  if ($('manageQuestionsEditor')) $('manageQuestionsEditor').hidden = false;
+  if ($('manageQuestionsEmptyEditor')) $('manageQuestionsEmptyEditor').style.display = 'none';
+
   $('manageQuestionRow').value = q.row || '';
   $('manageQuestionNo').value = q.row ? `Q${q.no}` : 'New question';
+  if ($('manageEditorHeading')) {
+    $('manageEditorHeading').textContent = q.row ? `Editing Question Q${q.no}` : 'Create New Question';
+  }
   $('manageQuestionType').value = q.type || 'ID';
   $('manageQuestionText').value = q.question || '';
-  $('manageQuestionChoices').value = (q.choices || []).join('\n');
-  $('manageQuestionAnswers').value = (q.answers || []).join('\n');
+  $('manageQuestionChoices').value = (q.choices || []).join('\r\n');
+  $('manageQuestionAnswers').value = (q.answers || []).join('\r\n');
   $('manageQuestionTimer').value = q.timer == null ? '' : q.timer;
   $('manageQuestionPoints').value = q.points == null ? '1' : q.points;
   $('manageQuestionOut').replaceChildren();
   $('btnDeleteManagedQuestion').hidden = !q.row;
+
+  applyManagedTypeUI(q.type || 'ID');
+  updateManagedPreview();
 }
 
 function beginNewManagedQuestion() {
-  fillManagedEditor({ row: '', type: 'ID', question: '', choices: [], answers: [], timer: '', points: 1 });
+  _managedSelectedRow = 'new';
+  const nextNo = _managedQuestions.length + 1;
+  fillManagedEditor({ row: '', no: nextNo, type: 'MC', question: '', choices: [], answers: [], timer: '', points: 1 });
+  renderManagedQuestionList();
 }
 
 async function refreshManagedQuestions(selectRow) {
   const r = await api('teacherListQuestions', { idToken: await idToken(), code: _currentDetailExamCode });
   if (!r.ok) throw new Error(r.message || 'Could not load questions.');
   _managedQuestions = r.questions || [];
+  const selected = selectRow
+    ? _managedQuestions.find(q => String(q.row) === String(selectRow))
+    : _managedQuestions[0];
+
   renderManagedQuestionList();
-  const selected = selectRow && _managedQuestions.find(q => String(q.row) === String(selectRow));
-  if (selected) fillManagedEditor(selected);
-  else if (!_managedQuestions.length) beginNewManagedQuestion();
+  if (selected) {
+    fillManagedEditor(selected);
+  } else if (!_managedQuestions.length) {
+    beginNewManagedQuestion();
+  } else {
+    fillManagedEditor(_managedQuestions[0]);
+  }
   if ($('detailQCount')) $('detailQCount').textContent = _managedQuestions.length;
 }
 
 async function openQuestionManager() {
   if (!_currentDetailExamCode) return;
-  $('manageQuestionsList').innerHTML = '<p class="muted small">Loading questions…</p>';
-  $('manageQuestionsEditor').hidden = true;
+  $('manageQModalTitle').textContent = `Manage Questions (${_currentDetailExamCode})`;
+  $('manageQuestionsList').innerHTML = '<p class="muted small" style="padding:16px;text-align:center;">Loading questions…</p>';
+  if ($('manageQuestionsEditor')) $('manageQuestionsEditor').hidden = true;
+  if ($('manageQuestionsEmptyEditor')) $('manageQuestionsEmptyEditor').style.display = 'block';
+  _managedSearchQuery = '';
+  _managedTypeFilter = 'ALL';
+  if ($('manageQSearch')) $('manageQSearch').value = '';
+  document.querySelectorAll('#manageQTypeFilter .q-filter-btn').forEach(b => {
+    b.classList.toggle('on', b.getAttribute('data-type') === 'ALL');
+  });
+
   openModal($('manageQuestionsModal'), $('manageQuestionText'));
   try { await refreshManagedQuestions(); }
-  catch (err) { $('manageQuestionsList').innerHTML = `<p class="msg bad">${esc(err.message)}</p>`; }
+  catch (err) { $('manageQuestionsList').innerHTML = `<p class="msg bad" style="padding:12px;">${esc(err.message)}</p>`; }
 }
 
 if ($('btnCloseManageQuestions')) $('btnCloseManageQuestions').onclick = () => closeModal($('manageQuestionsModal'));
 if ($('btnNewManagedQuestion')) $('btnNewManagedQuestion').onclick = beginNewManagedQuestion;
+
+// Search and Filter Listeners
+if ($('manageQSearch')) {
+  $('manageQSearch').oninput = (e) => {
+    _managedSearchQuery = e.target.value;
+    renderManagedQuestionList();
+  };
+}
+
+document.querySelectorAll('#manageQTypeFilter .q-filter-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('#manageQTypeFilter .q-filter-btn').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    _managedTypeFilter = btn.getAttribute('data-type');
+    renderManagedQuestionList();
+  };
+});
+
+// Live Form & Preview Listeners
+if ($('manageQuestionType')) {
+  $('manageQuestionType').onchange = (e) => {
+    applyManagedTypeUI(e.target.value);
+    updateManagedPreview();
+  };
+}
+
+['manageQuestionText', 'manageQuestionChoices', 'manageQuestionAnswers', 'manageQuestionTimer', 'manageQuestionPoints'].forEach(id => {
+  const el = $(id);
+  if (el) {
+    el.addEventListener('input', updateManagedPreview);
+  }
+});
+
+document.querySelectorAll('#manageTFToggle .tf-btn').forEach(btn => {
+  btn.onclick = () => {
+    const val = btn.getAttribute('data-val');
+    $('manageQuestionAnswers').value = val;
+    document.querySelectorAll('#manageTFToggle .tf-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    updateManagedPreview();
+  };
+});
 
 if ($('btnSaveManagedQuestion')) {
   $('btnSaveManagedQuestion').onclick = async () => {
@@ -2167,11 +2483,12 @@ if ($('btnSaveManagedQuestion')) {
         : await api('teacherAddQuestions', { idToken: await idToken(), code: _currentDetailExamCode, specs: [managedSpec(q)], mode: 'append' });
       if (!r.ok) throw new Error(r.message || 'Question was not saved.');
       await refreshManagedQuestions(row || null);
-      out.innerHTML = '<div class="msg ok">Question saved.</div>';
+      out.innerHTML = '<div class="msg ok">✓ Question saved successfully.</div>';
       toast(row ? 'Question updated.' : 'Question added.', 'ok');
+      play('pop');
     } catch (err) {
       out.innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
-    } finally { btn.disabled = false; btn.textContent = 'Save question'; }
+    } finally { btn.disabled = false; btn.textContent = 'Save Question'; }
   };
 }
 
@@ -2184,11 +2501,13 @@ if ($('btnDeleteManagedQuestion')) {
     try {
       const r = await api('teacherDeleteQuestion', { idToken: await idToken(), code: _currentDetailExamCode, row });
       if (!r.ok) throw new Error(r.message || 'Question was not deleted.');
+      _managedSelectedRow = null;
       await refreshManagedQuestions();
       toast('Question deleted.', 'ok');
+      play('pop');
     } catch (err) {
       $('manageQuestionOut').innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
-    } finally { btn.disabled = false; btn.textContent = '🗑️ Delete question'; }
+    } finally { btn.disabled = false; btn.textContent = '🗑️ Delete'; }
   };
 }
 
@@ -2266,11 +2585,13 @@ function renderStudentTable(students) {
 
     const actions = document.createElement('div');
     actions.className = 'student-actions';
+    const studentName = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'student';
 
     const btnEdit = document.createElement('button');
     btnEdit.type = 'button';
     btnEdit.className = 'btn-tbl-action';
     btnEdit.innerHTML = '✏️ Edit';
+    btnEdit.setAttribute('aria-label', `Edit student ${studentName}`);
     btnEdit.onclick = () => openEditStudent(s);
     actions.append(btnEdit);
 
@@ -2279,6 +2600,7 @@ function renderStudentTable(students) {
       btnUnlink.type = 'button';
       btnUnlink.className = 'btn-tbl-action unlink';
       btnUnlink.innerHTML = '🔓 Unlink';
+      btnUnlink.setAttribute('aria-label', `Unlink account for ${studentName}`);
       btnUnlink.onclick = () => openUnlinkStudent(s);
       actions.append(btnUnlink);
     }
@@ -2440,7 +2762,7 @@ $('btnCheckStudents').onclick = async () => {
       r.problems.slice(0, 5).forEach(p => lines.push('  line ' + p.line + ': ' + p.why));
     }
 
-    $('addOut').textContent = lines.join('\n');
+    $('addOut').textContent = lines.join('\r\n');
     $('addOut').style.whiteSpace = 'pre-line';
     $('btnDoAdd').disabled = !r.count;
   } catch (err) { $('addOut').textContent = 'Error: ' + err.message; }
@@ -2713,11 +3035,24 @@ function csvCell(v) {
 }
 
 function exportCSV(rows, code) {
-  const headers = 'Name,Email,Course,Section,Attempt,Score,Total,Status,Minutes,Notes';
+  const headers = 'Name,StudentID,Email,Course,Section,EDPCode,Attempt,Score,Total,Status,Minutes,Notes';
   const lines = rows.map(r =>
-    [r.name, r.email, r.course, r.section, r.attempt || 1, r.score, r.total, r.status, r.minutes, r.notes].map(csvCell).join(','));
+    [
+      r.name,
+      r.studentId || r.id || '',
+      r.email,
+      r.course,
+      r.section,
+      r.edpCode || r.edp || '',
+      r.attempt || 1,
+      r.score,
+      r.total,
+      r.status,
+      r.minutes,
+      r.notes
+    ].map(csvCell).join(','));
   // A BOM, or Excel reads the accented names in a Filipino roster as mojibake.
-  const csv = '\ufeff' + [headers, ...lines].join('\r\n');
+  const csv = '\ufeff' + [headers, ...lines].join('\r\r\n');
 
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
@@ -2729,7 +3064,10 @@ function exportCSV(rows, code) {
   toast('Downloaded ' + code + '-results.csv', 'ok');
 }
 
-/** Build spreadsheet-friendly selected-column copy controls. */
+/**
+ * Build the spreadsheet-friendly copy area. It uses tabs, so pasting into
+ * Sheets or Excel lands each selected value in its own column.
+ */
 function buildResultCopyControls(getRows, code) {
   const bar = document.createElement('div');
   bar.className = 'copy-results-controls';
@@ -2762,7 +3100,7 @@ function copyResultColumns(rows, columns, code, includeHeaders, button) {
     if (column === 'score') return row.score == null ? '' : row.score;
     return '';
   }).join('\t'));
-  const text = (includeHeaders ? [columns.map(column => labels[column]).join('\t')] : []).concat(textRows).join('\n');
+  const text = (includeHeaders ? [columns.map(column => labels[column]).join('\t')] : []).concat(textRows).join('\r\n');
   const done = () => {
     const old = button.textContent;
     button.textContent = '✓ Copied';
@@ -2796,8 +3134,12 @@ function fallbackCopyResultText(text, done) {
   if (el) {
     el.onclick = () => {
       _currentResultsFilter = mode;
-      document.querySelectorAll('#resultsFilterTabs .btn-filter').forEach(b => b.classList.remove('on'));
+      document.querySelectorAll('#resultsFilterTabs .btn-filter').forEach(b => {
+        b.classList.remove('on');
+        b.setAttribute('aria-pressed', 'false');
+      });
       el.classList.add('on');
+      el.setAttribute('aria-pressed', 'true');
       applyResultsFilterAndRender();
     };
   }
@@ -2922,18 +3264,19 @@ function renderAccessList() {
       : '<span class="role-tag teacher" title="Teacher (Own exams & students)">👨‍🏫 Teacher</span>';
 
     let actionsHtml = '';
+    const emailDesc = email ? email : `account #${index + 1}`;
     if (!isAdmin) {
-      actionsHtml += `<button type="button" class="btn-make-admin" data-action="make-admin" data-index="${index}" title="Promote to Administrator">👑 Make Admin</button>`;
+      actionsHtml += `<button type="button" class="btn-make-admin" data-action="make-admin" data-index="${index}" title="Promote to Administrator" aria-label="Promote ${esc(emailDesc)} to Administrator">👑 Make Admin</button>`;
     }
     if (index > 1) {
-      actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="move-up" data-index="${index}" title="Move Up" style="padding:2px 6px;font-size:10px;">▲</button>`;
+      actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="move-up" data-index="${index}" title="Move Up" aria-label="Move ${esc(emailDesc)} up" style="padding:2px 6px;font-size:10px;">▲</button>`;
     }
-    actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="delete" data-index="${index}" title="Remove account" style="color:var(--bad);padding:2px 6px;font-size:11px;">✕</button>`;
+    actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="delete" data-index="${index}" title="Remove account" aria-label="Remove ${esc(emailDesc)}" style="color:var(--bad);padding:2px 6px;font-size:11px;">✕</button>`;
 
     row.innerHTML = `
       <div class="role-indicator">${roleTagHtml}</div>
       <div class="email-input-wrapper">
-        <input type="email" class="field mono ${email && !isValidEmail(email) ? 'invalid' : ''}" value="${esc(email)}" placeholder="e.g. ${isAdmin ? 'admin@school.edu' : 'teacher@school.edu'}" data-index="${index}" style="font-size:12px;padding:5px 8px;inline-size:100%;" spellcheck="false">
+        <input type="email" class="field mono ${email && !isValidEmail(email) ? 'invalid' : ''}" value="${esc(email)}" placeholder="e.g. ${isAdmin ? 'admin@school.edu' : 'teacher@school.edu'}" aria-label="Teacher email at position ${index + 1}" data-index="${index}" style="font-size:12px;padding:5px 8px;inline-size:100%;" spellcheck="false">
       </div>
       <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">${actionsHtml}</div>`;
 
@@ -2997,7 +3340,7 @@ if ($('btnApplyAccessBulk')) {
     const raw = $('tAccessBulkInput').value;
     if (!raw.trim()) return;
 
-    const parsed = raw.split(/[\n,;]+/)
+    const parsed = raw.split(/[\r\n,;]+/)
       .map(s => s.trim().toLowerCase())
       .filter(s => s.length > 0);
 
@@ -3021,7 +3364,7 @@ if ($('btnApplyAccessBulk')) {
 if ($('btnClearAllAccess')) {
   $('btnClearAllAccess').onclick = () => {
     if (_accessEmails.length === 0) return;
-    if (confirm('Are you sure you want to clear all accounts?\n\nThis will lock the Teacher Portal for everyone.')) {
+    if (confirm('Are you sure you want to clear all accounts?\r\n\r\nThis will lock the Teacher Portal for everyone.')) {
       _accessEmails = [];
       renderAccessList();
       toast('Cleared all accounts. Click Save to apply.', 'warn');

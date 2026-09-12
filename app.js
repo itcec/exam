@@ -396,10 +396,223 @@ const TYPE_NAME = {
   MC: 'Multiple choice',
   TF: 'True or false',
   ID: 'Identification',
+      cameraLock: false,
+      cameraX: 0,
+      cameraY: 0,
+      cameraZ: 0,
+      cameraRotationX: -0.014,
+      cameraRotationY: -0.23800000000000002,
+      cameraRotationZ: 0,
+      cameraZoom: 1,
+    };
+
+    studentNeatGradientInstance = new NeatGradient({
+      ref: canvas,
+      ...config
+    });
+
+    window.addEventListener('scroll', () => {
+      if (studentNeatGradientInstance) {
+        studentNeatGradientInstance.yOffset = window.scrollY * 0.0005;
+      }
+    }, { passive: true });
+  } catch (err) {
+    console.warn('[NeatGradient] WebGL initialization failed or not supported:', err);
+  }
+}
+
+initStudentNeatGradient();
+
+/* ---------------- screens ---------------- */
+
+const SCREENS = ['scLoading', 'scSignIn', 'scFatal', 'scRegister', 'scPick',
+                 'scNotListed', 'scStart', 'scHistory', 'scAccount',
+                 'scBrief', 'scResume', 'scExam', 'scSending', 'scDone'];
+
+/** What a screen is called, for the live region. */
+const SCREEN_NAME = {
+  scSignIn: 'Sign in', scStart: 'Choose your exam', scHistory: 'Exams you have taken',
+  scAccount: 'Account', scRegister: 'Find your name', scPick: 'Which one is you',
+  scNotListed: 'We could not find you', scBrief: 'Exam details', scResume: 'Exam in progress',
+  scExam: 'Exam', scSending: 'Submitting', scDone: 'Exam submitted', scFatal: 'Something went wrong'
+};
+
+function show(id) {
+  const target = $(id);
+  const changed = !target || target.hidden;
+  SCREENS.forEach(s => {
+    const el = $(s);
+    if (el) el.hidden = (s !== id);
+  });
+  const inExam = id === 'scExam';
+  if ($('brand')) $('brand').hidden = inExam;
+  if ($('pillProgress')) $('pillProgress').hidden = !inExam;
+  if ($('timerBar')) $('timerBar').hidden = !inExam;
+  if ($('btnExit')) $('btnExit').hidden = !inExam;
+  if (!inExam) {
+    if ($('pillSkipped')) $('pillSkipped').hidden = true;
+    if ($('pillTimer')) $('pillTimer').hidden = true;
+  }
+  syncBar(id);          // declared below; function declarations hoist
+  scrollTo(0, 0);
+
+  if (!changed) return;
+  // Toggling [hidden] moves nobody's focus and says nothing, so a screen
+  // reader user would otherwise have no idea the page had changed at all.
+  if (SCREEN_NAME[id]) announce(SCREEN_NAME[id]);
+  if (id !== 'scExam' && target) revealIn(target);
+}
+
+function fatal(title, msg) {
+  $('fatalTitle').textContent = title;
+  $('fatalText').textContent = msg;
+  show('scFatal');
+}
+$('btnReload').onclick = () => location.reload();
+
+/* ---------------- configuration gate ----------------
+
+   A half-filled config.js is a teacher's mistake, not a student's, so the
+   student is told only that the site is not ready and who to ask. The code
+   naming the missing value goes to the developer console, where the teacher
+   can find it and nobody else will look. */
+
+const configError = validateConfig();
+if (configError) {
+  fatal('The exam site is unavailable',
+    'The exam site is missing an important setting. ' +
+    'Please ask your teacher about this matter.');
+  throw new Error(configError);   // console only — never shown on screen
+}
+
+/* ---------------- api ----------------
+
+   Every call is a "simple" cross-origin POST: no custom headers and a
+   text/plain content type. Apps Script does not answer CORS preflight,
+   so an Authorization header or application/json would fail outright.
+   The ID token therefore rides in the body.                            */
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function api(action, payload = {}, { tries = 4, onRetry } = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, ...payload })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        // Almost always an HTML login page, which means the deployment is
+        // not public. Permanent — do not burn retries on it.
+        throw Object.assign(new Error('bad-response'), { permanent: true });
+      }
+    } catch (err) {
+      lastErr = err;
+      if (err.permanent || attempt === tries) break;
+      const wait = Math.min(1200 * 2 ** (attempt - 1), 8000);
+      onRetry?.(attempt, tries);
+      await sleep(wait);
+    }
+  }
+  throw lastErr;
+}
+
+/** Firebase refreshes the token automatically; ask for a current one. */
+async function idToken() {
+  const u = auth.currentUser;
+  if (!u) throw new Error('signed-out');
+  return u.getIdToken();
+}
+
+/* ---------------- auth ---------------- */
+
+$('schoolName').textContent = SCHOOL_NAME || 'Online Exam';
+
+let auth;
+try {
+  const app = initializeApp(FIREBASE_CONFIG);
+  auth = getAuth(app);
+  await setPersistence(auth, browserLocalPersistence);
+} catch (err) {
+  fatal('Sign-in is not set up', 'The exam site is missing its Firebase settings. Tell your instructor. (' + err.message + ')');
+}
+
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({
+  prompt: 'select_account',
+  // Narrows the account picker to one Workspace domain. Client-side only
+  // and trivially bypassed — the enforcing check is ALLOWED_EMAIL_DOMAINS
+  // on the server.
+  ...(HOSTED_DOMAIN ? { hd: HOSTED_DOMAIN } : {})
+});
+
+$('btnSignIn').onclick = async () => {
+  $('signInErr').hidden = true;
+  const b = $('btnSignIn');
+  b.disabled = true;
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    b.disabled = false;
+    const code = err?.code || '';
+    $('signInErr').textContent =
+      code === 'auth/popup-blocked'
+        ? 'Your browser blocked the sign-in window. Allow pop-ups for this site and try again.'
+      : code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request'
+        ? 'Sign-in was cancelled. Tap the button to try again.'
+      : code === 'auth/unauthorized-domain'
+        ? 'This site is not authorised for sign-in yet. Tell your instructor to add it in the Firebase console.'
+        : 'Sign-in failed: ' + (err?.message || code);
+    $('signInErr').hidden = false;
+    announce($('signInErr').textContent, true);
+    play('error');
+  }
+};
+
+$('btnSignOut').onclick = () => signOut(auth).then(() => location.reload());
+
+if (auth) {
+  onAuthStateChanged(auth, user => {
+    if (!user) { show('scSignIn'); return; }
+    $('loadingText').textContent = 'Loading your exams…';
+    show('scLoading');
+    boot();
+  });
+}
+
+/** Must stay in step with TYPE_LABEL in Config.gs. */
+const TYPE_NAME = {
+  MC: 'Multiple choice',
+  TF: 'True or false',
+  ID: 'Identification',
   EN: 'Enumeration',
   MA: 'Matching',
   WB: 'Word bank'
 };
+
+/* ---------------- session backup ---------------- */
+
+function saveSessionBackup(token, answers) {
+  if (!token) return;
+  try { sessionStorage.setItem('exam_answers_' + token, JSON.stringify(answers)); } catch {}
+}
+function loadSessionBackup(token) {
+  if (!token) return null;
+  try {
+    const raw = sessionStorage.getItem('exam_answers_' + token);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function clearSessionBackup(token) {
+  if (!token) return;
+  try { sessionStorage.removeItem('exam_answers_' + token); } catch {}
+}
 
 /* ---------------- state ---------------- */
 
@@ -956,7 +1169,19 @@ $('btnContinue').onclick = async () => {
   const b = $('btnContinue');
   b.disabled = true; b.textContent = 'Checking…';
   try {
-    const r = await api('start', { idToken: await idToken(), code });
+    let r = await api('start', { idToken: await idToken(), code });
+    if (!r.ok && /^\d{3,8}$/.test(code)) {
+      try {
+        const enr = await api('enrollEdp', { idToken: await idToken(), edpCode: code });
+        if (enr.ok && enr.exams?.length) {
+          renderExams(enr.exams);
+          const found = enr.exams.find(e => String(e.edpCode) === code || e.category === 'edp') || enr.exams[0];
+          if (found) {
+            r = await api('start', { idToken: await idToken(), code: found.code });
+          }
+        }
+      } catch {}
+    }
     if (!r.ok) { err(r.message || 'Could not start this exam.'); return; }
     prepare(r); brief(r);
   } catch {
@@ -966,6 +1191,13 @@ $('btnContinue').onclick = async () => {
   }
 };
 
+$('codeInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('btnContinue').click(); }
+});
+$('edpInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('btnAddEdp')?.click(); }
+});
+
 /* ---------------- brief ---------------- */
 
 function prepare(r) {
@@ -974,7 +1206,10 @@ function prepare(r) {
   S.timerMode = r.timerMode;
   S.defaultTimer = r.defaultTimer;
   S.questions = r.questions || [];
-  S.answers = r.answers || {};
+  const localBackup = loadSessionBackup(r.token);
+  S.answers = (localBackup && typeof localBackup === 'object')
+    ? Object.assign({}, r.answers || {}, localBackup)
+    : (r.answers || {});
   S.deadline = r.msRemaining != null ? Date.now() + r.msRemaining : null;
   S.queue = S.questions.slice();
   S.pos = 0; S.deferred = []; S.secondPass = false; S.finished = false;
@@ -1109,6 +1344,7 @@ function createMultiQuestionCard(q, index) {
 
   const noLabel = document.createElement('span');
   noLabel.className = 'multi-q-no';
+  noLabel.id = 'mqNo_' + q.no;
   noLabel.textContent = `Question ${q.pos || (index + 1)} · ${TYPE_NAME[q.type] || q.type}`;
 
   const hasAns = S.answers[q.no] != null && S.answers[q.no] !== '' &&
@@ -1123,6 +1359,7 @@ function createMultiQuestionCard(q, index) {
 
   const qText = document.createElement('div');
   qText.className = 'qtext';
+  qText.id = 'mqText_' + q.no;
   qText.style.marginBottom = '12px';
   qText.textContent = q.question;
 
@@ -1131,6 +1368,7 @@ function createMultiQuestionCard(q, index) {
 
   const updateAnswer = (val) => {
     S.answers[q.no] = val;
+    saveSessionBackup(S.token, S.answers);
     const isAns = (val !== '' && val != null && (typeof val !== 'object' || Object.keys(val).length > 0));
     statusBadge.className = 'multi-q-status' + (isAns ? ' answered' : '');
     statusBadge.textContent = isAns ? 'Answered ✓' : 'Unanswered';
@@ -1144,6 +1382,9 @@ function createMultiQuestionCard(q, index) {
     const box = document.createElement('div');
     box.className = 'opts';
     box.setAttribute('role', 'radiogroup');
+    box.setAttribute('aria-labelledby', 'mqNo_' + q.no + ' mqText_' + q.no);
+
+    const hasSelection = opts.some((t, idx) => S.answers[q.no] === (q.type === 'TF' ? String(t).toUpperCase() : (letters[idx] || t)));
 
     opts.forEach((t, i) => {
       const b = document.createElement('button');
@@ -1156,7 +1397,7 @@ function createMultiQuestionCard(q, index) {
       b.dataset.value = val;
       const isSel = S.answers[q.no] === val;
       b.setAttribute('aria-checked', isSel ? 'true' : 'false');
-      b.tabIndex = isSel ? 0 : -1;
+      b.tabIndex = isSel ? 0 : (!hasSelection && i === 0 ? 0 : -1);
 
       const k = document.createElement('span');
       k.className = 'k';
@@ -1191,11 +1432,29 @@ function createMultiQuestionCard(q, index) {
       };
       box.append(b);
     });
+
+    box.addEventListener('keydown', e => {
+      const list = [...box.children];
+      const at = list.indexOf(document.activeElement);
+      if (at === -1) return;
+      let to = -1;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') to = (at + 1) % list.length;
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') to = (at - 1 + list.length) % list.length;
+      else if (e.key === 'Home') to = 0;
+      else if (e.key === 'End') to = list.length - 1;
+      else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); list[at].click(); return; }
+      else return;
+      e.preventDefault();
+      list[to].click();
+      list[to].focus();
+    });
+
     inputHost.append(box);
 
   } else if (q.type === 'EN') {
     const ta = document.createElement('textarea');
     ta.className = 'field';
+    ta.setAttribute('aria-labelledby', 'mqNo_' + q.no + ' mqText_' + q.no);
     ta.rows = Math.min(6, Math.max(3, q.expect || 4));
     ta.spellcheck = false;
     ta.placeholder = q.expect ? `List ${q.expect} items (one per line)` : 'One per line';
@@ -1217,6 +1476,7 @@ function createMultiQuestionCard(q, index) {
 
       const sel = document.createElement('select');
       sel.className = 'field pair-s';
+      sel.setAttribute('aria-label', 'Match for ' + left);
       const none = document.createElement('option');
       none.value = '';
       none.textContent = 'Choose…';
@@ -1246,6 +1506,7 @@ function createMultiQuestionCard(q, index) {
   } else if (q.type === 'WB') {
     const inp = document.createElement('input');
     inp.className = 'field';
+    inp.setAttribute('aria-labelledby', 'mqNo_' + q.no + ' mqText_' + q.no);
     inp.type = 'text';
     inp.placeholder = 'Tap a word or type here';
     inp.value = S.answers[q.no] || '';
@@ -1272,6 +1533,7 @@ function createMultiQuestionCard(q, index) {
   } else {
     const inp = document.createElement('input');
     inp.className = 'field';
+    inp.setAttribute('aria-labelledby', 'mqNo_' + q.no + ' mqText_' + q.no);
     inp.type = 'text';
     inp.placeholder = 'Type your answer';
     inp.value = S.answers[q.no] || '';
@@ -1371,6 +1633,8 @@ function showSectionTransition(idx, onComplete) {
   $('transitionTitle').textContent = `SECTION ${idx + 1}`;
   $('transitionType').textContent = sec.title;
 
+  announce(`Entering Section ${idx + 1}: ${sec.title}`);
+
   overlay.hidden = false;
   void overlay.offsetWidth;
   overlay.classList.add('active');
@@ -1384,6 +1648,21 @@ function showSectionTransition(idx, onComplete) {
       onComplete();
     }, 450);
   }, 1600);
+}
+
+function stopQuestion() {
+  if (S.tick) {
+    clearInterval(S.tick);
+    S.tick = null;
+  }
+}
+
+function paint(remaining) {
+  if ($('timerFill')) {
+    const total = S.span || 1;
+    const pct = Math.max(0, Math.min(100, (remaining / total) * 100));
+    $('timerFill').style.width = pct + '%';
+  }
 }
 
 function startSectionTimer(totalSecs) {
@@ -1406,6 +1685,10 @@ function startSectionTimer(totalSecs) {
       const m = Math.max(0, Math.floor(S.remaining / 60)), s = Math.max(0, S.remaining % 60);
       $('sectionTimerPill').textContent = `${m}:${String(s).padStart(2, '0')}`;
     }
+    if (S.remaining === 300) announce('5 minutes remaining', true);
+    else if (S.remaining === 60) announce('1 minute remaining', true);
+    else if (S.remaining === 30) announce('30 seconds remaining', true);
+
     if (S.remaining <= 0) {
       stopQuestion();
       play('timeup');
@@ -1448,7 +1731,9 @@ function render() {
     const box = document.createElement('div');
     box.className = 'opts';
     box.setAttribute('role', 'radiogroup');
-    box.setAttribute('aria-label', 'Answer choices');
+    box.setAttribute('aria-labelledby', 'qMeta qText');
+
+    const hasSelection = opts.some((t, idx) => S.answers[q.no] === (q.type === 'TF' ? String(t).toUpperCase() : letters[idx]));
 
     opts.forEach((t, i) => {
       const b = document.createElement('button');
@@ -1460,401 +1745,6 @@ function render() {
       const val = q.type === 'TF' ? String(t).toUpperCase() : letters[i];
       b.dataset.value = val;
       const isSel = S.answers[q.no] === val;
-      b.setAttribute('aria-checked', isSel ? 'true' : 'false');
-      b.tabIndex = isSel ? 0 : -1;
-
-      const k = document.createElement('span');
-      k.className = 'k';
-      k.textContent = q.type === 'TF' ? t.charAt(0) : letters[i];
-
-      const tx = document.createElement('span');
-      tx.className = 't';
-      tx.textContent = t;                       // the option text is VISIBLE
-
-      // A tick as well as colour, so selection is not carried by hue alone.
-      const chk = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      chk.setAttribute('class', 'chk');
-      chk.setAttribute('viewBox', '0 0 20 20');
-      chk.setAttribute('fill', 'none');
-      chk.setAttribute('stroke', 'currentColor');
-      chk.setAttribute('stroke-width', '2.6');
-      chk.setAttribute('stroke-linecap', 'round');
-      chk.setAttribute('stroke-linejoin', 'round');
-      chk.setAttribute('aria-hidden', 'true');
-      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      p.setAttribute('d', 'M3.5 10.5 8 15l8.5-10');
-      chk.append(p);
-
-      b.append(k, tx, chk);
-      b.onclick = () => { choose(b); };
-      box.append(b);
-    });
-
-    box.addEventListener('keydown', e => {
-      const list = [...box.children];
-      const at = list.indexOf(document.activeElement);
-      if (at === -1) return;
-      let to = -1;
-      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') to = (at + 1) % list.length;
-      else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') to = (at - 1 + list.length) % list.length;
-      else if (e.key === 'Home') to = 0;
-      else if (e.key === 'End') to = list.length - 1;
-      else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); choose(list[at]); return; }
-      else return;
-      e.preventDefault();
-      // Arrowing selects as it moves — that is what a radio group does.
-      choose(list[to]);
-      list[to].focus();
-    });
-
-    host.append(box);
-
-  } else if (q.type === 'EN') {
-    // One item per line. The count is shown so nobody has to guess how many
-    // the question wants.
-    const hint = document.createElement('p');
-    hint.className = 'muted small';
-    hint.textContent = q.expect
-      ? `List ${q.expect} (${q.expect} pt${q.expect === 1 ? '' : 's'}) — one per line. Order does not matter.`
-      : 'One per line. Order does not matter.';
-
-    const ta = document.createElement('textarea');
-    ta.className = 'field';
-    ta.id = 'ansField';
-    ta.rows = Math.min(8, Math.max(3, q.expect || 4));
-    ta.spellcheck = false;
-    ta.placeholder = 'One answer per line';
-    host.append(hint, ta);
-
-  } else if (q.type === 'MA') {
-    // Each left item gets a dropdown of every option. A plain select is the
-    // right control on a phone — it opens the native picker.
-    const box = document.createElement('div');
-    box.className = 'opts';
-
-    q.choices.forEach((left, i) => {
-      const row = document.createElement('div');
-      row.className = 'pair';
-
-      const lab = document.createElement('span');
-      lab.className = 'pair-l';
-      lab.textContent = left;
-
-      const sel = document.createElement('select');
-      sel.className = 'field pair-s';
-      sel.dataset.left = left;
-      sel.id = 'match_' + i;
-
-      const none = document.createElement('option');
-      none.value = '';
-      none.textContent = 'Choose…';
-      sel.append(none);
-
-      (q.options || []).forEach(opt => {
-        const o = document.createElement('option');
-        o.value = opt;
-        o.textContent = opt;
-        sel.append(o);
-      });
-
-      row.append(lab, sel);
-      box.append(row);
-    });
-    host.append(box);
-
-  } else if (q.type === 'WB') {
-    // The pool as tappable chips, plus a field — tapping fills it in, but
-    // typing still works for anyone who prefers the keyboard.
-    const inp = document.createElement('input');
-    inp.className = 'field';
-    inp.id = 'ansField';
-    inp.type = 'text';
-    inp.autocomplete = 'off';
-    inp.spellcheck = false;
-    inp.placeholder = 'Tap a word below, or type it';
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); answer(); }
-    });
-
-    const bank = document.createElement('div');
-    bank.className = 'bank';
-    q.choices.forEach(word => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'chip';
-      chip.textContent = word;
-      chip.setAttribute('aria-pressed', 'false');
-      chip.onclick = () => {
-        inp.value = word;
-        for (const c of bank.children) {
-          c.classList.remove('on');
-          c.setAttribute('aria-pressed', 'false');
-        }
-        chip.classList.add('on');
-        chip.setAttribute('aria-pressed', 'true');
-        feedback('select', 10);
-      };
-      bank.append(chip);
-    });
-    host.append(inp, bank);
-
-  } else {
-    const inp = document.createElement('input');
-    inp.className = 'field';
-    inp.id = 'ansField';
-    inp.type = 'text';
-    inp.autocomplete = 'off';
-    inp.spellcheck = false;
-    inp.placeholder = 'Type your answer';
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); answer(); }
-    });
-    host.append(inp);
-    // Not autofocused: on mobile that throws the keyboard up before the
-    // student has read the question.
-  }
-
-  // Allow skipping as long as there is more than 1 item left in the pool
-  $('btnSkip').hidden = (S.queue.length + S.deferred.length <= 1);
-
-  // Said out loud on every advance: without it a screen reader user gets a
-  // silently rewritten card and no idea the question moved on.
-  announce(`${S.secondPass ? 'Skipped question. ' : ''}` +
-           `Question ${Math.min(done + 1, S.questions.length)} of ${S.questions.length}. ` +
-           `${TYPE_NAME[q.type] || ''}. ${q.question}`);
-
-  const card = $('qCard');
-  card.classList.remove('swap');
-  void card.offsetWidth;
-  card.classList.add('swap');
-
-  if (S.timerMode === 'per-question') startQuestion(q);
-  S.qStarted = Date.now();
-}
-
-/** Marks one option as the answer and moves the tab stop onto it. */
-function choose(btn) {
-  const box = btn.parentElement;
-  for (const c of box.children) {
-    const on = c === btn;
-    c.setAttribute('aria-checked', on ? 'true' : 'false');
-    c.tabIndex = on ? 0 : -1;
-  }
-  feedback('select', 10);
-}
-
-function readAnswer() {
-  const q = current();
-
-  // Matching submits an object keyed by the left-hand item, which is what
-  // the server grades against.
-  if (q && q.type === 'MA') {
-    const picks = {};
-    $('qInput').querySelectorAll('select[data-left]').forEach(s => {
-      if (s.value) picks[s.dataset.left] = s.value;
-    });
-    return Object.keys(picks).length ? picks : '';
-  }
-
-  const sel = $('qInput').querySelector('.opt[aria-checked="true"]');
-  if (sel) return sel.dataset.value;
-
-  const f = $('ansField');
-  return f ? f.value.trim() : '';
-}
-
-let _unansweredConfirmed = false;
-
-/**
- * @param {boolean} force  Skip the "you haven't answered" prompt and record
- *   the blank as-is. Set when the decision is no longer the student's: the
- *   question timer ran out, or the whole-exam clock did. Asking someone to
- *   go back and answer a question whose time has already gone is a trap.
- */
-function answer(force) {
-  const q = current();
-  if (!q) return;
-  const val = readAnswer();
-  const isBlank = (val === '' || val == null || (typeof val === 'object' && Object.keys(val).length === 0));
-
-  if (isBlank && !force && !_unansweredConfirmed) {
-    const m = $('blankConfirmModal');
-    const back = () => { closeModal(m); };
-    $('btnStayAndAnswer').onclick = back;
-    $('btnSkipAnyway').onclick = () => {
-      closeModal(m);
-      _unansweredConfirmed = true;
-      answer();
-    };
-    // Escape means "go back and answer" — the cautious reading of a
-    // dismissal, never the one that throws the answer away.
-    openModal(m, $('btnStayAndAnswer'), { onDismiss: back });
-    play('error');
-    return;
-  }
-
-  _unansweredConfirmed = false;
-  if (!isBlank) feedback('pop', 12);
-  S.answers[q.no] = val;
-  S.perQ[q.no] = Math.round((Date.now() - S.qStarted) / 1000);
-  S.pos++;
-  step();
-}
-$('btnAnswer').onclick = () => answer();
-
-$('btnSkip').onclick = () => {
-  const q = current();
-  if (!q) return;
-  feedback('back', 12);
-  S.deferred.push(q);
-  S.pos++;
-  step();
-};
-
-function step() {
-  stopQuestion();
-  if (S.pos < S.queue.length) { render(); return; }
-  if (S.deferred.length) {
-    S.queue = S.deferred.slice();
-    S.deferred = [];
-    S.pos = 0;
-    S.secondPass = true;
-    render();
-    return;
-  }
-  finish();
-}
-
-/* ---------------- timers ---------------- */
-
-function startQuestion(q) {
-  stopQuestion();
-  _lastPainted = -1;
-  S.remaining = q.seconds || S.defaultTimer;
-  S.span = S.remaining;
-  $('pillTimer').hidden = false;
-  $('timerBar').hidden = false;
-  paint(S.remaining);
-  S.tick = setInterval(() => {
-    S.remaining--;
-    paint(S.remaining);
-    if (S.remaining <= 0) { stopQuestion(); play('timeup'); answer(true); }
-  }, 1000);
-}
-
-function stopQuestion() {
-  if (S.tick) { clearInterval(S.tick); S.tick = null; }
-}
-
-function startGlobal() {
-  $('pillTimer').hidden = false;
-  $('timerBar').hidden = false;
-  S.span = Math.max(1, Math.round((S.deadline - Date.now()) / 1000));
-  paint(S.span);
-  S.globalTick = setInterval(() => {
-    if (S.finished || !S.deadline) return;
-    const left = Math.max(0, Math.round((S.deadline - Date.now()) / 1000));
-    paint(left);
-    if (left <= 0) { clearInterval(S.globalTick); S.globalTick = null; S.finished = true; finish(); }
-  }, 1000);
-}
-
-/** The last whole second paint() drew, so a cue fires once and not per tick. */
-let _lastPainted = -1;
-
-function paint(sec) {
-  sec = Math.max(0, sec);
-  const m = Math.floor(sec / 60), s = sec % 60;
-  $('pillTimer').textContent = `${m}:${String(s).padStart(2, '0')}`;
-
-  // Proportional, so a 45-second question and a 30-minute paper warn at the
-  // same point in their own run. The last ten seconds is urgent at any length.
-  const frac = Math.max(0, Math.min(1, sec / (S.span || sec || 1)));
-  const low = sec <= 10 || frac <= 0.10;
-  const mid = !low && frac <= 0.30;
-
-  $('pillTimer').classList.toggle('low', low);
-  $('pillTimer').classList.toggle('mid', mid);
-  $('timerBar').classList.toggle('low', low);
-  $('timerBar').classList.toggle('mid', mid);
-  $('timerFill').style.transform = `scaleX(${frac.toFixed(4)})`;
-
-  // Tactile low-time pulse aura around the question card
-  const card = $('qCard');
-  if (card) {
-    if (sec <= 10 && sec > 0) card.classList.add('urgent-time');
-    else card.classList.remove('urgent-time');
-  }
-
-  // A cue at ten seconds and again at five. Once each — paint() runs every
-  // second and a tick per second would be unbearable.
-  if (sec !== _lastPainted) {
-    if (sec === 10 || sec === 5) { play('tap'); haptic(18); }
-    if (sec === 10) announce('Ten seconds left', true);
-    _lastPainted = sec;
-  }
-}
-
-/* ---------------- autosave ---------------- */
-
-let saveTimer = null;
-function autosave() {
-  saveTimer ??= setInterval(() => {
-    if (S.finished || !S.token) return;
-    api('save', { token: S.token, answers: S.answers, perQ: S.perQ }, { tries: 1 })
-      .catch(() => { /* best effort — the next tick will retry */ });
-  }, 20000);
-}
-
-/* ---------------- submit ---------------- */
-
-function finish() {
-  // A timer can run out while the student is on another tab. Close that
-  // event now, or the last focus loss is submitted with no end time.
-  closeAway();
-  stopQuestion();
-  if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
-  if (S.globalTick) { clearInterval(S.globalTick); S.globalTick = null; }
-  S.finished = true;
-  show('scSending');
-  send();
-}
-
-async function send() {
-  $('sendText').textContent = 'Submitting your answers…';
-  $('sendSub').textContent = 'Keep this page open.';
-  $('btnRetry').hidden = true;
-
-  try {
-    const r = await api('submit',
-      { token: S.token, answers: S.answers, flags: S.flags },
-      { tries: 6, onRetry: (n, of) => { $('sendText').textContent = `Connection is slow — retrying (${n} of ${of})…`; } });
-
-    if (!r.ok) {
-      $('sendText').textContent = r.message || 'The server could not record your answers.';
-      $('sendSub').textContent = 'Show this screen to your instructor.';
-      $('btnRetry').hidden = false;
-      return;
-    }
-    done(r);
-  } catch {
-    $('sendText').textContent = 'We could not reach the server.';
-    $('sendSub').textContent = 'Your answers are still here. Reconnect and tap Try again.';
-    $('btnRetry').hidden = false;
-  }
-}
-$('btnRetry').onclick = send;
-
-let _lastDoneResult = null;
-let _activeFilter = 'all';
-
-function done(r) {
-  _lastDoneResult = r;
-  $('doneTitle').textContent = 'Exam submitted';
-  const mode = r.revealMode || 'none';
-
-  const radialWrap = $('scoreRadialWrap');
-  const radialBar = $('scoreRadialBar');
   const pctNum = $('scorePercentNum');
   const fracNum = $('scoreFractionNum');
 

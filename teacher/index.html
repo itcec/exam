@@ -17,6 +17,25 @@
 <script>
   try {
     var t = localStorage.getItem('exam_theme_v1');
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Exam Management</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
+<!-- No webfont. The student site has always used the system stack — school
+     wifi does not need a round-trip to Google before the page has type, and
+     a teacher on the same wifi is not owed a worse deal than their class.
+     gstatic stays: that is the Firebase SDK, not a font. -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="stylesheet" href="teacher.css">
+<link rel="stylesheet" href="../fx.css">
+<script>
+  try {
+    var t = localStorage.getItem('exam_theme_v1');
     if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   } catch (e) {}
 </script>
@@ -29,29 +48,34 @@
   <span class="grow"></span>
   <span class="topbar-role" id="topRole" hidden>Teacher</span>
 
+  <button class="icon-btn" id="btnTTheme" type="button" aria-label="Switch to dark mode" style="margin-right:4px;">
+    <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg>
+    <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.8 6.8 0 0 0 10.8 10.8Z"/></svg>
+  </button>
+
   <div class="menu-container" id="menuContainer" hidden>
-    <button class="icon-btn" id="btnTeacherMenu" type="button" aria-label="Open menu" aria-expanded="false" title="Menu">
+    <button class="icon-btn" id="btnTeacherMenu" type="button" aria-label="Open menu" aria-haspopup="menu" aria-expanded="false" title="Menu">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <line x1="3" y1="12" x2="21" y2="12"></line>
         <line x1="3" y1="6" x2="21" y2="6"></line>
         <line x1="3" y1="18" x2="21" y2="18"></line>
       </svg>
     </button>
-    <div class="menu-dropdown" id="teacherMenuDropdown" hidden>
-      <button class="menu-item" id="menuSyncAll" type="button">
+    <div class="menu-dropdown" id="teacherMenuDropdown" role="menu" hidden>
+      <button class="menu-item" id="menuSyncAll" role="menuitem" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
         <span>Sync / Refresh All</span>
       </button>
-      <button class="menu-item" id="menuManageAccess" type="button" hidden>
+      <button class="menu-item" id="menuManageAccess" role="menuitem" type="button" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>👑 Manage Portal Access</span>
       </button>
-      <button class="menu-item" id="menuTheme" type="button">
+      <button class="menu-item" id="menuTheme" role="menuitem" type="button">
         <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg>
         <span>Switch Theme</span>
       </button>
       <div class="menu-divider"></div>
-      <button class="menu-item menu-item-danger" id="menuSignOut" type="button">
+      <button class="menu-item menu-item-danger" id="menuSignOut" role="menuitem" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 17v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v2"/><path d="M19 12H9m10 0-3.5-3.5M19 12l-3.5 3.5"/></svg>
         <span>Sign Out</span>
       </button>
@@ -71,7 +95,7 @@
         <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h11.8c-.5 2.7-2 5-4.4 6.6v5.5h7.1c4.1-3.8 6.6-9.4 6.6-16.3z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.2 15.5 46 24 46z"/><path fill="#FBBC05" d="M11.8 28.3c-.4-1.3-.7-2.7-.7-4.3s.3-3 .7-4.3v-5.7H4.5C2.9 17.1 2 20.4 2 24s.9 6.9 2.5 10l7.3-5.7z"/><path fill="#EA4335" d="M24 10.7c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.1 29.9 2 24 2 15.5 2 8.1 6.8 4.5 14l7.3 5.7c1.7-5.2 6.5-9 12.2-9z"/></svg>
         Continue with Google
       </button>
-      <p class="err small" id="tSignInErr" hidden></p>
+      <p class="err small" id="tSignInErr" role="alert" hidden></p>
     </div>
   </section>
   <section id="scTDenied" hidden>
@@ -194,7 +218,7 @@
           <button class="btn btn-ghost" id="btnCancelNewExam" type="button">Cancel</button>
           <button class="btn btn-primary" id="btnSubmitNewExam" type="button">Create Exam</button>
         </div>
-        <div id="newExamOut" style="margin-top:6px;"></div>
+        <div id="newExamOut" role="status" aria-live="polite" style="margin-top:6px;"></div>
       </div>
     </div>
   </section>
@@ -288,11 +312,11 @@
               <label class="lbl" style="font-size:0.75rem;">Total Exam Timer Setup</label>
               <div class="two" style="max-width:260px;">
                 <div style="display:flex; align-items:center; gap:6px;">
-                  <input type="number" id="tWholeExamMins" min="0" max="600" value="30" class="field" style="text-align:center; font-weight:700;">
+                  <input type="number" id="tWholeExamMins" min="0" max="600" value="30" class="field" aria-label="Exam duration minutes" style="text-align:center; font-weight:700;">
                   <span class="muted small" style="font-weight:600;">mins</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
-                  <input type="number" id="tWholeExamSecs" min="0" max="59" value="0" class="field" style="text-align:center; font-weight:700;">
+                  <input type="number" id="tWholeExamSecs" min="0" max="59" value="0" class="field" aria-label="Exam duration seconds" style="text-align:center; font-weight:700;">
                   <span class="muted small" style="font-weight:600;">secs</span>
                 </div>
               </div>
@@ -347,11 +371,11 @@
               <p class="muted small" style="margin-bottom:6px;">
                 Paste the AI's entire response here. It will automatically split each section into its corresponding question type below!
               </p>
-              <textarea class="field mono" id="tMasterPasteInput" rows="5" placeholder="Paste full AI response here (with === SECTION === headers)..."></textarea>
+              <textarea class="field mono" id="tMasterPasteInput" rows="5" placeholder="Paste full AI response here (with === SECTION === headers)..." aria-label="Master AI question output paste box"></textarea>
               <div class="actions" style="margin-top:8px;">
                 <button class="btn btn-primary" id="btnTAutoSplit" type="button">⚡ Auto-Distribute to Sections</button>
               </div>
-              <div id="tAutoSplitMsg" style="margin-top:6px;"></div>
+              <div id="tAutoSplitMsg" role="status" aria-live="polite" style="margin-top:6px;"></div>
             </div>
           </div>
 
@@ -400,45 +424,122 @@
     </div>
 
     <!-- Per-question manager -->
+    <!-- Per-question manager -->
     <div class="modal-backdrop" id="manageQuestionsModal" hidden>
-      <div class="modal-card modal-card-lg">
+      <div class="modal-card modal-card-xl">
         <div class="modal-header">
-          <h3>Manage questions</h3>
-          <button class="close-btn" id="btnCloseManageQuestions" type="button">✕</button>
+          <div>
+            <h3 id="manageQModalTitle" style="margin:0;">Manage Questions</h3>
+            <p class="muted small" style="margin:2px 0 0;">Inspect, edit, or reconfigure individual questions in this exam.</p>
+          </div>
+          <button class="close-btn" id="btnCloseManageQuestions" type="button" aria-label="Close question manager">✕</button>
         </div>
-        <p class="muted small">Edit the prompt, answer key, choices, points, or timer for one question at a time. Changes are saved directly to the exam Sheet.</p>
-        <div id="manageQuestionsList" class="stack-s" style="max-height:220px; overflow:auto; margin:12px 0;"></div>
-        <div id="manageQuestionsEditor" hidden>
-          <input type="hidden" id="manageQuestionRow">
-          <div class="two">
-            <div><label class="lbl" for="manageQuestionNo">Question</label><input class="field" id="manageQuestionNo" disabled></div>
-            <div><label class="lbl" for="manageQuestionType">Type</label>
-              <select class="field" id="manageQuestionType">
-                <option value="MC">Multiple choice</option><option value="TF">True or false</option>
-                <option value="ID">Identification</option><option value="EN">Enumeration</option>
-                <option value="MA">Matching</option><option value="WB">Word bank</option>
-              </select>
+
+        <div class="manage-q-layout">
+          <!-- Left: Question Navigator & List -->
+          <div class="manage-q-sidebar">
+            <div class="manage-q-filter-bar">
+              <input class="field" id="manageQSearch" type="search" placeholder="🔍 Search questions…" aria-label="Search questions">
+              <div class="manage-q-chips" id="manageQTypeFilter" role="toolbar" aria-label="Filter by question type">
+                <button type="button" class="q-filter-btn on" data-type="ALL">All</button>
+                <button type="button" class="q-filter-btn" data-type="MC">MC</button>
+                <button type="button" class="q-filter-btn" data-type="TF">TF</button>
+                <button type="button" class="q-filter-btn" data-type="ID">ID</button>
+                <button type="button" class="q-filter-btn" data-type="EN">EN</button>
+                <button type="button" class="q-filter-btn" data-type="MA">MA</button>
+                <button type="button" class="q-filter-btn" data-type="WB">WB</button>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+                <span class="muted small" id="manageQTally" style="font-weight:600; font-size:0.75rem;">Loading…</span>
+                <button class="btn-sm btn-accent" id="btnNewManagedQuestion" type="button">+ New Question</button>
+              </div>
+            </div>
+
+            <div id="manageQuestionsList" class="manage-q-list" role="listbox" aria-label="Exam questions"></div>
+          </div>
+
+          <!-- Right: Question Editor & Live Preview -->
+          <div class="manage-q-main">
+            <div id="manageQuestionsEditor" hidden>
+              <input type="hidden" id="manageQuestionRow">
+              <div class="editor-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h4 id="manageEditorHeading" style="margin:0; font-size:1.05rem; font-weight:700;">Question Details</h4>
+                <span id="manageEditorBadge" class="q-chip q-chip-mc">Multiple Choice</span>
+              </div>
+
+              <div class="two">
+                <div>
+                  <label class="lbl" for="manageQuestionNo">Question Number</label>
+                  <input class="field" id="manageQuestionNo" disabled>
+                </div>
+                <div>
+                  <label class="lbl" for="manageQuestionType">Question Type</label>
+                  <select class="field" id="manageQuestionType">
+                    <option value="MC">Multiple choice</option>
+                    <option value="TF">True or false</option>
+                    <option value="ID">Identification</option>
+                    <option value="EN">Enumeration</option>
+                    <option value="MA">Matching</option>
+                    <option value="WB">Word bank</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="margin-top:10px;">
+                <label class="lbl" for="manageQuestionText">Question Prompt</label>
+                <textarea class="field" id="manageQuestionText" rows="3" placeholder="Enter question or prompt…"></textarea>
+              </div>
+
+              <!-- Type-adaptive choices block -->
+              <div id="wrapManageChoices" style="margin-top:10px;">
+                <label class="lbl" for="manageQuestionChoices" id="lblManageChoices">Choices / Options <span class="muted">(one per line)</span></label>
+                <textarea class="field mono" id="manageQuestionChoices" rows="4" placeholder="Option A&#10;Option B&#10;Option C&#10;Option D"></textarea>
+              </div>
+
+              <!-- Type-adaptive answers block -->
+              <div id="wrapManageAnswers" style="margin-top:10px;">
+                <label class="lbl" for="manageQuestionAnswers" id="lblManageAnswers">Answer Key <span class="muted">(one per line)</span></label>
+                <!-- Quick True/False selector toggle -->
+                <div id="manageTFToggle" style="display:none; gap:10px; margin-bottom:6px;">
+                  <button type="button" class="btn btn-sm btn-outline tf-btn" data-val="True" style="flex:1;">✓ True</button>
+                  <button type="button" class="btn btn-sm btn-outline tf-btn" data-val="False" style="flex:1;">✕ False</button>
+                </div>
+                <textarea class="field mono" id="manageQuestionAnswers" rows="3" placeholder="Correct answer…"></textarea>
+                <p class="muted small" id="hintManageAnswers" style="margin:4px 0 0; font-size:0.75rem;"></p>
+              </div>
+
+              <div class="two" style="margin-top:10px;">
+                <div>
+                  <label class="lbl" for="manageQuestionTimer">Timer (Seconds) <span class="muted">(blank = default)</span></label>
+                  <input class="field" id="manageQuestionTimer" type="number" min="5" max="3600" placeholder="e.g. 45">
+                </div>
+                <div>
+                  <label class="lbl" for="manageQuestionPoints">Points</label>
+                  <input class="field" id="manageQuestionPoints" type="number" min="0.01" step="0.01" value="1">
+                </div>
+              </div>
+
+              <!-- Live Student Preview Box -->
+              <div class="q-preview-container" style="margin-top:14px;">
+                <div style="font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--fg-3); margin-bottom:6px;">Student View Preview</div>
+                <div id="manageQPreview" class="q-preview-card"></div>
+              </div>
+
+              <div class="actions" style="margin-top:16px; display:flex; align-items:center; gap:8px;">
+                <button class="btn btn-danger" id="btnDeleteManagedQuestion" type="button">🗑️ Delete</button>
+                <span class="grow"></span>
+                <button class="btn btn-primary" id="btnSaveManagedQuestion" type="button">Save Question</button>
+              </div>
+              <div id="manageQuestionOut" role="status" aria-live="polite" style="margin-top:6px;"></div>
+            </div>
+
+            <!-- Empty Editor State -->
+            <div id="manageQuestionsEmptyEditor" style="display:none; padding:40px 20px; text-align:center; border:1px dashed var(--edge); border-radius:var(--r-md); background:var(--glass);">
+              <p style="font-size:1.5rem; margin:0 0 8px;">🧩</p>
+              <h4 style="margin:0 0 4px;">Select a question to inspect or edit</h4>
+              <p class="muted small" style="margin:0;">Choose any question from the list on the left, or click "+ New Question" to create one.</p>
             </div>
           </div>
-          <label class="lbl" for="manageQuestionText">Question / prompt</label>
-          <textarea class="field" id="manageQuestionText" rows="3"></textarea>
-          <div class="two">
-            <div><label class="lbl" for="manageQuestionChoices">Choices / word bank / left items <span class="muted">(one per line)</span></label><textarea class="field mono" id="manageQuestionChoices" rows="5"></textarea></div>
-            <div><label class="lbl" for="manageQuestionAnswers">Answers / pairs <span class="muted">(one per line)</span></label><textarea class="field mono" id="manageQuestionAnswers" rows="5"></textarea></div>
-          </div>
-          <div class="two">
-            <div><label class="lbl" for="manageQuestionTimer">Seconds for this question <span class="muted">(blank = exam default)</span></label><input class="field" id="manageQuestionTimer" type="number" min="5" max="3600"></div>
-            <div><label class="lbl" for="manageQuestionPoints">Points</label><input class="field" id="manageQuestionPoints" type="number" min="0.01" step="0.01"></div>
-          </div>
-          <div class="actions" style="margin-top:12px;">
-            <button class="btn btn-danger" id="btnDeleteManagedQuestion" type="button">🗑️ Delete question</button>
-            <span class="grow"></span>
-            <button class="btn btn-primary" id="btnSaveManagedQuestion" type="button">Save question</button>
-          </div>
-          <div id="manageQuestionOut" style="margin-top:6px;"></div>
-        </div>
-        <div class="actions" style="margin-top:12px;">
-          <button class="btn btn-accent" id="btnNewManagedQuestion" type="button">+ Add another question</button>
         </div>
       </div>
     </div>
@@ -453,9 +554,9 @@
       </div>
     </div>
     <div class="filter-row">
-      <select class="field-sm" id="filterCourse"><option value="">All courses</option></select>
-      <select class="field-sm" id="filterSection"><option value="">All sections</option></select>
-      <select class="field-sm" id="filterEdp"><option value="">All EDP codes</option></select>
+      <select class="field-sm" id="filterCourse" aria-label="Filter students by course"><option value="">All courses</option></select>
+      <select class="field-sm" id="filterSection" aria-label="Filter students by section"><option value="">All sections</option></select>
+      <select class="field-sm" id="filterEdp" aria-label="Filter students by EDP code"><option value="">All EDP codes</option></select>
     </div>
     <div id="studentTable" class="stack"></div>
     <div class="modal-backdrop" id="addStudentsModal" hidden>
@@ -505,7 +606,7 @@
           <button class="btn btn-ghost" id="btnCancelEditStudent" type="button">Cancel</button>
           <button class="btn btn-primary" id="btnSaveEditStudent" type="button">Save Changes</button>
         </div>
-        <div id="editStudentOut" style="margin-top:6px;"></div>
+        <div id="editStudentOut" role="alert" aria-live="assertive" style="margin-top:6px;"></div>
       </div>
     </div>
 
@@ -529,150 +630,10 @@
     <div class="section-header">
       <h2 class="section-title">Results</h2>
       <div style="display:flex;gap:8px;align-items:center; flex-wrap:wrap;">
-        <select class="field-sm" id="resultsExamPicker"><option value="">Choose exam…</option></select>
-        <select class="field-sm" id="resultsEdpPicker" disabled><option value="">All EDP codes</option></select>
+        <select class="field-sm" id="resultsExamPicker" aria-label="Select exam to view results"><option value="">Choose exam…</option></select>
+        <select class="field-sm" id="resultsEdpPicker" aria-label="Filter results by EDP code" disabled><option value="">All EDP codes</option></select>
         <button class="btn-sm btn-outline" id="btnRefreshResults" type="button">🔄 Refresh</button>
       </div>
-    </div>
-    <div id="resultsContent"><div class="card center solo muted small">Select an exam above to view results.</div></div>
-  </section>
-
-  <!-- Manage Teacher Access Modal (Admin only) -->
-  <div class="modal-backdrop" id="manageAccessModal" hidden>
-    <div class="modal-card modal-card-lg">
-      <div class="modal-header">
-        <h3>👑 Teacher Portal Access & Roles</h3>
-        <button class="close-btn" id="btnCloseManageAccess" type="button">✕</button>
-      </div>
-      <p class="muted small" style="margin-bottom:12px;">
-        Configure Google email accounts allowed to access the portal. The <b>first account is the Administrator</b> (sees all exams and students); other accounts are <b>Teachers</b> (see their own created exams).
-      </p>
-      
-      <div class="tally" id="tAccessTally" style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
-        <span class="chip" id="tAccessTotalChip">Configured: <b>0</b></span>
-        <span class="chip" id="tAccessAdminChip" style="background:var(--admin-bg, #FEF8E8);color:var(--admin-gold, #9A6B0A);border-color:var(--admin-border, #F3DEAC);font-weight:600;">👑 Admin: <b id="tAccessAdminEmail">—</b></span>
-      </div>
-
-      <div id="tAccessList" class="account-list" style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;margin-bottom:12px;">
-        <!-- Account rows rendered dynamically -->
-      </div>
-
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
-        <button class="btn-sm btn-outline" id="btnAddAccessEmail" type="button">+ Add Teacher Email</button>
-      </div>
-
-      <details class="bulk-box" id="tAccessBulkBox" style="margin-bottom:12px;background:var(--card, #fff);border:1px solid var(--line, #e2e8f0);border-radius:6px;padding:8px 10px;">
-        <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--muted, #64748b);">Paste multiple emails (Bulk Add)</summary>
-        <div style="margin-top:8px;">
-          <textarea class="field mono" id="tAccessBulkInput" placeholder="admin@school.edu, teacher1@school.edu&#10;teacher2@school.edu" rows="2" style="font-size:12px;width:100%;"></textarea>
-          <div style="display:flex;justify-content:flex-end;margin-top:6px;">
-            <button class="btn-sm btn-ghost" id="btnApplyAccessBulk" type="button">Add Parsed Emails</button>
-          </div>
-        </div>
-      </details>
-
-      <div id="tAccessMsg" style="margin-bottom:8px;"></div>
-
-      <div class="actions" style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
-        <button class="btn btn-ghost bad" id="btnClearAllAccess" type="button" style="color:var(--bad, #dc2626);font-size:12px;">Lock Portal (Clear All)</button>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost" id="btnCancelManageAccess" type="button">Cancel</button>
-          <button class="btn btn-primary" id="btnSaveManageAccess" type="button">Save Access Settings</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Manage EDP Codes Modal -->
-  <div class="modal-backdrop" id="edpCodesModal" hidden>
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 id="edpModalTitle">Manage EDP Codes</h3>
-        <button class="close-btn" id="btnCloseEdpModal" type="button">✕</button>
-      </div>
-      <div class="hint" style="margin-bottom:12px;">
-        Assign multiple EDP codes to this single exam so students enrolled under different sections or schedules for the same subject can all access and take this exam.
-      </div>
-      <div class="fld" style="margin-bottom:12px;">
-        <label class="lbl">Currently Assigned EDP Codes</label>
-        <div id="edpChipsList" class="chips-container" style="display:flex; gap:6px; flex-wrap:wrap; min-height:40px; padding:8px; border:1px solid var(--edge); border-radius:var(--r-md); background:var(--sunk); align-items:center;">
-          <span class="muted small" id="edpChipsEmpty">No EDP codes assigned yet (using sections).</span>
-        </div>
-      </div>
-      <div class="fld" style="margin-bottom:12px;">
-        <label class="lbl" for="inputNewEdp">Add EDP Code(s)</label>
-        <div style="display:flex; gap:6px;">
-          <input class="field mono" id="inputNewEdp" placeholder="e.g. 10234, 10235">
-          <button class="btn btn-outline" id="btnAddEdpCode" type="button">+ Add</button>
-        </div>
-        <span class="muted small" style="display:block; margin-top:4px;">Tip: You can paste a comma-separated list of EDP codes.</span>
-      </div>
-      <div id="edpModalMsg" style="margin-bottom:12px;"></div>
-      <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
-        <button class="btn btn-outline" id="btnCancelEdpModal" type="button">Cancel</button>
-        <button class="btn btn-accent" id="btnSaveEdpCodes" type="button">Save EDP Codes</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Duplicate Exam Modal -->
-  <div class="modal-backdrop" id="duplicateExamModal" hidden>
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 id="dupModalTitle">Duplicate Exam</h3>
-        <button class="close-btn" id="btnCloseDupModal" type="button">✕</button>
-      </div>
-      <div class="hint" style="margin-bottom:12px;">
-        Create a copy of this exam with all questions, categories, and delivery blueprint. The duplicate will be saved as a <b>Draft</b> so you can adjust and review it before releasing.
-      </div>
-      <div class="fld" style="margin-bottom:10px;">
-        <label class="lbl" for="dupNewCode">New Exam Code</label>
-        <input class="field mono" id="dupNewCode" placeholder="e.g. CS101_MIDTERM_SEC2" required>
-      </div>
-      <div class="fld" style="margin-bottom:10px;">
-        <label class="lbl" for="dupNewTitle">New Title</label>
-        <input class="field" id="dupNewTitle" placeholder="e.g. CS101 Midterm Exam (Section B)">
-      </div>
-      <div class="fld" style="margin-bottom:12px;">
-        <label class="lbl" for="dupNewEdp">EDP Code(s) for the duplicate</label>
-        <input class="field mono" id="dupNewEdp" placeholder="e.g. 20456, 20457">
-        <span class="muted small" style="display:block; margin-top:4px;">Optional — EDP code(s) for the new class section.</span>
-      </div>
-      <div id="dupModalMsg" style="margin-bottom:12px;"></div>
-      <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
-        <button class="btn btn-outline" id="btnCancelDupModal" type="button">Cancel</button>
-        <button class="btn btn-accent" id="btnSubmitDuplicate" type="button">Duplicate Exam</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Delete Exam Confirmation Modal -->
-  <div class="modal-backdrop" id="deleteExamModal" hidden>
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 style="color:var(--bad);">🗑️ Delete Exam</h3>
-        <button class="close-btn" id="btnCloseDeleteModal" type="button">✕</button>
-      </div>
-      <div class="hint" style="background:rgba(220,53,69,0.1); border:1px solid var(--bad); color:var(--bad); margin-bottom:12px; padding:10px; border-radius:var(--r-md);">
-        <b>Warning: This cannot be undone!</b><br>
-        Deleting this exam will permanently remove the exam sheet, all questions, configuration, and results.
-      </div>
-      <p class="small" id="deleteModalPrompt" style="margin-bottom:8px;">
-        Please type the exam code to confirm deletion:
-      </p>
-      <div class="fld" style="margin-bottom:12px;">
-        <input class="field mono" id="inputConfirmDeleteCode" placeholder="Type exam code here">
-      </div>
-      <div id="deleteModalMsg" style="margin-bottom:12px;"></div>
-      <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
-        <button class="btn btn-outline" id="btnCancelDeleteModal" type="button">Cancel</button>
-        <button class="btn btn-danger" id="btnConfirmDeleteExam" type="button" disabled style="background:var(--bad); color:#fff;">Permanently Delete Exam</button>
-      </div>
-    </div>
-  </div>
-</main>
-<nav class="appbar" id="tAppBar" aria-label="Main" hidden>
-  <button class="appbar-tab" id="tTabDashboard" data-tab="dashboard" type="button">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     <span>Dashboard</span>
   </button>

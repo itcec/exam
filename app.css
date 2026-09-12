@@ -40,7 +40,7 @@
     /* --- type --- */
     --fg:          #241B12;
     --fg-2:        #5C4B39;
-    --fg-3:        #8A7660;
+    --fg-3:        #6E5A47;
     --fg-hero:     #1A1209;
 
     /* --- accent: pecan --- */
@@ -52,7 +52,7 @@
     /* --- semantic, kept separate from the accent --- */
     --ok:          #3F6B3A;
     --ok-soft:     rgba(63, 107, 58, 0.13);
-    --warn:        #94661A;
+    --warn:        #85530E;
     --warn-soft:   rgba(148, 102, 26, 0.15);
     --bad:         #9B3A2C;
     --bad-soft:    rgba(155, 58, 44, 0.13);
@@ -95,7 +95,7 @@
 
       --fg:          #F8FAFC;
       --fg-2:        #94A3B8;
-      --fg-3:        #64748B;
+      --fg-3:        #94A3B8;
       --fg-hero:     #FFFFFF;
 
       --accent:      #818CF8;
@@ -137,7 +137,7 @@
 
     --fg:          #F8FAFC;
     --fg-2:        #94A3B8;
-    --fg-3:        #64748B;
+    --fg-3:        #94A3B8;
     --fg-hero:     #FFFFFF;
 
     --accent:      #818CF8;
@@ -415,7 +415,8 @@
   }
 
   .icon-btn {
-    inline-size: 38px; block-size: 38px;
+    inline-size: 44px; block-size: 44px;
+    min-inline-size: 44px; min-block-size: 44px;
     display: grid; place-items: center;
     padding: 0;
     border-radius: 999px;
