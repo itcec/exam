@@ -2157,6 +2157,9 @@ function renderManagedQuestionList() {
     const isExpanded = String(q.row) === String(_managedExpandedRow);
     card.className = 'q-manage-card' + (isExpanded ? ' is-expanded' : '');
     card.id = `qCardRow_${q.row}`;
+    card.style.flexShrink = '0';
+    card.style.minHeight = '52px';
+    card.style.boxSizing = 'border-box';
 
     // Card Header Trigger
     const header = document.createElement('div');
