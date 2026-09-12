@@ -414,15 +414,12 @@
       <div class="modal-card">
         <div class="modal-header"><h3>Add students</h3><button class="close-btn" id="btnCloseAdd" type="button">✕</button></div>
         <p class="muted small">Paste your class list — one student per line, last name first.</p>
-        <div class="two">
-          <div><label class="lbl" for="addCourse">Course</label><select class="field" id="addCourse"></select></div>
-          <div><label class="lbl" for="addSection">Section</label><select class="field" id="addSection"></select></div>
+        <div style="margin-bottom:12px;">
+          <label class="lbl" for="addEdp">EDP Code *</label>
+          <input class="field mono" id="addEdp" placeholder="e.g. 10234" required autofocus>
+          <p class="hint" style="margin-top:4px;font-size:11px;color:var(--ink3);">Students will be enrolled under this EDP code.</p>
         </div>
-        <div style="margin-bottom:8px;">
-          <label class="lbl" for="addEdp">EDP Code (Optional)</label>
-          <input class="field mono" id="addEdp" placeholder="e.g. 10234">
-        </div>
-        <label class="lbl" for="addPaste">Class list</label>
+        <label class="lbl" for="addPaste">Class list (one student per line)</label>
         <textarea class="field mono" id="addPaste" rows="8" placeholder="Dela Cruz, Juan A.&#10;Reyes, Maria Isabel"></textarea>
         <div class="actions">
           <button class="btn btn-primary" id="btnCheckStudents" type="button">Check the list</button>

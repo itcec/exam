@@ -2243,9 +2243,11 @@ if ($('filterEdp')) {
 
 /* Add students modal */
 $('btnAddStudents').onclick = () => {
-  populateAddModal();
   if ($('addEdp')) $('addEdp').value = '';
-  openModal($('addStudentsModal'), $('addCourse'));
+  if ($('addPaste')) $('addPaste').value = '';
+  $('addOut').replaceChildren();
+  $('btnDoAdd').disabled = true;
+  openModal($('addStudentsModal'), $('addEdp'));
 };
 $('btnCloseAdd').onclick = () => {
   closeModal($('addStudentsModal'));
@@ -2253,14 +2255,25 @@ $('btnCloseAdd').onclick = () => {
 };
 
 $('btnCheckStudents').onclick = async () => {
-  const course  = $('addCourse').value;
-  const section = $('addSection').value;
   const edpCode = $('addEdp')?.value.trim() || '';
-  const paste   = $('addPaste').value.trim();
-  if (!course || !section || !paste) {
-    toast('Fill in Course and Section, and paste the class list.', 'bad');
+  const paste   = $('addPaste')?.value.trim() || '';
+  const course  = '';
+  const section = '';
+
+  if (!edpCode) {
+    toast('Please enter the EDP Code.', 'bad');
+    $('addEdp')?.focus();
     return;
   }
+  if (!paste) {
+    toast('Please paste the class list (one student per line).', 'bad');
+    $('addPaste')?.focus();
+    return;
+  }
+
+  const btn = $('btnCheckStudents');
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
   try {
     const r = await api('teacherCheckStudents', { idToken: await idToken(), course, section, edpCode, paste });
     if (!r.ok) { $('addOut').textContent = r.message || 'Error'; return; }
@@ -2279,36 +2292,32 @@ $('btnCheckStudents').onclick = async () => {
     $('addOut').style.whiteSpace = 'pre-line';
     $('btnDoAdd').disabled = !r.count;
   } catch (err) { $('addOut').textContent = 'Error: ' + err.message; }
+  finally { btn.disabled = false; btn.textContent = 'Check the list'; }
 };
 
 $('btnDoAdd').onclick = async () => {
-  const course  = $('addCourse').value;
-  const section = $('addSection').value;
   const edpCode = $('addEdp')?.value.trim() || '';
-  const paste   = $('addPaste').value.trim();
+  const paste   = $('addPaste')?.value.trim() || '';
+  const course  = '';
+  const section = '';
+
+  if (!edpCode || !paste) return;
+
+  const btn = $('btnDoAdd');
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
   try {
     const r = await api('teacherAddStudents', { idToken: await idToken(), course, section, edpCode, paste });
     if (r.ok) {
       closeModal($('addStudentsModal'));
       $('addOut').replaceChildren();
-      $('btnDoAdd').disabled = true;
       await loadStudents();
       const n = r.added || 0;
       toast(n + (n === 1 ? ' student' : ' students') + ' added to the Roster.', 'ok');
     } else { $('addOut').textContent = r.message || 'Error adding students.'; }
   } catch (err) { $('addOut').textContent = 'Error: ' + err.message; }
+  finally { btn.disabled = false; btn.textContent = 'Add to Roster'; }
 };
-
-/* Populate course/section dropdowns in the add modal */
-function populateAddModal() {
-  const courseSel = $('addCourse');
-  const sectionSel = $('addSection');
-  courseSel.replaceChildren(new Option('Choose course…', ''));
-  sectionSel.replaceChildren(new Option('Choose section…', ''));
-  DEFAULT_COURSES.forEach(c => courseSel.add(new Option(c, c)));
-  DEFAULT_SECTIONS.forEach(s => sectionSel.add(new Option('Section ' + s, s)));
-}
-populateAddModal();
 
 /* ================================================================
    Results
