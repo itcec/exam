@@ -20,6 +20,24 @@ let NeatGradient = null;
 
 const $ = id => document.getElementById(id);
 
+// A module error used to leave the initial loading screen visible forever.
+// Keep the ordinary message student-safe, but expose the detail for a
+// deliberate ?diagnose=1 support check.
+function reportStartupFailure(err) {
+  const detail = String(err?.message || err || 'unknown startup error');
+  console.error('[student] startup failure:', err);
+  const title = $('fatalTitle');
+  const text = $('fatalText');
+  if (!title || !text) return;
+  title.textContent = 'The exam page could not start';
+  text.textContent = new URLSearchParams(location.search).has('diagnose')
+    ? detail
+    : 'Reload the page. If the problem continues, tell your instructor.';
+  document.querySelectorAll('[id^="sc"]').forEach(el => { el.hidden = el.id !== 'scFatal'; });
+}
+addEventListener('error', event => reportStartupFailure(event.error || event.message));
+addEventListener('unhandledrejection', event => reportStartupFailure(event.reason));
+
 /* ---------------- theme ---------------- */
 
 const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
