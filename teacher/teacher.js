@@ -737,7 +737,7 @@ function renderExamCards(exams) {
     toggleBtn.onclick = async (e) => {
       e.stopPropagation();
       feedback('tap', 8);
-      await setExamStatus(ex.code, isOpen ? 'closed' : 'open', card);
+      await setExamStatus(ex.code, isOpen ? 'closed' : 'open', card, toggleBtn);
     };
     actionRow.append(toggleBtn);
 
@@ -751,7 +751,7 @@ function renderExamCards(exams) {
       draftBtn.onclick = async (e) => {
         e.stopPropagation();
         feedback('tap', 8);
-        await setExamStatus(ex.code, 'draft', card);
+        await setExamStatus(ex.code, 'draft', card, draftBtn);
       };
       actionRow.append(draftBtn);
     }
@@ -820,10 +820,24 @@ function statusChip(status) {
   return `<span class="chip ${cls}">${lbl}</span>`;
 }
 
-async function setExamStatus(code, status, card) {
+async function setExamStatus(code, status, card, triggeredBtn) {
+  const buttonsToDisable = card ? Array.from(card.querySelectorAll('button')) : [];
+  if (triggeredBtn && !buttonsToDisable.includes(triggeredBtn)) buttonsToDisable.push(triggeredBtn);
+  
+  const originalText = triggeredBtn ? triggeredBtn.textContent : '';
+  const actionLabel = status === 'open' ? 'Setting Active…' : status === 'draft' ? 'Moving to Draft…' : 'Setting Offline…';
+
+  buttonsToDisable.forEach(b => { b.disabled = true; });
+  if (triggeredBtn) triggeredBtn.textContent = '⏳ ' + actionLabel;
+
   try {
+    toast(`Updating ${code} to ${status === 'open' ? 'Active' : status}…`, 'info', 2500);
     const r = await api('teacherSetStatus', { idToken: await idToken(), code, status });
-    if (r.ok) { await loadExams(); toast(code + ' is now ' + status + '.', 'ok'); return; }
+    if (r.ok) {
+      await loadExams();
+      toast(code + ' is now ' + (status === 'open' ? 'Active (Open)' : status) + '.', 'ok');
+      return;
+    }
     // Opening runs the same preflight the Sheet menu runs, so a refusal
     // arrives with the actual list of what is wrong. Show it.
     toast([r.message || 'Could not update status.']
@@ -832,6 +846,9 @@ async function setExamStatus(code, status, card) {
   } catch (err) {
     console.error(err);
     toast(err.message || 'Could not reach the exam server.', 'bad');
+  } finally {
+    buttonsToDisable.forEach(b => { b.disabled = false; });
+    if (triggeredBtn) triggeredBtn.textContent = originalText;
   }
 }
 
@@ -950,7 +967,7 @@ function updateDetailStatsAndControls(ex) {
     $('btnToggleActiveDetail').textContent = isOpen ? '⏸ Set Offline' : '▶ Set Active';
     $('btnToggleActiveDetail').onclick = async () => {
       const newStatus = isOpen ? 'closed' : 'open';
-      await setExamStatus(ex.code, newStatus);
+      await setExamStatus(ex.code, newStatus, null, $('btnToggleActiveDetail'));
       ex.status = newStatus;
       updateDetailStatsAndControls(ex);
     };

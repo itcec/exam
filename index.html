@@ -35,7 +35,7 @@
   <span class="pill" id="pillSkipped" hidden>Skipped 0</span>
   <span class="grow"></span>
   <span class="pill" id="pillTimer" role="timer" aria-live="off" hidden>—</span>
-  <button class="btn-sm btn-outline" id="btnExit" type="button" hidden style="margin-right:6px;">Exit</button>
+  <button class="btn-sm btn-outline exit-btn" id="btnExit" type="button" hidden style="margin-right:8px; border-radius:var(--r-full); padding:4px 12px; font-weight:600; display:inline-flex; align-items:center; gap:4px;"><span aria-hidden="true" style="font-size:1.1rem;line-height:1;">‹</span> Exit</button>
   <button class="icon-btn" id="btnTheme" type="button" aria-label="Switch to dark mode">
     <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -412,12 +412,13 @@
   <div class="modal-card">
     <div class="modal-header">
       <span class="modal-icon-badge" aria-hidden="true">🚪</span>
-      <h3 class="modal-title bad">Quit and Submit Exam?</h3>
+      <h3 class="modal-title bad">Exit Exam?</h3>
     </div>
-    <p class="modal-body">Are you sure you want to quit? <b>All questions you have answered will be graded and submitted as your final score</b> for this attempt.</p>
-    <div class="actions">
-      <button class="btn btn-ghost" id="btnCancelExit" type="button">Keep going</button>
-      <button class="btn btn-danger" id="btnConfirmExit" type="button" style="background:var(--bad);color:#fff;">Quit &amp; Submit</button>
+    <p class="modal-body">Your answers are automatically saved in your browser session. How would you like to proceed?</p>
+    <div class="actions" style="display:flex; flex-direction:column; gap:8px;">
+      <button class="btn btn-ghost" id="btnCancelExit" type="button">Keep going (Return to exam)</button>
+      <button class="btn btn-outline" id="btnPauseExit" type="button" style="border:1px solid var(--edge-hi); font-weight:600;">⏸ Pause &amp; Resume Later</button>
+      <button class="btn btn-danger" id="btnConfirmExit" type="button" style="background:var(--bad);color:#fff;">Quit &amp; Submit Final Score</button>
     </div>
   </div>
 </div>
@@ -457,6 +458,6 @@
 
 </nav>
 
-<script type="module" src="app.js?v=20260912f"></script>
+<script type="module" src="app.js?v=20260912g"></script>
 </body>
 </html>

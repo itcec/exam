@@ -1109,7 +1109,7 @@ function begin() {
     if ($('singleExamView')) $('singleExamView').hidden = false;
     if ($('wholeExamView')) $('wholeExamView').hidden = true;
     if ($('sectionExamView')) $('sectionExamView').hidden = true;
-    render();
+    step();
   }
   autosave();
 }
@@ -1122,6 +1122,16 @@ if ($('btnExit')) {
 }
 if ($('btnCancelExit')) {
   $('btnCancelExit').onclick = () => closeModal($('exitConfirmModal'));
+}
+if ($('btnPauseExit')) {
+  $('btnPauseExit').onclick = () => {
+    closeModal($('exitConfirmModal'));
+    stopQuestion();
+    if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
+    saveSessionBackup(S.token, S.answers);
+    show('scStart');
+    boot();
+  };
 }
 if ($('btnConfirmExit')) {
   $('btnConfirmExit').onclick = () => {
@@ -1484,10 +1494,24 @@ function stopQuestion() {
   }
 }
 
-function paint(remaining) {
+function paint(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  const pill = $('pillTimer');
+  if (pill) {
+    pill.textContent = `${m}:${String(s).padStart(2, '0')}`;
+    pill.hidden = false;
+    const total = S.span || sec || 1;
+    const frac = Math.max(0, Math.min(1, sec / total));
+    const low = sec <= 10 || frac <= 0.15;
+    const mid = !low && frac <= 0.35;
+    pill.classList.toggle('low', low);
+    pill.classList.toggle('mid', mid);
+  }
+  if ($('timerBar')) $('timerBar').hidden = false;
   if ($('timerFill')) {
     const total = S.span || 1;
-    const pct = Math.max(0, Math.min(100, (remaining / total) * 100));
+    const pct = Math.max(0, Math.min(100, (sec / total) * 100));
     $('timerFill').style.width = pct + '%';
   }
 }
@@ -1701,13 +1725,22 @@ function render() {
     inp.type = 'text';
     inp.placeholder = 'Type your answer';
     inp.value = S.answers[q.no] || '';
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); answer(); }
+    });
     host.append(inp);
   }
 
-  // Next/Skip button labels
+  // Next/Skip button labels and click bindings
   const isLast = S.pos === S.queue.length - 1 && !S.deferred.length;
-  $('btnAnswer').textContent = isLast ? 'Submit exam' : 'Next';
-  $('btnSkip').hidden = S.secondPass || isLast;
+  if ($('btnAnswer')) {
+    $('btnAnswer').textContent = isLast ? 'Submit exam' : 'Next';
+    $('btnAnswer').onclick = () => answer();
+  }
+  if ($('btnSkip')) {
+    $('btnSkip').hidden = S.secondPass || isLast;
+    $('btnSkip').onclick = () => skip();
+  }
 
   setTimeout(() => {
     const firstInteractive = host.querySelector('.opt[tabindex="0"], .opt, input, textarea, select');
@@ -2340,3 +2373,6 @@ addEventListener('beforeunload', e => {
   e.preventDefault();
   e.returnValue = '';
 });
+
+if ($('btnAnswer')) $('btnAnswer').onclick = () => answer();
+if ($('btnSkip')) $('btnSkip').onclick = () => skip();
