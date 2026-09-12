@@ -2098,3 +2098,44 @@ pre.prompt {
   font-size: 0.8125rem;
   font-weight: 500;
 }
+
+/* Student EDP and Metadata Badges */
+.student-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.pill-edp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent-soft, rgba(79, 70, 229, 0.12));
+  color: var(--accent);
+  border: 1px solid var(--accent-line, rgba(79, 70, 229, 0.35));
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--r-full, 999px);
+  font-size: 0.75rem;
+}
+
+.pill-edp.unassigned {
+  background: var(--warn-soft, rgba(180, 83, 9, 0.12));
+  color: var(--warn);
+  border-color: var(--warn);
+  font-weight: 600;
+}
+
+.chip-subtle {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: var(--r-xs, 4px);
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  color: var(--fg-2);
+  font-weight: 500;
+}

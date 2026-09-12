@@ -2683,9 +2683,19 @@ function renderStudentTable(students) {
 
     const info = document.createElement('div');
     info.className = 'student-info';
+    const edpBadge = s.edpCode
+      ? `<span class="pill-edp" title="EDP Code">🏷️ EDP: <b>${esc(s.edpCode)}</b></span>`
+      : `<span class="pill-edp unassigned" title="No EDP Code assigned">🏷️ EDP: <i>Unassigned</i></span>`;
+
     info.innerHTML = `
       <div class="student-name">${esc(s.lastName)}, ${esc(s.firstName)}</div>
-      <div class="student-meta">${s.studentId ? '<span class="pill-id" style="font-weight:600;">ID: ' + esc(s.studentId) + '</span> · ' : ''}${esc(s.course || '')} ${s.section ? '· Section ' + esc(s.section) : ''} ${s.edpCode ? '· EDP ' + esc(s.edpCode) : ''} ${s.year ? '· ' + esc(s.year) : ''}</div>
+      <div class="student-meta">
+        ${s.studentId ? '<span class="pill-id">ID: ' + esc(s.studentId) + '</span>' : ''}
+        ${edpBadge}
+        ${s.course ? '<span class="chip-subtle">' + esc(s.course) + '</span>' : ''}
+        ${s.section ? '<span class="chip-subtle">Sec: ' + esc(s.section) + '</span>' : ''}
+        ${s.year ? '<span class="chip-subtle">' + esc(s.year) + '</span>' : ''}
+      </div>
       <div class="student-email ${s.email ? 'linked' : ''}">${s.email ? '📧 ' + esc(s.email) : '⚪ Unclaimed (No Google account linked)'}</div>
     `;
 
