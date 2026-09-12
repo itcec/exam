@@ -1981,9 +1981,12 @@ if ($('tCr1')) {
 }
 
 /* Open/Close Add Questions Modal */
-function openQuestionBuilder() {
+function openQuestionBuilder(context = 'add') {
   if (!_currentDetailExamCode) return;
-  $('addQModalTitle').textContent = `Exam builder (${_currentDetailExamCode})`;
+  const managing = context === 'manage';
+  $('addQModalTitle').textContent = `${managing ? 'Manage questions' : 'Exam builder'} (${_currentDetailExamCode})`;
+  const hint = $('tManageQuestionsHint');
+  if (hint) hint.hidden = !managing;
   $('tStep1').hidden = false;
   $('tStep2').hidden = true;
   if ($('tCr1')) { $('tCr1').classList.remove('done'); $('tCr1').classList.add('on'); }
@@ -1992,6 +1995,7 @@ function openQuestionBuilder() {
   openModal($('addQuestionsModal'), $('tExamTimerModeSelect'));
 }
 if ($('btnOpenAddQuestions')) $('btnOpenAddQuestions').onclick = openQuestionBuilder;
+if ($('btnManageQuestions')) $('btnManageQuestions').onclick = () => openQuestionBuilder('manage');
 
 if ($('btnCloseAddQuestions')) {
   $('btnCloseAddQuestions').onclick = () => closeModal($('addQuestionsModal'));
