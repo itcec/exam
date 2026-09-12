@@ -493,7 +493,7 @@ onAuthStateChanged(auth, async user => {
 
     // Paint initial screens from cache
     if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
-    if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); }
+    if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); populateAddStudentEdpOptions(CACHE.exams); }
     if (CACHE.students) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
 
     showTab('dashboard');
@@ -579,7 +579,7 @@ async function syncAllData() {
       saveCache();
 
       if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
-      if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); }
+      if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); populateAddStudentEdpOptions(CACHE.exams); }
       if (CACHE.students) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
       toast('All workbook data synchronized!', 'ok');
       play('pop');
@@ -651,6 +651,7 @@ async function loadExams() {
     saveCache();
     renderExamCards(CACHE.exams);
     populateResultsPicker(CACHE.exams);
+    populateAddStudentEdpOptions(CACHE.exams);
   } catch (err) {
     console.error('[teacher] loadExams', err);
   } finally {
@@ -859,7 +860,14 @@ $('btnSubmitNewExam').onclick = async () => {
     if (r.ok) {
       closeModal($('newExamModal'));
       await loadExams();
-      toast(`Exam "${code}" created. Add its questions from the Sheet menu.`, 'ok', 6000);
+      const created = (CACHE.exams || []).find(ex => ex.code === code);
+      if (created) {
+        await openExamDetail(created);
+        openQuestionBuilder();
+        toast(`Exam "${code}" created. Add its questions here in the teacher portal.`, 'ok', 6000);
+      } else {
+        toast(`Exam "${code}" created. Refresh Exams, open it, then add questions here in the teacher portal.`, 'ok', 6000);
+      }
     } else {
       $('newExamOut').innerHTML = `<div class="msg bad" style="color:var(--bad);margin-top:6px;font-size:12px;">${esc(r.message || 'Could not create exam.')}</div>`;
     }
@@ -1043,6 +1051,7 @@ if ($('btnSaveEdpCodes')) {
           ex.edpCodes = r.edpCodes;
           updateDetailEdpBadges(ex);
           renderExamCards(CACHE.exams);
+          populateAddStudentEdpOptions(CACHE.exams);
         }
       }
       if (_currentDetailExam && _currentDetailExam.code === _currentDetailExamCode) {
@@ -1972,18 +1981,17 @@ if ($('tCr1')) {
 }
 
 /* Open/Close Add Questions Modal */
-if ($('btnOpenAddQuestions')) {
-  $('btnOpenAddQuestions').onclick = () => {
-    if (!_currentDetailExamCode) return;
-    $('addQModalTitle').textContent = `Exam builder (${_currentDetailExamCode})`;
-    $('tStep1').hidden = false;
-    $('tStep2').hidden = true;
-    if ($('tCr1')) { $('tCr1').classList.remove('done'); $('tCr1').classList.add('on'); }
-    if ($('tCr2')) $('tCr2').classList.remove('on');
-    buildBuilderStep1();
-    openModal($('addQuestionsModal'), $('tExamTimerModeSelect'));
-  };
+function openQuestionBuilder() {
+  if (!_currentDetailExamCode) return;
+  $('addQModalTitle').textContent = `Exam builder (${_currentDetailExamCode})`;
+  $('tStep1').hidden = false;
+  $('tStep2').hidden = true;
+  if ($('tCr1')) { $('tCr1').classList.remove('done'); $('tCr1').classList.add('on'); }
+  if ($('tCr2')) $('tCr2').classList.remove('on');
+  buildBuilderStep1();
+  openModal($('addQuestionsModal'), $('tExamTimerModeSelect'));
 }
+if ($('btnOpenAddQuestions')) $('btnOpenAddQuestions').onclick = openQuestionBuilder;
 
 if ($('btnCloseAddQuestions')) {
   $('btnCloseAddQuestions').onclick = () => closeModal($('addQuestionsModal'));
@@ -2243,6 +2251,7 @@ if ($('filterEdp')) {
 
 /* Add students modal */
 $('btnAddStudents').onclick = () => {
+  populateAddStudentEdpOptions(CACHE.exams || []);
   if ($('addEdp')) $('addEdp').value = '';
   if ($('addPaste')) $('addPaste').value = '';
   $('addOut').replaceChildren();
@@ -2261,7 +2270,7 @@ $('btnCheckStudents').onclick = async () => {
   const section = '';
 
   if (!edpCode) {
-    toast('Please enter the EDP Code.', 'bad');
+    toast('Choose an EDP code from a created exam.', 'bad');
     $('addEdp')?.focus();
     return;
   }
@@ -2329,6 +2338,55 @@ function populateResultsPicker(exams) {
   exams.forEach(ex => sel.add(new Option(ex.code + (ex.title ? ' — ' + ex.title : ''), ex.code)));
 }
 
+/** All EDP codes attached to exams the signed-in teacher can manage. */
+function examEdpCodes(exams) {
+  const codes = (exams || []).flatMap(ex => {
+    if (Array.isArray(ex.edpCodes) && ex.edpCodes.length) return ex.edpCodes;
+    return String(ex.edpCode || '').split(/[,;/]+/);
+  }).map(code => String(code || '').trim()).filter(Boolean);
+  return [...new Set(codes)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+/** Student enrolment is deliberately limited to EDP codes that belong to an exam. */
+function populateAddStudentEdpOptions(exams) {
+  const sel = $('addEdp');
+  if (!sel) return;
+  const previous = sel.value;
+  const codes = examEdpCodes(exams);
+  sel.replaceChildren(new Option(codes.length ? 'Select an EDP code…' : 'No exam EDP codes are available', ''));
+  codes.forEach(code => sel.add(new Option(code, code)));
+  sel.disabled = !codes.length;
+  if (codes.includes(previous)) sel.value = previous;
+}
+
+function populateResultsEdpPicker(rows) {
+  const sel = $('resultsEdpPicker');
+  if (!sel) return;
+  const previous = sel.value;
+  const codes = [...new Set((rows || []).map(r => String(r.edpCode || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  sel.replaceChildren(new Option('All EDP codes', ''));
+  codes.forEach(code => sel.add(new Option('EDP ' + code, code)));
+  sel.disabled = !codes.length;
+  if (codes.includes(previous)) sel.value = previous;
+}
+
+/**
+ * Current Apps Script deployments may not return EDPCode with each attempt.
+ * The teacher bootstrap already carries the authorised roster, so enrich the
+ * result rows locally and keep EDP filtering usable while older deployments
+ * are still in service.
+ */
+function resultRowsWithEdp(rows) {
+  const edpByEmail = new Map((CACHE.students || []).map(student => [
+    String(student.email || '').trim().toLowerCase(), String(student.edpCode || '')
+  ]));
+  return (rows || []).map(row => ({
+    ...row,
+    edpCode: row.edpCode || edpByEmail.get(String(row.email || '').trim().toLowerCase()) || ''
+  }));
+}
+
 function resetResults() {
   $('resultsContent').innerHTML = '<div class="card center solo muted small">Select an exam above to view results.</div>';
 }
@@ -2340,8 +2398,10 @@ $('resultsExamPicker').onchange = async function () {
   try {
     const r = await api('teacherGetResults', { idToken: await idToken(), code });
     if (!r.ok) { $('resultsContent').textContent = r.message || 'Error'; return; }
+    r.rows = resultRowsWithEdp(r.rows);
     const wrap = document.createElement('div');
     wrap.className = 'stack';
+    populateResultsEdpPicker(r.rows || []);
     // Summary card
     const summary = document.createElement('div');
     summary.className = 'card';
@@ -2390,16 +2450,28 @@ $('resultsExamPicker').onchange = async function () {
       tCard.innerHTML = '<p class="eyebrow">All submissions</p>';
       const tableWrap = document.createElement('div');
       tableWrap.style.overflowX = 'auto';
-      renderResultsTable(tableWrap, r.rows, r.total);
+      const shownRows = () => {
+        const edp = $('resultsEdpPicker')?.value || '';
+        return edp ? r.rows.filter(row => String(row.edpCode || '') === edp) : r.rows;
+      };
+      renderResultsTable(tableWrap, shownRows(), r.total);
       tCard.append(tableWrap);
       // Export CSV button
       const exportBtn = document.createElement('button');
       exportBtn.className = 'btn-sm btn-outline';
       exportBtn.type = 'button';
       exportBtn.textContent = '⬇ Export CSV';
-      exportBtn.onclick = () => exportCSV(r.rows, code);
-      tCard.append(exportBtn);
+      exportBtn.onclick = () => exportCSV(shownRows(), code);
+
+      let copyControls = buildResultCopyControls(shownRows, code);
+      tCard.append(copyControls, exportBtn);
       wrap.append(tCard);
+      $('resultsEdpPicker').onchange = () => {
+        renderResultsTable(tableWrap, shownRows(), r.total);
+        const replacement = buildResultCopyControls(shownRows, code);
+        copyControls.replaceWith(replacement);
+        copyControls = replacement;
+      };
     }
     $('resultsContent').replaceChildren(wrap);
   } catch (err) { $('resultsContent').textContent = 'Error: ' + err.message; console.error(err); }
@@ -2512,6 +2584,64 @@ function exportCSV(rows, code) {
   // Without this the whole file stays in memory until the tab is closed.
   setTimeout(() => URL.revokeObjectURL(url), 4000);
   toast('Downloaded ' + code + '-results.csv', 'ok');
+}
+
+/** Build spreadsheet-friendly selected-column copy controls. */
+function buildResultCopyControls(getRows, code) {
+  const bar = document.createElement('div');
+  bar.className = 'copy-results-controls';
+  bar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;';
+  bar.innerHTML = `
+    <span class="muted small" style="font-weight:600;">Copy columns:</span>
+    <label class="small"><input type="checkbox" data-copy-column="name" checked> Student name</label>
+    <label class="small"><input type="checkbox" data-copy-column="score" checked> ${esc(code)} score</label>
+    <label class="small"><input type="checkbox" data-copy-headers> Include headers</label>`;
+  const button = document.createElement('button');
+  button.className = 'btn-sm btn-outline';
+  button.type = 'button';
+  button.textContent = '📋 Copy selected';
+  button.onclick = () => {
+    const columns = [...bar.querySelectorAll('[data-copy-column]:checked')].map(input => input.dataset.copyColumn);
+    if (!columns.length) { toast('Select at least one column to copy.', 'bad'); return; }
+    const rows = getRows();
+    if (!rows.length) { toast('No result rows match this EDP filter.', 'bad'); return; }
+    const includeHeaders = bar.querySelector('[data-copy-headers]').checked;
+    copyResultColumns(rows, columns, code, includeHeaders, button);
+  };
+  bar.append(button);
+  return bar;
+}
+
+function copyResultColumns(rows, columns, code, includeHeaders, button) {
+  const labels = { name: 'Student Name', score: code };
+  const textRows = rows.map(row => columns.map(column => {
+    if (column === 'name') return row.name || '';
+    if (column === 'score') return row.score == null ? '' : row.score;
+    return '';
+  }).join('\t'));
+  const text = (includeHeaders ? [columns.map(column => labels[column]).join('\t')] : []).concat(textRows).join('\n');
+  const done = () => {
+    const old = button.textContent;
+    button.textContent = '✓ Copied';
+    setTimeout(() => { button.textContent = old; }, 1600);
+    toast('Copied ' + rows.length + ' result row' + (rows.length === 1 ? '' : 's') + '.', 'ok');
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopyResultText(text, done));
+  } else {
+    fallbackCopyResultText(text, done);
+  }
+}
+
+function fallbackCopyResultText(text, done) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
+  document.body.append(area);
+  area.select();
+  try { if (document.execCommand('copy')) done(); else toast('Copy was blocked by this browser.', 'bad'); }
+  catch { toast('Copy was blocked by this browser.', 'bad'); }
+  area.remove();
 }
 
 /* Results Toolbar Listeners */

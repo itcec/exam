@@ -1150,7 +1150,9 @@ function createMultiQuestionCard(q, index) {
       b.type = 'button';
       b.className = 'opt';
       b.setAttribute('role', 'radio');
-      const val = letters[i] || t;
+      // True/false answers are graded as TRUE/FALSE on the server. MC uses
+      // its letter, but sending A/B here would make every TF answer wrong.
+      const val = q.type === 'TF' ? String(t).toUpperCase() : (letters[i] || t);
       b.dataset.value = val;
       const isSel = S.answers[q.no] === val;
       b.setAttribute('aria-checked', isSel ? 'true' : 'false');
@@ -1453,8 +1455,11 @@ function render() {
       b.type = 'button';
       b.className = 'opt';
       b.setAttribute('role', 'radio');
-      b.dataset.value = letters[i];
-      const isSel = S.answers[q.no] === letters[i];
+      // The visible T/F key is only a label; the stored answer must be the
+      // TRUE/FALSE value expected by gradeOne_.
+      const val = q.type === 'TF' ? String(t).toUpperCase() : letters[i];
+      b.dataset.value = val;
+      const isSel = S.answers[q.no] === val;
       b.setAttribute('aria-checked', isSel ? 'true' : 'false');
       b.tabIndex = isSel ? 0 : -1;
 

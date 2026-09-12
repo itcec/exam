@@ -416,8 +416,10 @@
         <p class="muted small">Paste your class list — one student per line, last name first.</p>
         <div style="margin-bottom:12px;">
           <label class="lbl" for="addEdp">EDP Code *</label>
-          <input class="field mono" id="addEdp" placeholder="e.g. 10234" required autofocus>
-          <p class="hint" style="margin-top:4px;font-size:11px;color:var(--ink3);">Students will be enrolled under this EDP code.</p>
+          <select class="field mono" id="addEdp" required autofocus>
+            <option value="">Select an EDP code from an exam…</option>
+          </select>
+          <p class="hint" style="margin-top:4px;font-size:11px;color:var(--ink3);">Only EDP codes assigned to your created exams are shown, so a student is enrolled in an exam they can take.</p>
         </div>
         <label class="lbl" for="addPaste">Class list (one student per line)</label>
         <textarea class="field mono" id="addPaste" rows="8" placeholder="Dela Cruz, Juan A.&#10;Reyes, Maria Isabel"></textarea>
@@ -478,8 +480,9 @@
   <section id="scTResults" hidden>
     <div class="section-header">
       <h2 class="section-title">Results</h2>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;gap:8px;align-items:center; flex-wrap:wrap;">
         <select class="field-sm" id="resultsExamPicker"><option value="">Choose exam…</option></select>
+        <select class="field-sm" id="resultsEdpPicker" disabled><option value="">All EDP codes</option></select>
         <button class="btn-sm btn-outline" id="btnRefreshResults" type="button">🔄 Refresh</button>
       </div>
     </div>
