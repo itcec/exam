@@ -197,8 +197,8 @@
           <input class="field mono" id="regStudentId" type="text" placeholder="e.g. 2024-00123">
         </div>
         <div class="stack-s">
-          <label class="lbl" for="regEdp">Class EDP Code (Optional)</label>
-          <input class="field mono" id="regEdp" type="text" placeholder="e.g. 10234">
+          <label class="lbl" for="regEdp">Class EDP Code</label>
+          <input class="field mono" id="regEdp" type="text" placeholder="e.g. 10234" autocomplete="off">
         </div>
       </div>
 
@@ -214,7 +214,7 @@
       </div>
 
       <div class="stack-s">
-        <label class="lbl" for="regSection">Section</label>
+        <label class="lbl" for="regSection">Section (optional when using EDP)</label>
         <select class="field" id="regSection"></select>
       </div>
 
@@ -243,7 +243,7 @@
   <section id="scNotListed" hidden>
     <div class="card solo">
       <h1 class="h1">Name not found</h1>
-      <p class="muted" id="notListedWhy">No one close to your name was found on the class list. Check your course and section, and make sure your spelling is correct.</p>
+      <p class="muted" id="notListedWhy">No one close to your name was found on the class list. Check your course and Class EDP Code, and make sure your spelling is correct.</p>
       <p id="notListedName" class="h1" style="font-size:1.15rem;"></p>
       <p id="notListedEmail" class="muted small" style="word-break:break-all"></p>
       <div class="actions">

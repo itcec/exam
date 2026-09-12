@@ -628,9 +628,9 @@ if ($('btnRegister')) {
     };
 
     const err = $('regErr');
-    if (!profile.lastName || !profile.firstName || !profile.year || !profile.course || !profile.section) {
+    if (!profile.lastName || !profile.firstName || !profile.year || !profile.course || (!profile.edpCode && !profile.section)) {
       if (err) {
-        err.textContent = 'Please fill in Name, Year, Course, and Section before continuing.';
+        err.textContent = 'Please fill in Name, Year, Course, and either your Class EDP Code or Section before continuing.';
         err.hidden = false;
       }
       return;
@@ -813,8 +813,8 @@ function showNotListed(profile) {
   if ($('notListedWhy')) {
     $('notListedWhy').textContent =
       `No one close to "${profile.lastName}, ${profile.firstName}" is on the ` +
-      `${profile.course} section ${profile.section} list. Check your spelling ` +
-      `and your section first — a typo in either one hides your name.`;
+      `${profile.course} class list for ${profile.edpCode ? 'EDP ' + profile.edpCode : 'section ' + profile.section}. ` +
+      `Check your spelling and class code first — a typo in either one hides your name.`;
   }
   if ($('notListedName')) $('notListedName').textContent = `${profile.lastName}, ${profile.firstName}`;
   if ($('notListedEmail')) $('notListedEmail').textContent = S.email || '';
