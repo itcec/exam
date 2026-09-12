@@ -343,9 +343,16 @@ let auth;
 try {
   const app = initializeApp(FIREBASE_CONFIG);
   auth = getAuth(app);
-  await setPersistence(auth, browserLocalPersistence);
+  // Local persistence is a convenience, not a prerequisite for taking an
+  // exam. Some in-app and privacy-restricted browsers leave this promise
+  // pending, which previously kept the whole portal on “Starting up…”.
+  await Promise.race([
+    setPersistence(auth, browserLocalPersistence),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('persistence-timeout')), 3500))
+  ]);
 } catch (err) {
-  fatal('Sign-in is not set up', 'The exam site is missing its Firebase settings. Tell your instructor. (' + err.message + ')');
+  if (auth) console.warn('[student] persistence error:', err);
+  else fatal('Sign-in is not set up', 'The exam site is missing its Firebase settings. Tell your instructor. (' + err.message + ')');
 }
 
 const provider = new GoogleAuthProvider();
