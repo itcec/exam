@@ -2085,10 +2085,11 @@ if ($('btnTAddAll')) {
 }
 
 /* ================================================================
-   Per-question manager
+   Per-question manager with interactive dropdowns
    ================================================================ */
 let _managedQuestions = [];
-let _managedSelectedRow = null;
+let _managedExpandedRow = null;
+let _managedEditingRow = null;
 let _managedSearchQuery = '';
 let _managedTypeFilter = 'ALL';
 
@@ -2099,17 +2100,6 @@ const MANAGED_TYPE_LABELS = {
 
 function managedLines(value) {
   return String(value || '').replace(/\r\r\n/g, '\r\n').split('\r\n').map(s => s.trim()).filter(Boolean);
-}
-
-function managedFormValue() {
-  return {
-    question: $('manageQuestionText').value.trim(),
-    type: $('manageQuestionType').value,
-    choices: managedLines($('manageQuestionChoices').value),
-    answers: managedLines($('manageQuestionAnswers').value),
-    timer: $('manageQuestionTimer').value.trim(),
-    points: $('manageQuestionPoints').value.trim() || '1'
-  };
 }
 
 function managedSpec(q) {
@@ -2125,153 +2115,6 @@ function managedSpec(q) {
     pool = q.choices.join('\r\n');
   }
   return { mode: q.type, text: text + ' | ' + q.answers.join(';'), pool, instruction, seconds: q.timer };
-}
-
-function applyManagedTypeUI(type) {
-  const wrapChoices = $('wrapManageChoices');
-  const lblChoices = $('lblManageChoices');
-  const txtChoices = $('manageQuestionChoices');
-  const lblAnswers = $('lblManageAnswers');
-  const txtAnswers = $('manageQuestionAnswers');
-  const tfToggle = $('manageTFToggle');
-  const hintAnswers = $('hintManageAnswers');
-  const badge = $('manageEditorBadge');
-
-  if (badge) {
-    badge.className = 'q-chip q-chip-' + String(type || 'mc').toLowerCase();
-    badge.textContent = MANAGED_TYPE_LABELS[type] || type;
-  }
-
-  if (type === 'TF') {
-    if (wrapChoices) wrapChoices.style.display = 'none';
-    if (tfToggle) tfToggle.style.display = 'flex';
-    if (lblAnswers) lblAnswers.innerHTML = 'Correct Answer <span class="muted">(Select True or False below)</span>';
-    if (hintAnswers) hintAnswers.textContent = 'Click True or False, or type it into the box.';
-    const curVal = (txtAnswers?.value || '').trim().toLowerCase();
-    document.querySelectorAll('#manageTFToggle .tf-btn').forEach(btn => {
-      const bVal = btn.getAttribute('data-val').toLowerCase();
-      btn.classList.toggle('selected', curVal.startsWith(bVal) || curVal === bVal);
-    });
-  } else if (type === 'ID') {
-    if (wrapChoices) wrapChoices.style.display = 'none';
-    if (tfToggle) tfToggle.style.display = 'none';
-    if (lblAnswers) lblAnswers.innerHTML = 'Accepted Answer(s) <span class="muted">(one per line for alternate spellings)</span>';
-    if (hintAnswers) hintAnswers.textContent = 'Case-insensitive. If multiple lines are provided, any of them earns full points.';
-  } else if (type === 'EN') {
-    if (wrapChoices) wrapChoices.style.display = 'none';
-    if (tfToggle) tfToggle.style.display = 'none';
-    if (lblAnswers) lblAnswers.innerHTML = 'Required Items <span class="muted">(one required item per line)</span>';
-    if (hintAnswers) hintAnswers.textContent = 'Students must list all lines to receive full credit.';
-  } else if (type === 'MA') {
-    if (wrapChoices) wrapChoices.style.display = 'block';
-    if (tfToggle) tfToggle.style.display = 'none';
-    if (lblChoices) lblChoices.innerHTML = 'Left Items / Premises <span class="muted">(one per line)</span>';
-    if (txtChoices) txtChoices.placeholder = 'Item 1\r\nItem 2\r\nItem 3';
-    if (lblAnswers) lblAnswers.innerHTML = 'Matching Right Items <span class="muted">(matching line-by-line to left)</span>';
-    if (txtAnswers) txtAnswers.placeholder = 'Match for Item 1\r\nMatch for Item 2\r\nMatch for Item 3';
-    if (hintAnswers) hintAnswers.textContent = 'Pairs are matched row-for-row (Line 1 matches Line 1).';
-  } else if (type === 'WB') {
-    if (wrapChoices) wrapChoices.style.display = 'block';
-    if (tfToggle) tfToggle.style.display = 'none';
-    if (lblChoices) lblChoices.innerHTML = 'Word Bank Pool <span class="muted">(pool of available words, one per line)</span>';
-    if (txtChoices) txtChoices.placeholder = 'Word 1\r\nWord 2\r\nWord 3\r\nDistractor 4';
-    if (lblAnswers) lblAnswers.innerHTML = 'Target Answer(s) <span class="muted">(one per blank)</span>';
-    if (hintAnswers) hintAnswers.textContent = 'The word bank options shown to the student during the exam.';
-  } else {
-    // Default MC
-    if (wrapChoices) wrapChoices.style.display = 'block';
-    if (tfToggle) tfToggle.style.display = 'none';
-    if (lblChoices) lblChoices.innerHTML = 'Choices / Options <span class="muted">(one option per line)</span>';
-    if (txtChoices) txtChoices.placeholder = 'Option A\r\nOption B\r\nOption C\r\nOption D';
-    if (lblAnswers) lblAnswers.innerHTML = 'Correct Answer <span class="muted">(e.g. A, B, or exact option text)</span>';
-    if (hintAnswers) hintAnswers.textContent = 'The correct option key (A, B, C, D) or the exact choice text.';
-  }
-}
-
-function updateManagedPreview() {
-  const box = $('manageQPreview');
-  if (!box) return;
-  const q = managedFormValue();
-
-  if (!q.question) {
-    box.innerHTML = '<span class="muted small">Type a question prompt above to preview student view…</span>';
-    return;
-  }
-
-  let html = `<div style="font-weight:600; margin-bottom:8px; line-height:1.4;">${esc(q.question)}</div>`;
-
-  if (q.type === 'MC') {
-    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-    const ansLower = q.answers.map(a => a.toLowerCase());
-    if (q.choices.length) {
-      html += '<div style="display:flex; flex-direction:column; gap:4px;">';
-      q.choices.forEach((c, idx) => {
-        const letter = letters[idx] || String(idx + 1);
-        const isKey = ansLower.includes(letter.toLowerCase()) || ansLower.includes(c.toLowerCase());
-        html += `
-          <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:4px; border:1px solid ${isKey ? 'var(--ok)' : 'var(--edge)'}; background:${isKey ? 'var(--ok-soft, rgba(4,120,87,0.08))' : 'var(--glass)'}; font-size:0.8rem;">
-            <b style="color:${isKey ? 'var(--ok)' : 'var(--accent)'};">${letter}.</b>
-            <span style="flex:1;">${esc(c)}</span>
-            ${isKey ? '<span style="color:var(--ok); font-weight:700; font-size:0.75rem;">✓ Correct Key</span>' : ''}
-          </div>`;
-      });
-      html += '</div>';
-    } else {
-      html += '<span class="muted small">Add choices above to preview multiple choice options…</span>';
-    }
-  } else if (q.type === 'TF') {
-    const ansStr = (q.answers[0] || '').toLowerCase();
-    const isT = ansStr === 'true' || ansStr === 't';
-    const isF = ansStr === 'false' || ansStr === 'f';
-    html += `
-      <div style="display:flex; gap:8px;">
-        <div style="flex:1; padding:6px; text-align:center; border-radius:4px; border:1px solid ${isT ? 'var(--ok)' : 'var(--edge)'}; background:${isT ? 'var(--ok-soft, rgba(4,120,87,0.08))' : 'var(--glass)'}; font-size:0.8rem; font-weight:600;">
-          True ${isT ? '<span style="color:var(--ok);">✓</span>' : ''}
-        </div>
-        <div style="flex:1; padding:6px; text-align:center; border-radius:4px; border:1px solid ${isF ? 'var(--ok)' : 'var(--edge)'}; background:${isF ? 'var(--ok-soft, rgba(4,120,87,0.08))' : 'var(--glass)'}; font-size:0.8rem; font-weight:600;">
-          False ${isF ? '<span style="color:var(--ok);">✓</span>' : ''}
-        </div>
-      </div>`;
-  } else if (q.type === 'ID') {
-    html += `
-      <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
-        <input class="field" disabled placeholder="Student types identification answer here…" style="flex:1; font-size:0.8rem;">
-        <span class="muted small" style="font-size:0.75rem; white-space:nowrap;">Key: <b>${esc(q.answers.join(' | ') || 'None')}</b></span>
-      </div>`;
-  } else if (q.type === 'EN') {
-    html += `
-      <div style="margin-top:4px;">
-        <div class="muted small" style="margin-bottom:4px;">Expected Enumeration Answers:</div>
-        <ol style="margin:0; padding-left:20px; font-size:0.8rem;">
-          ${(q.answers.length ? q.answers : ['Item 1', 'Item 2']).map(a => `<li>${esc(a)}</li>`).join('')}
-        </ol>
-      </div>`;
-  } else if (q.type === 'MA') {
-    html += `
-      <div style="font-size:0.8rem; margin-top:4px;">
-        <table style="inline-size:100%; border-collapse:collapse;">
-          <thead><tr style="border-bottom:1px solid var(--edge);"><th style="text-align:left; padding:2px 4px; font-size:0.75rem;">Premise</th><th style="text-align:left; padding:2px 4px; font-size:0.75rem;">Target Match</th></tr></thead>
-          <tbody>
-            ${(q.choices.length ? q.choices : ['Premise 1']).map((c, i) => `
-              <tr style="border-bottom:1px dashed var(--edge);">
-                <td style="padding:4px;">${esc(c)}</td>
-                <td style="padding:4px; font-weight:600; color:var(--accent);">${esc(q.answers[i] || '—')}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`;
-  } else if (q.type === 'WB') {
-    html += `
-      <div style="font-size:0.8rem; margin-top:4px;">
-        <div class="muted small" style="margin-bottom:4px;">Word Pool:</div>
-        <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
-          ${q.choices.map(c => `<span class="pill" style="font-size:0.75rem;">${esc(c)}</span>`).join('')}
-        </div>
-        <div class="muted small">Target Answer: <b>${esc(q.answers.join(', ') || '—')}</b></div>
-      </div>`;
-  }
-
-  box.innerHTML = html;
 }
 
 function renderManagedQuestionList() {
@@ -2301,117 +2144,355 @@ function renderManagedQuestionList() {
   if (!filtered.length) {
     const empty = document.createElement('div');
     empty.className = 'muted small';
-    empty.style.cssText = 'padding:24px 12px; text-align:center;';
+    empty.style.cssText = 'padding:28px 12px; text-align:center; background:var(--glass); border-radius:var(--r-md); border:1px dashed var(--edge);';
     empty.textContent = _managedQuestions.length
-      ? 'No questions match the active search or type filter.'
-      : 'No questions yet in this exam. Click "+ New Question" to create one.';
+      ? 'No questions match the search keyword or type filter.'
+      : 'No questions yet in this exam. Click "+ New Question" above to create one.';
     host.append(empty);
     return;
   }
 
   filtered.forEach(q => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    const isSel = String(q.row) === String(_managedSelectedRow);
-    card.className = 'q-card-item' + (isSel ? ' is-selected' : '');
-    card.setAttribute('aria-selected', isSel ? 'true' : 'false');
-    card.setAttribute('role', 'option');
+    const card = document.createElement('div');
+    const isExpanded = String(q.row) === String(_managedExpandedRow);
+    card.className = 'q-manage-card' + (isExpanded ? ' is-expanded' : '');
+    card.id = `qCardRow_${q.row}`;
 
-    // Snippet
-    let snippet = '';
-    if (q.type === 'MC') {
-      snippet = `${q.choices?.length || 0} choices · Key: ${esc((q.answers || []).join(', ') || '—')}`;
-    } else if (q.type === 'TF') {
-      snippet = `Key: ${esc((q.answers || []).join(', ') || '—')}`;
-    } else if (q.type === 'ID') {
-      snippet = `Key: ${esc((q.answers || []).slice(0, 2).join(', ') || '—')}`;
-    } else if (q.type === 'EN') {
-      snippet = `${q.answers?.length || 0} required items`;
-    } else if (q.type === 'MA') {
-      snippet = `${q.answers?.length || 0} pairs`;
-    } else if (q.type === 'WB') {
-      snippet = `${q.choices?.length || 0} pool words`;
-    }
+    // Card Header Trigger
+    const header = document.createElement('div');
+    header.className = 'q-card-header';
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    header.setAttribute('aria-controls', `qDropdown_${q.row}`);
 
     const typeChipClass = 'q-chip q-chip-' + String(q.type || 'mc').toLowerCase();
-    const typeLabel = q.type;
-
-    card.innerHTML = `
-      <div class="q-card-item-top">
+    header.innerHTML = `
+      <div class="q-header-left">
         <span class="q-card-num">Q${esc(q.no)}</span>
-        <span class="${typeChipClass}">${esc(typeLabel)}</span>
-        <span class="grow"></span>
-        <span class="q-card-meta">${esc(q.points || 1)} pt${q.points == 1 ? '' : 's'}${q.timer ? ' · ⏱ ' + esc(q.timer) + 's' : ''}</span>
+        <span class="${typeChipClass}">${esc(q.type)}</span>
+        <span class="q-card-prompt-preview">${esc(q.question || 'Untitled question')}</span>
       </div>
-      <div class="q-card-prompt">${esc(q.question || 'Untitled question')}</div>
-      <div class="q-card-key">${snippet}</div>
+      <div class="q-header-right">
+        <span class="q-card-meta">${esc(q.points || 1)} pt${q.points == 1 ? '' : 's'}${q.timer ? ' · ⏱ ' + esc(q.timer) + 's' : ''}</span>
+        <span class="btn-sm btn-outline q-dropdown-btn">
+          Manage
+          <svg class="q-chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </span>
+      </div>
     `;
 
-    card.onclick = () => {
-      _managedSelectedRow = q.row;
-      fillManagedEditor(q);
+    const toggle = () => {
+      if (_managedExpandedRow === q.row) {
+        _managedExpandedRow = null;
+        _managedEditingRow = null;
+      } else {
+        _managedExpandedRow = q.row;
+        _managedEditingRow = null;
+      }
       renderManagedQuestionList();
     };
+
+    header.onclick = toggle;
+    header.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
+    };
+
+    card.append(header);
+
+    // If expanded, render the management dropdown body
+    if (isExpanded) {
+      const dropdown = document.createElement('div');
+      dropdown.className = 'q-manage-dropdown';
+      dropdown.id = `qDropdown_${q.row}`;
+
+      if (_managedEditingRow === q.row) {
+        // INLINE EDIT MODE
+        dropdown.innerHTML = `
+          <div class="q-inline-editor">
+            <div class="two" style="margin-bottom:10px;">
+              <div>
+                <label class="lbl">Question Type</label>
+                <select class="field edit-q-type">
+                  <option value="MC" ${q.type === 'MC' ? 'selected' : ''}>Multiple choice</option>
+                  <option value="TF" ${q.type === 'TF' ? 'selected' : ''}>True or false</option>
+                  <option value="ID" ${q.type === 'ID' ? 'selected' : ''}>Identification</option>
+                  <option value="EN" ${q.type === 'EN' ? 'selected' : ''}>Enumeration</option>
+                  <option value="MA" ${q.type === 'MA' ? 'selected' : ''}>Matching</option>
+                  <option value="WB" ${q.type === 'WB' ? 'selected' : ''}>Word bank</option>
+                </select>
+              </div>
+              <div class="two">
+                <div>
+                  <label class="lbl">Timer (seconds)</label>
+                  <input class="field edit-q-timer" type="number" min="5" max="3600" placeholder="Default" value="${esc(q.timer || '')}">
+                </div>
+                <div>
+                  <label class="lbl">Points</label>
+                  <input class="field edit-q-points" type="number" min="0.01" step="0.01" value="${esc(q.points || 1)}">
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-bottom:10px;">
+              <label class="lbl">Question Prompt</label>
+              <textarea class="field edit-q-text" rows="3" placeholder="Enter question prompt…">${esc(q.question || '')}</textarea>
+            </div>
+
+            <div class="edit-wrap-choices" style="margin-bottom:10px; display:${(q.type === 'MC' || q.type === 'MA' || q.type === 'WB') ? 'block' : 'none'};">
+              <label class="lbl edit-lbl-choices">${q.type === 'MA' ? 'Premises / Left Items (one per line)' : (q.type === 'WB' ? 'Word Bank Pool (one per line)' : 'Choices / Options (one per line)')}</label>
+              <textarea class="field mono edit-q-choices" rows="4">${esc((q.choices || []).join('\r\n'))}</textarea>
+            </div>
+
+            <div class="edit-wrap-answers" style="margin-bottom:10px;">
+              <label class="lbl edit-lbl-answers">${q.type === 'MA' ? 'Matching Right Items (line-by-line match)' : (q.type === 'EN' ? 'Required Items (one per line)' : 'Answer Key (one per line)')}</label>
+              <div class="edit-tf-toggle" style="display:${q.type === 'TF' ? 'flex' : 'none'}; gap:8px; margin-bottom:6px;">
+                <button type="button" class="btn btn-sm btn-outline edit-tf-btn ${String((q.answers || [])[0] || '').toLowerCase().startsWith('t') ? 'selected' : ''}" data-val="True" style="flex:1;">✓ True</button>
+                <button type="button" class="btn btn-sm btn-outline edit-tf-btn ${String((q.answers || [])[0] || '').toLowerCase().startsWith('f') ? 'selected' : ''}" data-val="False" style="flex:1;">✕ False</button>
+              </div>
+              <textarea class="field mono edit-q-answers" rows="3">${esc((q.answers || []).join('\r\n'))}</textarea>
+            </div>
+
+            <div class="actions" style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
+              <button type="button" class="btn-sm btn-danger btn-edit-delete">🗑️ Delete</button>
+              <div style="display:flex; gap:8px;">
+                <button type="button" class="btn-sm btn-ghost btn-edit-cancel">Cancel</button>
+                <button type="button" class="btn-sm btn-primary btn-edit-save">Save Changes</button>
+              </div>
+            </div>
+            <div class="edit-q-msg" role="status" aria-live="polite" style="margin-top:6px;"></div>
+          </div>
+        `;
+
+        // Attach listeners for inline edit mode
+        const selType = dropdown.querySelector('.edit-q-type');
+        const wrapChoices = dropdown.querySelector('.edit-wrap-choices');
+        const lblChoices = dropdown.querySelector('.edit-lbl-choices');
+        const tfToggle = dropdown.querySelector('.edit-tf-toggle');
+        const txtAnswers = dropdown.querySelector('.edit-q-answers');
+
+        selType.onchange = () => {
+          const t = selType.value;
+          wrapChoices.style.display = (t === 'MC' || t === 'MA' || t === 'WB') ? 'block' : 'none';
+          tfToggle.style.display = (t === 'TF') ? 'flex' : 'none';
+          if (t === 'MA') {
+            lblChoices.textContent = 'Premises / Left Items (one per line)';
+          } else if (t === 'WB') {
+            lblChoices.textContent = 'Word Bank Pool (one per line)';
+          } else {
+            lblChoices.textContent = 'Choices / Options (one per line)';
+          }
+        };
+
+        dropdown.querySelectorAll('.edit-tf-btn').forEach(btn => {
+          btn.onclick = () => {
+            dropdown.querySelectorAll('.edit-tf-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            txtAnswers.value = btn.getAttribute('data-val');
+          };
+        });
+
+        dropdown.querySelector('.btn-edit-cancel').onclick = () => {
+          _managedEditingRow = null;
+          renderManagedQuestionList();
+        };
+
+        dropdown.querySelector('.btn-edit-delete').onclick = () => deleteManagedQuestion(q);
+
+        dropdown.querySelector('.btn-edit-save').onclick = async () => {
+          const prompt = dropdown.querySelector('.edit-q-text').value.trim();
+          const out = dropdown.querySelector('.edit-q-msg');
+          if (!prompt) {
+            out.innerHTML = '<div class="msg bad">Question prompt is required.</div>';
+            return;
+          }
+          const updatedQ = {
+            question: prompt,
+            type: selType.value,
+            choices: managedLines(dropdown.querySelector('.edit-q-choices').value),
+            answers: managedLines(txtAnswers.value),
+            timer: dropdown.querySelector('.edit-q-timer').value.trim(),
+            points: dropdown.querySelector('.edit-q-points').value.trim() || '1'
+          };
+
+          const btnSave = dropdown.querySelector('.btn-edit-save');
+          btnSave.disabled = true;
+          btnSave.textContent = 'Saving…';
+          try {
+            const r = await api('teacherUpdateQuestion', {
+              idToken: await idToken(),
+              code: _currentDetailExamCode,
+              row: q.row,
+              question: updatedQ
+            });
+            if (!r.ok) throw new Error(r.message || 'Question could not be updated.');
+            toast(`Question Q${q.no} updated.`, 'ok');
+            play('pop');
+            _managedEditingRow = null;
+            await refreshManagedQuestions(q.row);
+          } catch (err) {
+            out.innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
+            btnSave.disabled = false;
+            btnSave.textContent = 'Save Changes';
+          }
+        };
+      } else {
+        // VIEW & QUICK ACTIONS MODE
+        let detailsHtml = '';
+        if (q.type === 'MC') {
+          detailsHtml = `
+            <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px;">
+              ${(q.choices || []).map((c, i) => {
+                const letter = String.fromCharCode(65 + i);
+                const isKey = (q.answers || []).map(a => a.toLowerCase()).includes(letter.toLowerCase()) ||
+                              (q.answers || []).map(a => a.toLowerCase()).includes(c.toLowerCase());
+                return `
+                  <div style="display:flex; align-items:center; gap:6px; font-size:0.8rem; color:${isKey ? 'var(--ok)' : 'var(--fg)'}; font-weight:${isKey ? '600' : 'normal'};">
+                    <span style="inline-size:20px; font-weight:700;">${letter}.</span>
+                    <span>${esc(c)}</span>
+                    ${isKey ? '<span class="q-answer-badge">✓ Key</span>' : ''}
+                  </div>`;
+              }).join('')}
+            </div>
+          `;
+        } else if (q.type === 'TF') {
+          detailsHtml = `
+            <div style="margin-bottom:8px;">
+              Answer Key: <span class="q-answer-badge">✓ ${(q.answers || [])[0] || '—'}</span>
+            </div>`;
+        } else if (q.type === 'ID') {
+          detailsHtml = `
+            <div style="margin-bottom:8px;">
+              Accepted Answer(s): <span class="q-answer-badge">✓ ${(q.answers || []).join(' | ') || '—'}</span>
+            </div>`;
+        } else if (q.type === 'EN') {
+          detailsHtml = `
+            <div style="margin-bottom:8px;">
+              <div class="muted small" style="margin-bottom:4px;">Required Items (${(q.answers || []).length}):</div>
+              <ol style="margin:0; padding-left:18px; font-size:0.8rem;">
+                ${(q.answers || []).map(a => `<li>${esc(a)}</li>`).join('')}
+              </ol>
+            </div>`;
+        } else if (q.type === 'MA') {
+          detailsHtml = `
+            <div style="margin-bottom:8px;">
+              <div class="muted small" style="margin-bottom:4px;">Matching Pairs:</div>
+              <table style="inline-size:100%; font-size:0.8rem; border-collapse:collapse;">
+                ${(q.choices || []).map((c, i) => `
+                  <tr style="border-bottom:1px dashed var(--edge);">
+                    <td style="padding:2px 6px;">${esc(c)}</td>
+                    <td style="padding:2px 6px; font-weight:600; color:var(--accent);">➔ ${esc((q.answers || [])[i] || '—')}</td>
+                  </tr>`).join('')}
+              </table>
+            </div>`;
+        } else if (q.type === 'WB') {
+          detailsHtml = `
+            <div style="margin-bottom:8px;">
+              <div class="muted small" style="margin-bottom:4px;">Word Pool:</div>
+              <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px;">
+                ${(q.choices || []).map(c => `<span class="pill" style="font-size:0.75rem;">${esc(c)}</span>`).join('')}
+              </div>
+              <div class="muted small">Key: <span class="q-answer-badge">✓ ${(q.answers || []).join(', ')}</span></div>
+            </div>`;
+        }
+
+        dropdown.innerHTML = `
+          <div class="q-full-prompt">${esc(q.question || 'Untitled question')}</div>
+          <div class="q-details-box">
+            ${detailsHtml}
+          </div>
+          <div class="q-dropdown-actions">
+            <button type="button" class="btn-sm btn-outline btn-q-edit">✏️ Edit Question</button>
+            <button type="button" class="btn-sm btn-outline btn-q-duplicate">📋 Duplicate</button>
+            <button type="button" class="btn-sm btn-danger btn-q-delete">🗑️ Delete</button>
+          </div>
+        `;
+
+        dropdown.querySelector('.btn-q-edit').onclick = () => {
+          _managedEditingRow = q.row;
+          renderManagedQuestionList();
+        };
+
+        dropdown.querySelector('.btn-q-duplicate').onclick = () => duplicateManagedQuestion(q);
+        dropdown.querySelector('.btn-q-delete').onclick = () => deleteManagedQuestion(q);
+      }
+
+      card.append(dropdown);
+    }
 
     host.append(card);
   });
 }
 
-function fillManagedEditor(q) {
-  _managedSelectedRow = q.row || 'new';
-  if ($('manageQuestionsEditor')) $('manageQuestionsEditor').hidden = false;
-  if ($('manageQuestionsEmptyEditor')) $('manageQuestionsEmptyEditor').style.display = 'none';
-
-  $('manageQuestionRow').value = q.row || '';
-  $('manageQuestionNo').value = q.row ? `Q${q.no}` : 'New question';
-  if ($('manageEditorHeading')) {
-    $('manageEditorHeading').textContent = q.row ? `Editing Question Q${q.no}` : 'Create New Question';
+async function duplicateManagedQuestion(q) {
+  if (!window.confirm(`Duplicate Question Q${q.no} in this exam?`)) return;
+  try {
+    toast(`Duplicating Q${q.no}…`, 'ok');
+    const cloneSpec = managedSpec({
+      ...q,
+      question: q.question + ' (Copy)'
+    });
+    const r = await api('teacherAddQuestions', {
+      idToken: await idToken(),
+      code: _currentDetailExamCode,
+      specs: [cloneSpec],
+      mode: 'append'
+    });
+    if (!r.ok) throw new Error(r.message || 'Could not duplicate question.');
+    toast(`Question Q${q.no} duplicated!`, 'ok');
+    play('pop');
+    await refreshManagedQuestions();
+    // Expand the newly added question at the end
+    if (_managedQuestions.length) {
+      _managedExpandedRow = _managedQuestions[_managedQuestions.length - 1].row;
+      renderManagedQuestionList();
+    }
+  } catch (err) {
+    toast(err.message, 'bad');
   }
-  $('manageQuestionType').value = q.type || 'ID';
-  $('manageQuestionText').value = q.question || '';
-  $('manageQuestionChoices').value = (q.choices || []).join('\r\n');
-  $('manageQuestionAnswers').value = (q.answers || []).join('\r\n');
-  $('manageQuestionTimer').value = q.timer == null ? '' : q.timer;
-  $('manageQuestionPoints').value = q.points == null ? '1' : q.points;
-  $('manageQuestionOut').replaceChildren();
-  $('btnDeleteManagedQuestion').hidden = !q.row;
-
-  applyManagedTypeUI(q.type || 'ID');
-  updateManagedPreview();
 }
 
-function beginNewManagedQuestion() {
-  _managedSelectedRow = 'new';
-  const nextNo = _managedQuestions.length + 1;
-  fillManagedEditor({ row: '', no: nextNo, type: 'MC', question: '', choices: [], answers: [], timer: '', points: 1 });
-  renderManagedQuestionList();
+async function deleteManagedQuestion(q) {
+  if (!window.confirm(`Delete Question Q${q.no} from this exam? This cannot be undone.`)) return;
+  try {
+    toast(`Deleting Q${q.no}…`, 'warn');
+    const r = await api('teacherDeleteQuestion', {
+      idToken: await idToken(),
+      code: _currentDetailExamCode,
+      row: q.row
+    });
+    if (!r.ok) throw new Error(r.message || 'Could not delete question.');
+    toast(`Question Q${q.no} deleted.`, 'ok');
+    play('pop');
+    _managedExpandedRow = null;
+    _managedEditingRow = null;
+    await refreshManagedQuestions();
+  } catch (err) {
+    toast(err.message, 'bad');
+  }
 }
 
-async function refreshManagedQuestions(selectRow) {
+async function refreshManagedQuestions(expandRow) {
   const r = await api('teacherListQuestions', { idToken: await idToken(), code: _currentDetailExamCode });
   if (!r.ok) throw new Error(r.message || 'Could not load questions.');
   _managedQuestions = r.questions || [];
-  const selected = selectRow
-    ? _managedQuestions.find(q => String(q.row) === String(selectRow))
-    : _managedQuestions[0];
-
-  renderManagedQuestionList();
-  if (selected) {
-    fillManagedEditor(selected);
-  } else if (!_managedQuestions.length) {
-    beginNewManagedQuestion();
-  } else {
-    fillManagedEditor(_managedQuestions[0]);
+  if (expandRow) {
+    _managedExpandedRow = expandRow;
   }
+  renderManagedQuestionList();
   if ($('detailQCount')) $('detailQCount').textContent = _managedQuestions.length;
 }
 
 async function openQuestionManager() {
   if (!_currentDetailExamCode) return;
   $('manageQModalTitle').textContent = `Manage Questions (${_currentDetailExamCode})`;
-  $('manageQuestionsList').innerHTML = '<p class="muted small" style="padding:16px;text-align:center;">Loading questions…</p>';
-  if ($('manageQuestionsEditor')) $('manageQuestionsEditor').hidden = true;
-  if ($('manageQuestionsEmptyEditor')) $('manageQuestionsEmptyEditor').style.display = 'block';
+  $('manageQuestionsList').innerHTML = '<p class="muted small" style="padding:20px;text-align:center;">Loading questions…</p>';
+  if ($('manageNewQuestionBox')) $('manageNewQuestionBox').hidden = true;
+  _managedExpandedRow = null;
+  _managedEditingRow = null;
   _managedSearchQuery = '';
   _managedTypeFilter = 'ALL';
   if ($('manageQSearch')) $('manageQSearch').value = '';
@@ -2419,15 +2500,15 @@ async function openQuestionManager() {
     b.classList.toggle('on', b.getAttribute('data-type') === 'ALL');
   });
 
-  openModal($('manageQuestionsModal'), $('manageQuestionText'));
+  openModal($('manageQuestionsModal'), $('manageQSearch'));
   try { await refreshManagedQuestions(); }
   catch (err) { $('manageQuestionsList').innerHTML = `<p class="msg bad" style="padding:12px;">${esc(err.message)}</p>`; }
 }
 
 if ($('btnCloseManageQuestions')) $('btnCloseManageQuestions').onclick = () => closeModal($('manageQuestionsModal'));
-if ($('btnNewManagedQuestion')) $('btnNewManagedQuestion').onclick = beginNewManagedQuestion;
+if ($('btnManageQuestions')) $('btnManageQuestions').onclick = openQuestionManager;
 
-// Search and Filter Listeners
+// Toolbar Search and Filter Listeners
 if ($('manageQSearch')) {
   $('manageQSearch').oninput = (e) => {
     _managedSearchQuery = e.target.value;
@@ -2444,73 +2525,95 @@ document.querySelectorAll('#manageQTypeFilter .q-filter-btn').forEach(btn => {
   };
 });
 
-// Live Form & Preview Listeners
-if ($('manageQuestionType')) {
-  $('manageQuestionType').onchange = (e) => {
-    applyManagedTypeUI(e.target.value);
-    updateManagedPreview();
+// "+ New Question" Composer Toggle & Handlers
+if ($('btnNewManagedQuestion')) {
+  $('btnNewManagedQuestion').onclick = () => {
+    const box = $('manageNewQuestionBox');
+    if (!box) return;
+    box.hidden = !box.hidden;
+    if (!box.hidden) {
+      if ($('newQText')) $('newQText').focus();
+      if ($('newQMsg')) $('newQMsg').replaceChildren();
+    }
   };
 }
 
-['manageQuestionText', 'manageQuestionChoices', 'manageQuestionAnswers', 'manageQuestionTimer', 'manageQuestionPoints'].forEach(id => {
-  const el = $(id);
-  if (el) {
-    el.addEventListener('input', updateManagedPreview);
+['btnCancelNewManagedQuestion', 'btnCancelNewManagedQuestion2'].forEach(id => {
+  if ($(id)) {
+    $(id).onclick = () => {
+      if ($('manageNewQuestionBox')) $('manageNewQuestionBox').hidden = true;
+    };
   }
 });
 
-document.querySelectorAll('#manageTFToggle .tf-btn').forEach(btn => {
+if ($('newQType')) {
+  $('newQType').onchange = (e) => {
+    const t = e.target.value;
+    if ($('wrapNewQChoices')) $('wrapNewQChoices').style.display = (t === 'MC' || t === 'MA' || t === 'WB') ? 'block' : 'none';
+    if ($('newQTFToggle')) $('newQTFToggle').style.display = (t === 'TF') ? 'flex' : 'none';
+    if ($('lblNewQChoices')) {
+      $('lblNewQChoices').textContent = t === 'MA' ? 'Premises (one per line)' : (t === 'WB' ? 'Word Pool (one per line)' : 'Choices (one per line)');
+    }
+  };
+}
+
+document.querySelectorAll('#newQTFToggle .new-tf-btn').forEach(btn => {
   btn.onclick = () => {
-    const val = btn.getAttribute('data-val');
-    $('manageQuestionAnswers').value = val;
-    document.querySelectorAll('#manageTFToggle .tf-btn').forEach(b => b.classList.remove('selected'));
+    document.querySelectorAll('#newQTFToggle .new-tf-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
-    updateManagedPreview();
+    if ($('newQAnswers')) $('newQAnswers').value = btn.getAttribute('data-val');
   };
 });
 
-if ($('btnSaveManagedQuestion')) {
-  $('btnSaveManagedQuestion').onclick = async () => {
-    const q = managedFormValue();
-    const row = $('manageQuestionRow').value;
-    const out = $('manageQuestionOut');
-    if (!q.question) { out.innerHTML = '<div class="msg bad">Question text is required.</div>'; return; }
-    const btn = $('btnSaveManagedQuestion');
-    btn.disabled = true; btn.textContent = 'Saving…';
-    try {
-      const r = row
-        ? await api('teacherUpdateQuestion', { idToken: await idToken(), code: _currentDetailExamCode, row, question: q })
-        : await api('teacherAddQuestions', { idToken: await idToken(), code: _currentDetailExamCode, specs: [managedSpec(q)], mode: 'append' });
-      if (!r.ok) throw new Error(r.message || 'Question was not saved.');
-      await refreshManagedQuestions(row || null);
-      out.innerHTML = '<div class="msg ok">✓ Question saved successfully.</div>';
-      toast(row ? 'Question updated.' : 'Question added.', 'ok');
-      play('pop');
-    } catch (err) {
-      out.innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
-    } finally { btn.disabled = false; btn.textContent = 'Save Question'; }
-  };
-}
+if ($('btnSaveNewManagedQuestion')) {
+  $('btnSaveNewManagedQuestion').onclick = async () => {
+    const prompt = ($('newQText')?.value || '').trim();
+    const out = $('newQMsg');
+    if (!prompt) {
+      if (out) out.innerHTML = '<div class="msg bad">Question prompt is required.</div>';
+      return;
+    }
 
-if ($('btnDeleteManagedQuestion')) {
-  $('btnDeleteManagedQuestion').onclick = async () => {
-    const row = $('manageQuestionRow').value;
-    if (!row || !window.confirm('Delete this question from the exam? This cannot be undone.')) return;
-    const btn = $('btnDeleteManagedQuestion');
-    btn.disabled = true; btn.textContent = 'Deleting…';
+    const newQ = {
+      question: prompt,
+      type: $('newQType')?.value || 'ID',
+      choices: managedLines($('newQChoices')?.value),
+      answers: managedLines($('newQAnswers')?.value),
+      timer: ($('newQTimer')?.value || '').trim(),
+      points: ($('newQPoints')?.value || '1').trim() || '1'
+    };
+
+    const btn = $('btnSaveNewManagedQuestion');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
     try {
-      const r = await api('teacherDeleteQuestion', { idToken: await idToken(), code: _currentDetailExamCode, row });
-      if (!r.ok) throw new Error(r.message || 'Question was not deleted.');
-      _managedSelectedRow = null;
+      const r = await api('teacherAddQuestions', {
+        idToken: await idToken(),
+        code: _currentDetailExamCode,
+        specs: [managedSpec(newQ)],
+        mode: 'append'
+      });
+      if (!r.ok) throw new Error(r.message || 'Could not add question.');
+      toast('New question added to exam!', 'ok');
+      play('submit');
+      if ($('manageNewQuestionBox')) $('manageNewQuestionBox').hidden = true;
+      if ($('newQText')) $('newQText').value = '';
+      if ($('newQChoices')) $('newQChoices').value = '';
+      if ($('newQAnswers')) $('newQAnswers').value = '';
       await refreshManagedQuestions();
-      toast('Question deleted.', 'ok');
-      play('pop');
+      // Expand newly added question at the end
+      if (_managedQuestions.length) {
+        _managedExpandedRow = _managedQuestions[_managedQuestions.length - 1].row;
+        renderManagedQuestionList();
+      }
     } catch (err) {
-      $('manageQuestionOut').innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
-    } finally { btn.disabled = false; btn.textContent = '🗑️ Delete'; }
+      if (out) out.innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Add Question';
+    }
   };
 }
-
 /* ================================================================
    Students
    ================================================================ */

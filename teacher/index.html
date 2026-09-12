@@ -402,124 +402,93 @@
 
     <!-- Per-question manager -->
     <div class="modal-backdrop" id="manageQuestionsModal" hidden>
-      <div class="modal-card modal-card-xl">
+      <div class="modal-card modal-card-lg" style="inline-size:min(100%, 860px);">
         <div class="modal-header">
           <div>
             <h3 id="manageQModalTitle" style="margin:0;">Manage Questions</h3>
-            <p class="muted small" style="margin:2px 0 0;">Inspect, edit, or reconfigure individual questions in this exam.</p>
+            <p class="muted small" style="margin:2px 0 0;">Click any question to open its management dropdown, edit choices, duplicate, or delete.</p>
           </div>
           <button class="close-btn" id="btnCloseManageQuestions" type="button" aria-label="Close question manager">✕</button>
         </div>
 
-        <div class="manage-q-layout">
-          <!-- Left: Question Navigator & List -->
-          <div class="manage-q-sidebar">
-            <div class="manage-q-filter-bar">
-              <input class="field" id="manageQSearch" type="search" placeholder="🔍 Search questions…" aria-label="Search questions">
-              <div class="manage-q-chips" id="manageQTypeFilter" role="toolbar" aria-label="Filter by question type">
-                <button type="button" class="q-filter-btn on" data-type="ALL">All</button>
-                <button type="button" class="q-filter-btn" data-type="MC">MC</button>
-                <button type="button" class="q-filter-btn" data-type="TF">TF</button>
-                <button type="button" class="q-filter-btn" data-type="ID">ID</button>
-                <button type="button" class="q-filter-btn" data-type="EN">EN</button>
-                <button type="button" class="q-filter-btn" data-type="MA">MA</button>
-                <button type="button" class="q-filter-btn" data-type="WB">WB</button>
-              </div>
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
-                <span class="muted small" id="manageQTally" style="font-weight:600; font-size:0.75rem;">Loading…</span>
-                <button class="btn-sm btn-accent" id="btnNewManagedQuestion" type="button">+ New Question</button>
-              </div>
+        <div class="manage-q-toolbar" style="margin-top:10px;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <div style="flex:1; min-width:220px;">
+              <input class="field" id="manageQSearch" type="search" placeholder="🔍 Search questions by keyword or answer…" aria-label="Search questions">
             </div>
-
-            <div id="manageQuestionsList" class="manage-q-list" role="listbox" aria-label="Exam questions"></div>
+            <button class="btn btn-accent" id="btnNewManagedQuestion" type="button">+ New Question</button>
           </div>
 
-          <!-- Right: Question Editor & Live Preview -->
-          <div class="manage-q-main">
-            <div id="manageQuestionsEditor" hidden>
-              <input type="hidden" id="manageQuestionRow">
-              <div class="editor-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <h4 id="manageEditorHeading" style="margin:0; font-size:1.05rem; font-weight:700;">Question Details</h4>
-                <span id="manageEditorBadge" class="q-chip q-chip-mc">Multiple Choice</span>
-              </div>
-
-              <div class="two">
-                <div>
-                  <label class="lbl" for="manageQuestionNo">Question Number</label>
-                  <input class="field" id="manageQuestionNo" disabled>
-                </div>
-                <div>
-                  <label class="lbl" for="manageQuestionType">Question Type</label>
-                  <select class="field" id="manageQuestionType">
-                    <option value="MC">Multiple choice</option>
-                    <option value="TF">True or false</option>
-                    <option value="ID">Identification</option>
-                    <option value="EN">Enumeration</option>
-                    <option value="MA">Matching</option>
-                    <option value="WB">Word bank</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style="margin-top:10px;">
-                <label class="lbl" for="manageQuestionText">Question Prompt</label>
-                <textarea class="field" id="manageQuestionText" rows="3" placeholder="Enter question or prompt…"></textarea>
-              </div>
-
-              <!-- Type-adaptive choices block -->
-              <div id="wrapManageChoices" style="margin-top:10px;">
-                <label class="lbl" for="manageQuestionChoices" id="lblManageChoices">Choices / Options <span class="muted">(one per line)</span></label>
-                <textarea class="field mono" id="manageQuestionChoices" rows="4" placeholder="Option A&#10;Option B&#10;Option C&#10;Option D"></textarea>
-              </div>
-
-              <!-- Type-adaptive answers block -->
-              <div id="wrapManageAnswers" style="margin-top:10px;">
-                <label class="lbl" for="manageQuestionAnswers" id="lblManageAnswers">Answer Key <span class="muted">(one per line)</span></label>
-                <!-- Quick True/False selector toggle -->
-                <div id="manageTFToggle" style="display:none; gap:10px; margin-bottom:6px;">
-                  <button type="button" class="btn btn-sm btn-outline tf-btn" data-val="True" style="flex:1;">✓ True</button>
-                  <button type="button" class="btn btn-sm btn-outline tf-btn" data-val="False" style="flex:1;">✕ False</button>
-                </div>
-                <textarea class="field mono" id="manageQuestionAnswers" rows="3" placeholder="Correct answer…"></textarea>
-                <p class="muted small" id="hintManageAnswers" style="margin:4px 0 0; font-size:0.75rem;"></p>
-              </div>
-
-              <div class="two" style="margin-top:10px;">
-                <div>
-                  <label class="lbl" for="manageQuestionTimer">Timer (Seconds) <span class="muted">(blank = default)</span></label>
-                  <input class="field" id="manageQuestionTimer" type="number" min="5" max="3600" placeholder="e.g. 45">
-                </div>
-                <div>
-                  <label class="lbl" for="manageQuestionPoints">Points</label>
-                  <input class="field" id="manageQuestionPoints" type="number" min="0.01" step="0.01" value="1">
-                </div>
-              </div>
-
-              <!-- Live Student Preview Box -->
-              <div class="q-preview-container" style="margin-top:14px;">
-                <div style="font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--fg-3); margin-bottom:6px;">Student View Preview</div>
-                <div id="manageQPreview" class="q-preview-card"></div>
-              </div>
-
-              <div class="actions" style="margin-top:16px; display:flex; align-items:center; gap:8px;">
-                <button class="btn btn-danger" id="btnDeleteManagedQuestion" type="button">🗑️ Delete</button>
-                <span class="grow"></span>
-                <button class="btn btn-primary" id="btnSaveManagedQuestion" type="button">Save Question</button>
-              </div>
-              <div id="manageQuestionOut" role="status" aria-live="polite" style="margin-top:6px;"></div>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px;">
+            <div class="manage-q-chips" id="manageQTypeFilter" role="toolbar" aria-label="Filter by question type">
+              <button type="button" class="q-filter-btn on" data-type="ALL">All</button>
+              <button type="button" class="q-filter-btn" data-type="MC">MC</button>
+              <button type="button" class="q-filter-btn" data-type="TF">TF</button>
+              <button type="button" class="q-filter-btn" data-type="ID">ID</button>
+              <button type="button" class="q-filter-btn" data-type="EN">EN</button>
+              <button type="button" class="q-filter-btn" data-type="MA">MA</button>
+              <button type="button" class="q-filter-btn" data-type="WB">WB</button>
             </div>
-
-            <!-- Empty Editor State -->
-            <div id="manageQuestionsEmptyEditor" style="display:none; padding:40px 20px; text-align:center; border:1px dashed var(--edge); border-radius:var(--r-md); background:var(--glass);">
-              <p style="font-size:1.5rem; margin:0 0 8px;">🧩</p>
-              <h4 style="margin:0 0 4px;">Select a question to inspect or edit</h4>
-              <p class="muted small" style="margin:0;">Choose any question from the list on the left, or click "+ New Question" to create one.</p>
-            </div>
+            <span class="muted small" id="manageQTally" style="font-weight:600; font-size:0.8rem;">Loading…</span>
           </div>
         </div>
+
+        <!-- New Question Inline Drawer / Composer -->
+        <div id="manageNewQuestionBox" class="q-new-box" hidden style="margin-top:14px; background:var(--surface); border:1px solid var(--accent); border-radius:var(--r-md); padding:16px;">
+          <div class="q-new-box-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h4 style="margin:0; font-size:1rem; font-weight:700; color:var(--accent);">➕ Create New Question</h4>
+            <button type="button" class="btn-sm btn-ghost" id="btnCancelNewManagedQuestion">✕ Cancel</button>
+          </div>
+          <div class="two">
+            <div>
+              <label class="lbl" for="newQType">Question Type</label>
+              <select class="field" id="newQType">
+                <option value="MC">Multiple choice</option>
+                <option value="TF">True or false</option>
+                <option value="ID" selected>Identification</option>
+                <option value="EN">Enumeration</option>
+                <option value="MA">Matching</option>
+                <option value="WB">Word bank</option>
+              </select>
+            </div>
+            <div class="two">
+              <div>
+                <label class="lbl" for="newQTimer">Timer (sec)</label>
+                <input class="field" id="newQTimer" type="number" min="5" max="3600" placeholder="Default">
+              </div>
+              <div>
+                <label class="lbl" for="newQPoints">Points</label>
+                <input class="field" id="newQPoints" type="number" min="0.01" step="0.01" value="1">
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <label class="lbl" for="newQText">Question Prompt</label>
+            <textarea class="field" id="newQText" rows="2" placeholder="Type the question prompt…"></textarea>
+          </div>
+          <div id="wrapNewQChoices" style="margin-top:10px; display:none;">
+            <label class="lbl" for="newQChoices" id="lblNewQChoices">Choices / Options <span class="muted">(one per line)</span></label>
+            <textarea class="field mono" id="newQChoices" rows="3" placeholder="Option A&#10;Option B&#10;Option C&#10;Option D"></textarea>
+          </div>
+          <div id="wrapNewQAnswers" style="margin-top:10px;">
+            <label class="lbl" for="newQAnswers" id="lblNewQAnswers">Answer Key <span class="muted">(one per line)</span></label>
+            <div id="newQTFToggle" style="display:none; gap:8px; margin-bottom:6px;">
+              <button type="button" class="btn btn-sm btn-outline new-tf-btn" data-val="True" style="flex:1;">✓ True</button>
+              <button type="button" class="btn btn-sm btn-outline new-tf-btn" data-val="False" style="flex:1;">✕ False</button>
+            </div>
+            <textarea class="field mono" id="newQAnswers" rows="2" placeholder="Correct answer…"></textarea>
+          </div>
+          <div class="actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+            <button type="button" class="btn btn-ghost" id="btnCancelNewManagedQuestion2">Cancel</button>
+            <button type="button" class="btn btn-primary" id="btnSaveNewManagedQuestion">Add Question</button>
+          </div>
+          <div id="newQMsg" role="status" aria-live="polite" style="margin-top:6px;"></div>
+        </div>
+
+        <!-- Question Cards List with Clickable Dropdowns -->
+        <div id="manageQuestionsList" class="manage-q-dropdown-list" style="margin-top:14px; max-height:60vh; overflow-y:auto; display:flex; flex-direction:column; gap:10px;" role="region" aria-label="Exam Questions List"></div>
       </div>
     </div>
-
   </section>
   <section id="scTStudents" hidden>
     <div class="section-header">

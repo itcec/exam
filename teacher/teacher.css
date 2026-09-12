@@ -1363,45 +1363,12 @@
   inline-size: min(100%, 960px);
 }
 
-/* Master-Detail Question Manager Styles */
-.manage-q-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-top: 12px;
-}
-
-@media (min-width: 768px) {
-  .manage-q-layout {
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 20px;
-    min-height: 480px;
-  }
-}
-
-.manage-q-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  inline-size: 100%;
-}
-
-@media (min-width: 768px) {
-  .manage-q-sidebar {
-    inline-size: 340px;
-    flex-shrink: 0;
-  }
-}
-
-.manage-q-filter-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* Dropdown Question Manager Styles */
+.manage-q-toolbar {
   background: var(--glass);
   border: 1px solid var(--edge);
   border-radius: var(--r-md);
-  padding: 8px;
+  padding: 12px;
 }
 
 .manage-q-chips {
@@ -1415,10 +1382,10 @@
   background: var(--glass);
   border: 1px solid var(--edge);
   border-radius: var(--r-full);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--fg-2);
-  padding: 2px 8px;
+  padding: 3px 10px;
   cursor: pointer;
   white-space: nowrap;
   transition: all .15s ease;
@@ -1435,85 +1402,110 @@
   border-color: var(--accent);
 }
 
-.manage-q-list {
+/* Question List and Dropdown Cards */
+.manage-q-dropdown-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 460px;
-  overflow-y: auto;
-  padding-right: 4px;
+  gap: 10px;
 }
 
-.q-card-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: var(--glass);
+.q-manage-card {
+  background: var(--surface);
   border: 1px solid var(--edge);
   border-radius: var(--r-md);
-  padding: 10px 12px;
-  text-align: left;
-  cursor: pointer;
-  transition: all .18s cubic-bezier(.4, 0, .2, 1);
-  appearance: none;
-  font: inherit;
-  color: inherit;
-  inline-size: 100%;
+  transition: border-color .18s ease, box-shadow .18s ease;
+  overflow: hidden;
 }
 
-.q-card-item:hover {
+.q-manage-card:hover {
   border-color: var(--edge-hi);
-  background: var(--glass-hi);
-  transform: translateY(-1px);
 }
 
-.q-card-item.is-selected {
+.q-manage-card.is-expanded {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.08);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
 }
 
-.q-card-item-top {
+.q-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  padding: 12px 14px;
+  cursor: pointer;
+  gap: 12px;
+  user-select: none;
+  background: var(--glass);
+  transition: background .15s ease;
+}
+
+.q-card-header:hover {
+  background: var(--glass-hi);
+}
+
+.q-card-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.q-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .q-card-num {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--accent);
   letter-spacing: .04em;
+  flex-shrink: 0;
+}
+
+.q-card-prompt-preview {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  line-height: 1.35;
+}
+
+.q-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .q-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.7rem;
-  color: var(--fg-3);
-}
-
-.q-card-prompt {
-  font-size: 0.84rem;
-  font-weight: 500;
-  color: var(--fg);
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.q-card-key {
   font-size: 0.72rem;
   color: var(--fg-3);
-  font-family: var(--font-mono, monospace);
+  font-weight: 500;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 2px;
+}
+
+.q-dropdown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--r-full);
+  pointer-events: none; /* Header receives click */
+}
+
+.q-chevron {
+  transition: transform .2s ease;
+  display: inline-block;
+}
+
+.q-manage-card.is-expanded .q-chevron {
+  transform: rotate(180deg);
 }
 
 /* Question Type Chips */
@@ -1525,6 +1517,7 @@
   border-radius: var(--r-full);
   text-transform: uppercase;
   letter-spacing: .04em;
+  flex-shrink: 0;
 }
 
 .q-chip-mc { background: rgba(59, 130, 246, 0.15); color: #2563eb; }
@@ -1541,25 +1534,59 @@
 :root[data-theme="dark"] .q-chip-ma { color: #34d399; }
 :root[data-theme="dark"] .q-chip-wb { color: #818cf8; }
 
-/* Right Column: Editor & Preview */
-.manage-q-main {
-  flex: 1;
+/* The Expanded Management Dropdown Body */
+.q-manage-dropdown {
+  border-top: 1px solid var(--edge);
+  padding: 14px 16px;
   background: var(--surface);
-  border: 1px solid var(--edge);
-  border-radius: var(--r-md);
-  padding: 16px;
-  min-inline-size: 0;
+  animation: qSlideDown .2s cubic-bezier(.4, 0, .2, 1);
 }
 
-.q-preview-card {
+@keyframes qSlideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.q-full-prompt {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.q-details-box {
   background: var(--glass);
-  border: 1px dashed var(--edge);
+  border: 1px solid var(--edge);
   border-radius: var(--r-sm);
-  padding: 12px;
-  font-size: 0.85rem;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  margin-bottom: 12px;
 }
 
-.tf-btn.selected {
+.q-answer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--ok-soft, rgba(4,120,87,0.1));
+  color: var(--ok);
+  border: 1px solid var(--ok);
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.q-dropdown-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.tf-btn.selected, .new-tf-btn.selected {
   background: var(--accent);
   color: #ffffff;
   border-color: var(--accent);
