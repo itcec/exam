@@ -399,6 +399,50 @@
       </div>
     </div>
 
+    <!-- Per-question manager -->
+    <div class="modal-backdrop" id="manageQuestionsModal" hidden>
+      <div class="modal-card modal-card-lg">
+        <div class="modal-header">
+          <h3>Manage questions</h3>
+          <button class="close-btn" id="btnCloseManageQuestions" type="button">✕</button>
+        </div>
+        <p class="muted small">Edit the prompt, answer key, choices, points, or timer for one question at a time. Changes are saved directly to the exam Sheet.</p>
+        <div id="manageQuestionsList" class="stack-s" style="max-height:220px; overflow:auto; margin:12px 0;"></div>
+        <div id="manageQuestionsEditor" hidden>
+          <input type="hidden" id="manageQuestionRow">
+          <div class="two">
+            <div><label class="lbl" for="manageQuestionNo">Question</label><input class="field" id="manageQuestionNo" disabled></div>
+            <div><label class="lbl" for="manageQuestionType">Type</label>
+              <select class="field" id="manageQuestionType">
+                <option value="MC">Multiple choice</option><option value="TF">True or false</option>
+                <option value="ID">Identification</option><option value="EN">Enumeration</option>
+                <option value="MA">Matching</option><option value="WB">Word bank</option>
+              </select>
+            </div>
+          </div>
+          <label class="lbl" for="manageQuestionText">Question / prompt</label>
+          <textarea class="field" id="manageQuestionText" rows="3"></textarea>
+          <div class="two">
+            <div><label class="lbl" for="manageQuestionChoices">Choices / word bank / left items <span class="muted">(one per line)</span></label><textarea class="field mono" id="manageQuestionChoices" rows="5"></textarea></div>
+            <div><label class="lbl" for="manageQuestionAnswers">Answers / pairs <span class="muted">(one per line)</span></label><textarea class="field mono" id="manageQuestionAnswers" rows="5"></textarea></div>
+          </div>
+          <div class="two">
+            <div><label class="lbl" for="manageQuestionTimer">Seconds for this question <span class="muted">(blank = exam default)</span></label><input class="field" id="manageQuestionTimer" type="number" min="5" max="3600"></div>
+            <div><label class="lbl" for="manageQuestionPoints">Points</label><input class="field" id="manageQuestionPoints" type="number" min="0.01" step="0.01"></div>
+          </div>
+          <div class="actions" style="margin-top:12px;">
+            <button class="btn btn-danger" id="btnDeleteManagedQuestion" type="button">🗑️ Delete question</button>
+            <span class="grow"></span>
+            <button class="btn btn-primary" id="btnSaveManagedQuestion" type="button">Save question</button>
+          </div>
+          <div id="manageQuestionOut" style="margin-top:6px;"></div>
+        </div>
+        <div class="actions" style="margin-top:12px;">
+          <button class="btn btn-accent" id="btnNewManagedQuestion" type="button">+ Add another question</button>
+        </div>
+      </div>
+    </div>
+
   </section>
   <section id="scTStudents" hidden>
     <div class="section-header">

@@ -1995,7 +1995,7 @@ function openQuestionBuilder(context = 'add') {
   openModal($('addQuestionsModal'), $('tExamTimerModeSelect'));
 }
 if ($('btnOpenAddQuestions')) $('btnOpenAddQuestions').onclick = openQuestionBuilder;
-if ($('btnManageQuestions')) $('btnManageQuestions').onclick = () => openQuestionBuilder('manage');
+if ($('btnManageQuestions')) $('btnManageQuestions').onclick = openQuestionManager;
 
 if ($('btnCloseAddQuestions')) {
   $('btnCloseAddQuestions').onclick = () => closeModal($('addQuestionsModal'));
@@ -2050,6 +2050,145 @@ if ($('btnTAddAll')) {
     } finally {
       btn.disabled = false; btn.textContent = 'Add to exam';
     }
+  };
+}
+
+/* ================================================================
+   Per-question manager
+   ================================================================ */
+let _managedQuestions = [];
+
+const MANAGED_TYPE_LABELS = {
+  MC: 'Multiple choice', TF: 'True or false', ID: 'Identification',
+  EN: 'Enumeration', MA: 'Matching', WB: 'Word bank'
+};
+
+function managedLines(value) {
+  return String(value || '').replace(/\r\n/g, '\n').split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+function managedFormValue() {
+  return {
+    question: $('manageQuestionText').value.trim(),
+    type: $('manageQuestionType').value,
+    choices: managedLines($('manageQuestionChoices').value),
+    answers: managedLines($('manageQuestionAnswers').value),
+    timer: $('manageQuestionTimer').value.trim(),
+    points: $('manageQuestionPoints').value.trim() || '1'
+  };
+}
+
+function managedSpec(q) {
+  let text = q.question;
+  let pool = '';
+  let instruction = '';
+  if (q.type === 'MC') {
+    text += ' ' + q.choices.map((choice, i) => String.fromCharCode(97 + i) + '. ' + choice).join(' ');
+  } else if (q.type === 'MA') {
+    text = q.answers.join('\n');
+    instruction = q.question;
+  } else if (q.type === 'WB') {
+    pool = q.choices.join('\n');
+  }
+  return { mode: q.type, text: text + ' | ' + q.answers.join(';'), pool, instruction, seconds: q.timer };
+}
+
+function renderManagedQuestionList() {
+  const host = $('manageQuestionsList');
+  host.replaceChildren();
+  if (!_managedQuestions.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted small';
+    empty.textContent = 'No questions yet. Use “Add another question” below to create the first one.';
+    host.append(empty); return;
+  }
+  _managedQuestions.forEach(q => {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn btn-ghost';
+    btn.style.cssText = 'text-align:left; white-space:normal;';
+    btn.innerHTML = `<b>Q${esc(q.no)}</b> · ${esc(q.typeLabel || MANAGED_TYPE_LABELS[q.type] || q.type)} — ${esc(q.question)}`;
+    btn.onclick = () => fillManagedEditor(q);
+    host.append(btn);
+  });
+}
+
+function fillManagedEditor(q) {
+  $('manageQuestionsEditor').hidden = false;
+  $('manageQuestionRow').value = q.row || '';
+  $('manageQuestionNo').value = q.row ? `Q${q.no}` : 'New question';
+  $('manageQuestionType').value = q.type || 'ID';
+  $('manageQuestionText').value = q.question || '';
+  $('manageQuestionChoices').value = (q.choices || []).join('\n');
+  $('manageQuestionAnswers').value = (q.answers || []).join('\n');
+  $('manageQuestionTimer').value = q.timer == null ? '' : q.timer;
+  $('manageQuestionPoints').value = q.points == null ? '1' : q.points;
+  $('manageQuestionOut').replaceChildren();
+  $('btnDeleteManagedQuestion').hidden = !q.row;
+}
+
+function beginNewManagedQuestion() {
+  fillManagedEditor({ row: '', type: 'ID', question: '', choices: [], answers: [], timer: '', points: 1 });
+}
+
+async function refreshManagedQuestions(selectRow) {
+  const r = await api('teacherListQuestions', { idToken: await idToken(), code: _currentDetailExamCode });
+  if (!r.ok) throw new Error(r.message || 'Could not load questions.');
+  _managedQuestions = r.questions || [];
+  renderManagedQuestionList();
+  const selected = selectRow && _managedQuestions.find(q => String(q.row) === String(selectRow));
+  if (selected) fillManagedEditor(selected);
+  else if (!_managedQuestions.length) beginNewManagedQuestion();
+  if ($('detailQCount')) $('detailQCount').textContent = _managedQuestions.length;
+}
+
+async function openQuestionManager() {
+  if (!_currentDetailExamCode) return;
+  $('manageQuestionsList').innerHTML = '<p class="muted small">Loading questions…</p>';
+  $('manageQuestionsEditor').hidden = true;
+  openModal($('manageQuestionsModal'), $('manageQuestionText'));
+  try { await refreshManagedQuestions(); }
+  catch (err) { $('manageQuestionsList').innerHTML = `<p class="msg bad">${esc(err.message)}</p>`; }
+}
+
+if ($('btnCloseManageQuestions')) $('btnCloseManageQuestions').onclick = () => closeModal($('manageQuestionsModal'));
+if ($('btnNewManagedQuestion')) $('btnNewManagedQuestion').onclick = beginNewManagedQuestion;
+
+if ($('btnSaveManagedQuestion')) {
+  $('btnSaveManagedQuestion').onclick = async () => {
+    const q = managedFormValue();
+    const row = $('manageQuestionRow').value;
+    const out = $('manageQuestionOut');
+    if (!q.question) { out.innerHTML = '<div class="msg bad">Question text is required.</div>'; return; }
+    const btn = $('btnSaveManagedQuestion');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const r = row
+        ? await api('teacherUpdateQuestion', { idToken: await idToken(), code: _currentDetailExamCode, row, question: q })
+        : await api('teacherAddQuestions', { idToken: await idToken(), code: _currentDetailExamCode, specs: [managedSpec(q)], mode: 'append' });
+      if (!r.ok) throw new Error(r.message || 'Question was not saved.');
+      await refreshManagedQuestions(row || null);
+      out.innerHTML = '<div class="msg ok">Question saved.</div>';
+      toast(row ? 'Question updated.' : 'Question added.', 'ok');
+    } catch (err) {
+      out.innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
+    } finally { btn.disabled = false; btn.textContent = 'Save question'; }
+  };
+}
+
+if ($('btnDeleteManagedQuestion')) {
+  $('btnDeleteManagedQuestion').onclick = async () => {
+    const row = $('manageQuestionRow').value;
+    if (!row || !window.confirm('Delete this question from the exam? This cannot be undone.')) return;
+    const btn = $('btnDeleteManagedQuestion');
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    try {
+      const r = await api('teacherDeleteQuestion', { idToken: await idToken(), code: _currentDetailExamCode, row });
+      if (!r.ok) throw new Error(r.message || 'Question was not deleted.');
+      await refreshManagedQuestions();
+      toast('Question deleted.', 'ok');
+    } catch (err) {
+      $('manageQuestionOut').innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
+    } finally { btn.disabled = false; btn.textContent = '🗑️ Delete question'; }
   };
 }
 
