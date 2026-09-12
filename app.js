@@ -328,44 +328,6 @@ async function api(action, payload = {}, { tries = 4, onRetry } = {}) {
   throw lastErr;
 }
 
-/* ---------------- api ----------------
-
-   Every call is a "simple" cross-origin POST: no custom headers and a
-   text/plain content type. Apps Script does not answer CORS preflight,
-   so an Authorization header or application/json would fail outright.
-   The ID token therefore rides in the body.                            */
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-async function api(action, payload = {}, { tries = 4, onRetry } = {}) {
-  let lastErr;
-  for (let attempt = 1; attempt <= tries; attempt++) {
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action, ...payload })
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const text = await res.text();
-      try {
-        return JSON.parse(text);
-      } catch {
-        // Almost always an HTML login page, which means the deployment is
-        // not public. Permanent — do not burn retries on it.
-        throw Object.assign(new Error('bad-response'), { permanent: true });
-      }
-    } catch (err) {
-      lastErr = err;
-      if (err.permanent || attempt === tries) break;
-      const wait = Math.min(1200 * 2 ** (attempt - 1), 8000);
-      onRetry?.(attempt, tries);
-      await sleep(wait);
-    }
-  }
-  throw lastErr;
-}
-
 /** Firebase refreshes the token automatically; ask for a current one. */
 async function idToken() {
   const u = auth.currentUser;
