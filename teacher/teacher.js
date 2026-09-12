@@ -556,31 +556,38 @@ $('btnTSignIn').onclick = async () => {
     console.warn('[teacher] sign-in note:', err);
     const code = err?.code || '';
     if (code === 'auth/popup-blocked') {
-      $('tSignInErr').textContent = 'Your browser blocked the sign-in window. Allow pop-ups for this site and try again.';
+      $('tSignInErr').innerHTML = 'Your browser blocked the sign-in popup. <button type="button" class="btn-tbl-action" id="btnErrUseRedirect" style="margin-top:6px;">Switch to Redirect Sign-In</button>';
       $('tSignInErr').hidden = false;
+      if ($('btnErrUseRedirect')) $('btnErrUseRedirect').onclick = () => signInWithRedirect(auth, provider);
     } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-      $('tSignInErr').textContent = 'Sign-in was cancelled. Tap the button to try again.';
+      $('tSignInErr').innerHTML = 'Sign-in window closed. If popup fails on your browser, try: <button type="button" class="btn-tbl-action" id="btnErrUseRedirect" style="margin-top:6px;">Sign in with redirect</button>';
       $('tSignInErr').hidden = false;
+      if ($('btnErrUseRedirect')) $('btnErrUseRedirect').onclick = () => signInWithRedirect(auth, provider);
     } else if (code === 'auth/unauthorized-domain') {
-      $('tSignInErr').textContent = 'This site is not authorised in Firebase. Add this domain in Firebase Authentication Settings.';
+      $('tSignInErr').textContent = 'This domain is not authorised in Firebase Authentication settings (add it under Authorized Domains in Firebase console).';
       $('tSignInErr').hidden = false;
-    } else if (err.message && err.message.includes('INTERNAL ASSERTION FAILED')) {
-      try {
-        await signInWithRedirect(auth, provider);
-        return;
-      } catch (redirErr) {
-        $('tSignInErr').textContent = 'Sign-in error: ' + redirErr.message;
-        $('tSignInErr').hidden = false;
-      }
     } else {
-      $('tSignInErr').textContent = 'Sign-in failed: ' + (err?.message || code);
+      $('tSignInErr').innerHTML = `Sign-in note: ${esc(err?.message || code)} <br><button type="button" class="btn-tbl-action" id="btnErrUseRedirect" style="margin-top:6px;">Try Redirect Sign-In</button>`;
       $('tSignInErr').hidden = false;
+      if ($('btnErrUseRedirect')) $('btnErrUseRedirect').onclick = () => signInWithRedirect(auth, provider);
     }
   } finally {
     _signingIn = false;
     b.disabled = false;
   }
 };
+
+if ($('btnTSignInRedirect')) {
+  $('btnTSignInRedirect').onclick = async () => {
+    $('tSignInErr').hidden = true;
+    try {
+      await signInWithRedirect(auth, provider);
+    } catch (err) {
+      $('tSignInErr').textContent = 'Redirect sign-in error: ' + (err?.message || err);
+      $('tSignInErr').hidden = false;
+    }
+  };
+}
 
 /* Sign out. The cache holds a whole class list, so it goes with the session. */
 function doSignOut() {
