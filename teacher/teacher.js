@@ -2236,12 +2236,12 @@ function renderManagedQuestionList() {
         } else if (q.type === 'TF') {
           detailsHtml = `
             <div style="margin-bottom:8px;">
-              Answer Key: <span class="q-answer-badge">✓ ${(q.answers || [])[0] || '—'}</span>
+              Answer Key: <span class="q-answer-badge">✓ ${esc((q.answers || [])[0] || '—')}</span>
             </div>`;
         } else if (q.type === 'ID') {
           detailsHtml = `
             <div style="margin-bottom:8px;">
-              Accepted Answer(s): <span class="q-answer-badge">✓ ${(q.answers || []).join(' | ') || '—'}</span>
+              Accepted Answer(s): <span class="q-answer-badge">✓ ${escList(q.answers, ' | ') || '—'}</span>
             </div>`;
         } else if (q.type === 'EN') {
           detailsHtml = `
@@ -2270,7 +2270,7 @@ function renderManagedQuestionList() {
               <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px;">
                 ${(q.choices || []).map(c => `<span class="pill" style="font-size:0.75rem;">${esc(c)}</span>`).join('')}
               </div>
-              <div class="muted small">Key: <span class="q-answer-badge">✓ ${(q.answers || []).join(', ')}</span></div>
+              <div class="muted small">Key: <span class="q-answer-badge">✓ ${escList(q.answers, ', ') || '—'}</span></div>
             </div>`;
         }
 
@@ -3227,6 +3227,10 @@ if ($('btnExportCSV')) {
 /* ================================================================
    Utilities
    ================================================================ */
+
+function escList(list, sep = ', ') {
+  return (list || []).map(x => esc(x)).join(sep);
+}
 
 function esc(s) {
   return String(s == null ? '' : s)

@@ -31,9 +31,11 @@ export const DPO_EMAIL = 'cecitproctor@gmail.com';
 
 /* Feature flags for gradual pilot rollout and circuit breaker controls. */
 export const FEATURE_FLAGS = {
-  useFirebaseEngine: false,
-  pilotExamCodes: [],
-  requirePrivacyAck: true
+  useDeltaAutosave: false,
+  usePersistentAttemptLedger: false,
+  requirePrivacyAck: true,
+  privacyAckVersion: 'privacy_ack_2026_1',
+  pilotExamCodes: []
 };
 
 

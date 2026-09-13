@@ -8,7 +8,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut,
-  onAuthStateChanged, setPersistence, browserLocalPersistence
+  onAuthStateChanged, setPersistence, browserSessionPersistence, browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
 import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig, FEATURE_FLAGS } from './config.js';
@@ -197,11 +197,15 @@ async function api(action, payload = {}, { tries = 4, onRetry } = {}) {
   throw lastErr;
 }
 
+let _cachedIdToken = '';
+
 /** Firebase refreshes the token automatically; ask for a current one. */
 async function idToken() {
-  const u = auth.currentUser;
+  const u = auth?.currentUser;
   if (!u) throw new Error('signed-out');
-  return u.getIdToken();
+  const tok = await u.getIdToken();
+  _cachedIdToken = tok;
+  return tok;
 }
 
 /* ---------------- auth ---------------- */
@@ -212,10 +216,10 @@ let auth;
 try {
   const app = initializeApp(FIREBASE_CONFIG);
   auth = getAuth(app);
-  // Local persistence is a convenience, not a prerequisite for taking an
-  // exam. Do not await it: privacy-restricted browsers can keep the promise
-  // pending and strand the portal on its loading screen.
-  setPersistence(auth, browserLocalPersistence)
+  // Session persistence is preferred for shared school lab devices so accounts do not linger.
+  // Fall back to local persistence if browser session storage is restricted.
+  setPersistence(auth, browserSessionPersistence)
+    .catch(() => setPersistence(auth, browserLocalPersistence))
     .catch(err => console.warn('[student] persistence error:', err));
 } catch (err) {
   fatal('Sign-in is not set up', 'The exam site is missing its Firebase settings. Tell your instructor. (' + err.message + ')');
@@ -253,11 +257,23 @@ $('btnSignIn').onclick = async () => {
   }
 };
 
-$('btnSignOut').onclick = () => signOut(auth).then(() => location.reload());
+async function doSignOut() {
+  try {
+    sessionStorage.clear();
+    if (S.token) await clearJournalAnswers(S.token).catch(() => {});
+  } catch {}
+  if (auth) {
+    await signOut(auth).catch(() => {});
+  }
+  location.reload();
+}
+
+$('btnSignOut').onclick = doSignOut;
 
 if (auth) {
   onAuthStateChanged(auth, user => {
-    if (!user) { show('scSignIn'); return; }
+    if (!user) { _cachedIdToken = ''; show('scSignIn'); return; }
+    user.getIdToken().then(t => { _cachedIdToken = t; }).catch(() => {});
     $('loadingText').textContent = 'Loading your exams…';
     show('scLoading');
     boot();
@@ -274,7 +290,94 @@ const TYPE_NAME = {
   WB: 'Word bank'
 };
 
-/* ---------------- session backup ---------------- */
+/* ---------------- session backup & indexeddb journal ---------------- */
+
+const IDB_NAME = 'proctor_journal_v1';
+const IDB_STORE = 'answers';
+let _idbPromise = null;
+
+function getJournalDb() {
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise(resolve => {
+    if (typeof window === 'undefined' || !window.indexedDB) { resolve(null); return; }
+    try {
+      const req = window.indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE, { keyPath: ['token', 'qNo'] });
+        }
+      };
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+  return _idbPromise;
+}
+
+async function recordJournalAnswer(token, qNo, val) {
+  if (!token || qNo == null) return;
+  const db = await getJournalDb();
+  if (!db) return;
+  try {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put({
+      token,
+      qNo: String(qNo),
+      val: (typeof val === 'object' && val !== null) ? JSON.parse(JSON.stringify(val)) : val,
+      updatedAt: Date.now()
+    });
+  } catch {}
+}
+
+async function loadJournalAnswers(token) {
+  if (!token) return {};
+  const db = await getJournalDb();
+  if (!db) return {};
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const rows = req.result || [];
+        const out = {};
+        for (const row of rows) {
+          if (row.token === token) {
+            out[row.qNo] = row.val;
+          }
+        }
+        resolve(out);
+      };
+      req.onerror = () => resolve({});
+    } catch {
+      resolve({});
+    }
+  });
+}
+
+async function clearJournalAnswers(token) {
+  if (!token) return;
+  const db = await getJournalDb();
+  if (!db) return;
+  try {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const rows = req.result || [];
+      const delTx = db.transaction(IDB_STORE, 'readwrite');
+      const delStore = delTx.objectStore(IDB_STORE);
+      for (const row of rows) {
+        if (row.token === token) {
+          delStore.delete([row.token, row.qNo]);
+        }
+      }
+    };
+  } catch {}
+}
 
 function saveSessionBackup(token, answers) {
   if (!token) return;
@@ -290,6 +393,54 @@ function loadSessionBackup(token) {
 function clearSessionBackup(token) {
   if (!token) return;
   try { sessionStorage.removeItem('exam_answers_' + token); } catch {}
+}
+
+const _dirtyKeys = new Set();
+let _deltaFlushTimer = null;
+let _isFlushingDelta = false;
+
+function setDirtyAnswer(qNo, val) {
+  if (qNo == null) return;
+  S.answers[qNo] = val;
+  saveSessionBackup(S.token, S.answers);
+  recordJournalAnswer(S.token, qNo, val);
+  _dirtyKeys.add(String(qNo));
+
+  if (FEATURE_FLAGS?.useDeltaAutosave && S.token && !S.finished) {
+    if (_deltaFlushTimer) clearTimeout(_deltaFlushTimer);
+    _deltaFlushTimer = setTimeout(() => {
+      flushDeltaAnswers().catch(() => {});
+    }, 2500);
+  }
+}
+
+async function flushDeltaAnswers() {
+  if (!FEATURE_FLAGS?.useDeltaAutosave || !S.token || S.finished || _dirtyKeys.size === 0 || _isFlushingDelta) return;
+  _isFlushingDelta = true;
+  const toSendKeys = Array.from(_dirtyKeys);
+  const delta = {};
+  for (const k of toSendKeys) {
+    delta[k] = S.answers[k] != null ? S.answers[k] : '';
+  }
+  try {
+    const userToken = await idToken().catch(() => '');
+    const r = await api('saveDelta', {
+      token: S.token,
+      delta,
+      perQ: S.perQ,
+      idToken: userToken
+    }, { tries: 1 });
+
+    if (r && r.ok) {
+      for (const k of toSendKeys) {
+        _dirtyKeys.delete(k);
+      }
+    }
+  } catch (e) {
+    // Keys remain dirty for retry
+  } finally {
+    _isFlushingDelta = false;
+  }
 }
 
 /* ---------------- state ---------------- */
@@ -504,7 +655,7 @@ function showRegister(r) {
   show('scRegister');
 }
 
-if ($('btnRegOut')) $('btnRegOut').onclick = () => signOut(auth).then(() => location.reload());
+if ($('btnRegOut')) $('btnRegOut').onclick = doSignOut;
 
 if ($('btnRegister')) {
   $('btnRegister').onclick = async () => {
@@ -713,7 +864,7 @@ function showNotListed(profile) {
 }
 
 if ($('btnNotListedBack')) $('btnNotListedBack').onclick = () => show('scRegister');
-if ($('btnNotListedOut')) $('btnNotListedOut').onclick = () => signOut(auth).then(() => location.reload());
+if ($('btnNotListedOut')) $('btnNotListedOut').onclick = doSignOut;
 
 function renderExams(exams) {
   const wrap = $('examList');
@@ -861,7 +1012,7 @@ $('btnContinue').onclick = async () => {
       } catch {}
     }
     if (!r.ok) { err(r.message || 'Could not start this exam.'); return; }
-    prepare(r); brief(r);
+    await prepare(r); brief(r);
   } catch {
     err('Could not reach the server. Check your connection and try again.');
   } finally {
@@ -878,19 +1029,19 @@ $('edpInput')?.addEventListener('keydown', e => {
 
 /* ---------------- brief ---------------- */
 
-function prepare(r) {
+async function prepare(r) {
   S.code = r.code;
   S.token = r.token;
   S.timerMode = r.timerMode;
   S.defaultTimer = r.defaultTimer;
   S.questions = r.questions || [];
   const localBackup = loadSessionBackup(r.token);
-  S.answers = (localBackup && typeof localBackup === 'object')
-    ? Object.assign({}, r.answers || {}, localBackup)
-    : (r.answers || {});
+  const journalBackup = await loadJournalAnswers(r.token);
+  S.answers = Object.assign({}, r.answers || {}, localBackup || {}, journalBackup || {});
   S.deadline = r.msRemaining != null ? Date.now() + r.msRemaining : null;
   S.queue = S.questions.slice();
   S.pos = 0; S.deferred = []; S.secondPass = false; S.finished = false;
+  _dirtyKeys.clear();
 }
 
 function brief(r) {
@@ -927,9 +1078,10 @@ function ensurePrivacyConsent(onProceed) {
     onProceed();
     return;
   }
+  const ackKey = FEATURE_FLAGS?.privacyAckVersion || 'privacy_ack_2026_1';
   let acked = false;
   try {
-    acked = !!localStorage.getItem('privacy_ack_v1');
+    acked = !!localStorage.getItem(ackKey);
   } catch (e) {}
 
   if (acked) {
@@ -962,7 +1114,7 @@ function ensurePrivacyConsent(onProceed) {
 
   btnProceed.onclick = () => {
     try {
-      localStorage.setItem('privacy_ack_v1', new Date().toISOString());
+      localStorage.setItem(ackKey, new Date().toISOString());
     } catch (e) {}
     closeModal(modal);
     onProceed();
@@ -978,7 +1130,7 @@ async function doResume(token) {
     const userToken = await idToken().catch(() => '');
     const r = await api('resume', { token, idToken: userToken });
     if (!r.ok) { fatal('Could not resume', r.message); return; }
-    prepare(r);
+    await prepare(r);
     S.queue = S.questions.filter(q => S.answers[q.no] == null);
     if (!S.queue.length) { finish(); return; }
     ensurePrivacyConsent(begin);
@@ -1105,8 +1257,7 @@ function createMultiQuestionCard(q, index) {
   inputHost.id = 'mqInput_' + q.no;
 
   const updateAnswer = (val) => {
-    S.answers[q.no] = val;
-    saveSessionBackup(S.token, S.answers);
+    setDirtyAnswer(q.no, val);
     const isAns = (val !== '' && val != null && (typeof val !== 'object' || Object.keys(val).length > 0));
     statusBadge.className = 'multi-q-status' + (isAns ? ' answered' : '');
     statusBadge.textContent = isAns ? 'Answered ✓' : 'Unanswered';
@@ -1676,8 +1827,7 @@ function choose(btn) {
       b.tabIndex = b === btn ? 0 : -1;
     });
   }
-  S.answers[current().no] = btn.dataset.value;
-  saveSessionBackup(S.token, S.answers);
+  setDirtyAnswer(current().no, btn.dataset.value);
   feedback('select', 12);
   play('click');
 }
@@ -1726,8 +1876,7 @@ function answer(force) {
   }
 
   _unansweredConfirmed = false;
-  S.answers[q.no] = val || '';
-  saveSessionBackup(S.token, S.answers);
+  setDirtyAnswer(q.no, val || '');
 
   advance();
 }
@@ -1795,6 +1944,12 @@ function autosave() {
   if (saveTimer) clearInterval(saveTimer);
   saveTimer = setInterval(async () => {
     if (!S.token || S.finished) return;
+    if (FEATURE_FLAGS?.useDeltaAutosave) {
+      if (_dirtyKeys.size > 0) {
+        await flushDeltaAnswers().catch(() => {});
+      }
+      return;
+    }
     const userToken = await idToken().catch(() => '');
     api('save', { token: S.token, answers: S.answers, perQ: S.perQ, idToken: userToken }, { tries: 1 })
       .catch(() => {});
@@ -1806,6 +1961,7 @@ function finish() {
   stopQuestion();
   if (S.globalTick) { clearInterval(S.globalTick); S.globalTick = null; }
   if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
+  if (_deltaFlushTimer) { clearTimeout(_deltaFlushTimer); _deltaFlushTimer = null; }
   S.finished = true;
   show('scSending');
   send();
@@ -1817,6 +1973,9 @@ async function send() {
   $('btnRetry').hidden = true;
 
   try {
+    if (FEATURE_FLAGS?.useDeltaAutosave && _dirtyKeys.size > 0) {
+      await flushDeltaAnswers().catch(() => {});
+    }
     const userToken = await idToken().catch(() => '');
     const r = await api('submit',
       { token: S.token, answers: S.answers, flags: S.flags, idToken: userToken },
@@ -1843,6 +2002,9 @@ let _activeFilter = 'all';
 function done(r) {
   _lastDoneResult = r;
   $('doneTitle').textContent = 'Exam submitted';
+  clearSessionBackup(S.token);
+  clearJournalAnswers(S.token).catch(() => {});
+  _dirtyKeys.clear();
   const mode = r.revealMode || 'none';
 
   const radialWrap = $('scoreRadialWrap');
@@ -2295,7 +2457,7 @@ addEventListener('beforeunload', e => {
   // are also checkpointed every 20 seconds.
   try {
     navigator.sendBeacon?.(API_URL, new Blob(
-      [JSON.stringify({ action: 'save', token: S.token, answers: S.answers, perQ: S.perQ })],
+      [JSON.stringify({ action: 'save', token: S.token, answers: S.answers, perQ: S.perQ, idToken: _cachedIdToken })],
       { type: 'text/plain;charset=utf-8' }
     ));
   } catch {}
