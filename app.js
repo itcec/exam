@@ -11,7 +11,7 @@ import {
   onAuthStateChanged, setPersistence, browserSessionPersistence, browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
-import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig, FEATURE_FLAGS } from './config.js';
+import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig, FEATURE_FLAGS, isDeltaAutosaveEnabled } from './config.js';
 import {
   initFx, play, haptic, feedback, announce, confetti, revealIn,
   openModal, closeModal, mountSoundToggle, reducedMotion
@@ -406,7 +406,7 @@ function setDirtyAnswer(qNo, val) {
   recordJournalAnswer(S.token, qNo, val);
   _dirtyKeys.add(String(qNo));
 
-  if (FEATURE_FLAGS?.useDeltaAutosave && S.token && !S.finished) {
+  if (isDeltaAutosaveEnabled(S.code) && S.token && !S.finished) {
     if (_deltaFlushTimer) clearTimeout(_deltaFlushTimer);
     _deltaFlushTimer = setTimeout(() => {
       flushDeltaAnswers().catch(() => {});
@@ -415,7 +415,7 @@ function setDirtyAnswer(qNo, val) {
 }
 
 async function flushDeltaAnswers() {
-  if (!FEATURE_FLAGS?.useDeltaAutosave || !S.token || S.finished || _dirtyKeys.size === 0 || _isFlushingDelta) return;
+  if (!isDeltaAutosaveEnabled(S.code) || !S.token || S.finished || _dirtyKeys.size === 0 || _isFlushingDelta) return;
   _isFlushingDelta = true;
   const toSendKeys = Array.from(_dirtyKeys);
   const delta = {};
@@ -519,6 +519,15 @@ async function boot(destination = 'scStart') {
 
   // Not on the class list yet — sign them up rather than turning them away.
   if (!r.known) { showRegister(r); return; }
+
+  if (r.emergencyStopActive) {
+    S.emergencyStopActive = true;
+    const banner = $('startErr');
+    if (banner) {
+      banner.textContent = 'Notice: New exam starts are temporarily paused by administration.';
+      banner.hidden = false;
+    }
+  }
 
   if (r.blocked) {
     fatal('Your account is blocked',
@@ -998,7 +1007,13 @@ $('btnContinue').onclick = async () => {
   const b = $('btnContinue');
   b.disabled = true; b.textContent = 'Checking…';
   try {
-    let r = await api('start', { idToken: await idToken(), code });
+    const privAck = FEATURE_FLAGS?.privacyAckVersion || 'privacy_ack_2026_1';
+    let r = await api('start', {
+      idToken: await idToken(),
+      code,
+      privacyAckVersion: privAck,
+      engine: isDeltaAutosaveEnabled(code) ? 'delta+ledger' : 'legacy'
+    });
     if (!r.ok && /^\d{3,8}$/.test(code)) {
       try {
         const enr = await api('enrollEdp', { idToken: await idToken(), edpCode: code });
@@ -1006,7 +1021,12 @@ $('btnContinue').onclick = async () => {
           renderExams(enr.exams);
           const found = enr.exams.find(e => String(e.edpCode) === code || e.category === 'edp') || enr.exams[0];
           if (found) {
-            r = await api('start', { idToken: await idToken(), code: found.code });
+            r = await api('start', {
+              idToken: await idToken(),
+              code: found.code,
+              privacyAckVersion: privAck,
+              engine: isDeltaAutosaveEnabled(found.code) ? 'delta+ledger' : 'legacy'
+            });
           }
         }
       } catch {}
@@ -1944,7 +1964,7 @@ function autosave() {
   if (saveTimer) clearInterval(saveTimer);
   saveTimer = setInterval(async () => {
     if (!S.token || S.finished) return;
-    if (FEATURE_FLAGS?.useDeltaAutosave) {
+    if (isDeltaAutosaveEnabled(S.code)) {
       if (_dirtyKeys.size > 0) {
         await flushDeltaAnswers().catch(() => {});
       }
@@ -1973,12 +1993,20 @@ async function send() {
   $('btnRetry').hidden = true;
 
   try {
-    if (FEATURE_FLAGS?.useDeltaAutosave && _dirtyKeys.size > 0) {
+    if (isDeltaAutosaveEnabled(S.code) && _dirtyKeys.size > 0) {
       await flushDeltaAnswers().catch(() => {});
     }
     const userToken = await idToken().catch(() => '');
+    const privAck = FEATURE_FLAGS?.privacyAckVersion || 'privacy_ack_2026_1';
     const r = await api('submit',
-      { token: S.token, answers: S.answers, flags: S.flags, idToken: userToken },
+      {
+        token: S.token,
+        answers: S.answers,
+        flags: S.flags,
+        idToken: userToken,
+        privacyAckVersion: privAck,
+        engine: isDeltaAutosaveEnabled(S.code) ? 'delta+ledger' : 'legacy'
+      },
       { tries: 6, onRetry: (n, of) => { $('sendText').textContent = `Connection is slow — retrying (${n} of ${of})…`; } });
 
     if (!r.ok) {

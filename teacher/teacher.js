@@ -352,6 +352,12 @@ onAuthStateChanged(auth, async user => {
     $('topRole').title = r.isAdmin ? 'Administrator (Full Access)' : 'Teacher (My Exams & Students)';
     if ($('menuContainer')) $('menuContainer').hidden = false;
     if ($('menuManageAccess')) $('menuManageAccess').hidden = !r.isAdmin;
+    if ($('menuToggleEmergency')) {
+      $('menuToggleEmergency').hidden = !r.isAdmin;
+      $('menuToggleEmergency').onclick = toggleEmergencyStop;
+    }
+    CACHE.emergencyStopActive = !!r.emergencyStopActive;
+    updateEmergencyStopUI(CACHE.emergencyStopActive);
 
     // Cache the whole workbook snapshot in memory and sessionStorage
     CACHE.isAdmin   = r.isAdmin || false;
@@ -361,6 +367,8 @@ onAuthStateChanged(auth, async user => {
     CACHE.students  = r.students || [];
     CACHE.options   = r.options || {};
     CACHE.timestamp = r.serverTimestamp || Date.now();
+    CACHE.emergencyStopActive = !!r.emergencyStopActive;
+    updateEmergencyStopUI(CACHE.emergencyStopActive);
     saveCache();
 
     // Paint initial screens from cache
@@ -801,6 +809,7 @@ async function openExamDetail(ex) {
   updateDetailStatsAndControls(ex);
   show('scTExamDetail');
   await loadExamResults(ex.code);
+  await loadActiveAttempts(ex.code);
 }
 
 function updateDetailStatsAndControls(ex) {
@@ -827,6 +836,7 @@ function updateDetailStatsAndControls(ex) {
   if ($('btnManageEdpInline')) $('btnManageEdpInline').onclick = () => openEdpModal(ex);
   if ($('btnDuplicateExamDetail')) $('btnDuplicateExamDetail').onclick = () => openDuplicateModal(ex);
   if ($('btnDeleteExamDetail')) $('btnDeleteExamDetail').onclick = () => openDeleteModal(ex);
+  if ($('btnRefreshActiveAttempts')) $('btnRefreshActiveAttempts').onclick = () => loadActiveAttempts(ex.code);
 }
 
 function updateDetailEdpBadges(ex) {
@@ -1101,6 +1111,7 @@ async function loadExamResults(code) {
 
     updateResultsFilterCounts();
     applyResultsFilterAndRender();
+    updateRosterReconciliation(_currentDetailExam, _allResultRows, _allActiveAttempts);
   } catch (err) {
     console.error('[teacher] results', err);
   } finally {
@@ -3224,6 +3235,16 @@ if ($('btnExportCSV')) {
   };
 }
 
+if ($('btnExportIncidentTelemetry')) {
+  $('btnExportIncidentTelemetry').onclick = () => {
+    if (_currentDetailExamCode) {
+      exportIncidentTelemetry(_currentDetailExamCode);
+    } else {
+      toast('No exam selected.', 'bad');
+    }
+  };
+}
+
 /* ================================================================
    Utilities
    ================================================================ */
@@ -3474,4 +3495,212 @@ if ($('btnSaveManageAccess')) {
       if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">${esc(err.message || err)}</div>`;
     }
   };
+}
+
+
+/* ================================================================
+   Phase 3 — Operational Tools: Telemetry, Active Sessions, Reopen
+   ================================================================ */
+
+let _allActiveAttempts = [];
+
+async function exportIncidentTelemetry(code) {
+  try {
+    toast('Generating operational telemetry export…', 'ok');
+    const r = await api('teacherExportTelemetry', { idToken: await idToken(), code });
+    if (!r.ok) {
+      toast(r.message || 'Could not export incident telemetry.', 'bad');
+      return;
+    }
+    const blob = new Blob(['\ufeff' + (r.csv || '')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${code}-incident-telemetry.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(`Downloaded ${code}-incident-telemetry.csv`, 'ok');
+  } catch (err) {
+    toast('Error exporting telemetry: ' + (err?.message || err), 'bad');
+  }
+}
+
+async function loadActiveAttempts(code) {
+  const list = $('activeAttemptsList');
+  if (!list) return;
+  list.innerHTML = '<div class="muted small center" style="padding:12px;">Loading active sessions…</div>';
+  try {
+    const r = await api('teacherListActiveAttempts', { idToken: await idToken(), code });
+    if (!r.ok) {
+      list.innerHTML = `<div class="msg bad">${esc(r.message || 'Could not load active attempts.')}</div>`;
+      return;
+    }
+    _allActiveAttempts = r.attempts || [];
+    renderActiveAttemptsList(_allActiveAttempts);
+    updateRosterReconciliation(_currentDetailExam, _allResultRows, _allActiveAttempts);
+  } catch (err) {
+    list.innerHTML = '<div class="msg bad">Could not load active sessions.</div>';
+  }
+}
+
+function renderActiveAttemptsList(attempts) {
+  const list = $('activeAttemptsList');
+  if (!list) return;
+  if (!attempts.length) {
+    list.innerHTML = '<div class="muted small" style="padding:12px;text-align:center;">No active sessions currently in progress for this exam.</div>';
+    return;
+  }
+  const rows = attempts.map(att => {
+    const minsLeft = Math.round((att.secondsLeft || 0) / 60);
+    const timeDisplay = att.secondsLeft != null ? `${minsLeft}m remaining` : 'No limit';
+    const isInterrupted = att.state === 'expired' || (att.secondsLeft != null && att.secondsLeft <= 0);
+    const statusChip = isInterrupted
+      ? '<span class="chip" style="background:var(--bad-bg, #fee2e2);color:var(--bad, #dc2626);border-color:var(--bad-border, #fca5a5);font-size:0.75rem;">Expired / Interrupted</span>'
+      : '<span class="chip" style="background:var(--ok-bg, #dcfce7);color:var(--ok, #16a34a);border-color:var(--ok-border, #86efac);font-size:0.75rem;">In Progress</span>';
+
+    const startTimeStr = att.startedAt ? new Date(att.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+
+    return `
+      <div class="result-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-bottom:1px solid var(--edge);">
+        <div style="flex:1;min-width:180px;">
+          <div style="font-weight:600;font-size:0.9rem;">${esc(att.email)}</div>
+          <div class="muted small">Attempt #${esc(att.attemptNo || 1)} · Started ${esc(startTimeStr)} · ${esc(timeDisplay)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${statusChip}
+          <button class="btn-sm btn-outline btn-reopen-attempt" data-attempt-id="${esc(att.attemptId)}" data-email="${esc(att.email)}" type="button" style="font-size:0.75rem;">
+            🔄 Reopen (+Time)
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  list.innerHTML = `<div class="stack-s" style="border:1px solid var(--edge);border-radius:var(--r-md);overflow:hidden;">${rows}</div>`;
+
+  list.querySelectorAll('.btn-reopen-attempt').forEach(btn => {
+    btn.onclick = () => {
+      const attemptId = btn.dataset.attemptId;
+      const email = btn.dataset.email;
+      openReopenModal(attemptId, email);
+    };
+  });
+}
+
+function openReopenModal(attemptId, email) {
+  if ($('reopenAttemptId')) $('reopenAttemptId').value = attemptId;
+  if ($('reopenStudentEmail')) $('reopenStudentEmail').value = email;
+  if ($('reopenExtraMinutes')) $('reopenExtraMinutes').value = 10;
+  if ($('reopenReason')) $('reopenReason').value = '';
+  if ($('reopenModalMsg')) $('reopenModalMsg').innerHTML = '';
+  openModal($('reopenAttemptModal'), $('reopenExtraMinutes'));
+}
+
+if ($('btnConfirmReopen')) {
+  $('btnConfirmReopen').onclick = async () => {
+    const attemptId = $('reopenAttemptId').value;
+    const extraMinutes = parseInt($('reopenExtraMinutes').value, 10) || 10;
+    const reason = ($('reopenReason').value || '').trim();
+    if (!reason) {
+      if ($('reopenModalMsg')) $('reopenModalMsg').innerHTML = '<div class="msg bad">Please state a reason for reopening this attempt.</div>';
+      return;
+    }
+    const btn = $('btnConfirmReopen');
+    btn.disabled = true;
+    btn.textContent = 'Reopening…';
+    try {
+      const r = await api('teacherReopenAttempt', {
+        idToken: await idToken(),
+        attemptId,
+        extraMinutes,
+        reason
+      });
+      if (!r.ok) {
+        if ($('reopenModalMsg')) $('reopenModalMsg').innerHTML = `<div class="msg bad">${esc(r.message || 'Could not reopen attempt.')}</div>`;
+        return;
+      }
+      toast(`Attempt reopened with +${extraMinutes} minutes.`, 'ok');
+      closeModal($('reopenAttemptModal'));
+      if (_currentDetailExamCode) {
+        await loadActiveAttempts(_currentDetailExamCode);
+        await loadExamResults(_currentDetailExamCode);
+      }
+    } catch (err) {
+      if ($('reopenModalMsg')) $('reopenModalMsg').innerHTML = `<div class="msg bad">${esc(err?.message || err)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Reopen Attempt';
+    }
+  };
+}
+
+if ($('btnCloseReopenModal')) $('btnCloseReopenModal').onclick = () => closeModal($('reopenAttemptModal'));
+if ($('btnCancelReopenModal')) $('btnCancelReopenModal').onclick = () => closeModal($('reopenAttemptModal'));
+
+function updateRosterReconciliation(exam, results, activeAttempts) {
+  const reconWrap = $('rosterReconciliationWrap');
+  if (!reconWrap || !exam) return;
+
+  const roster = CACHE.students || [];
+  const eligible = roster.filter(st => {
+    if (exam.sections?.length && !exam.sections.includes(String(st.section || ''))) return false;
+    if (exam.courses?.length && !exam.courses.map(c => c.toUpperCase()).includes(String(st.course || '').toUpperCase())) return false;
+    if (exam.years?.length && !exam.years.includes(String(st.year || ''))) return false;
+    return true;
+  });
+
+  const submittedEmails = new Set((results || []).map(r => String(r.email || '').toLowerCase()));
+  const activeEmails = new Set((activeAttempts || []).map(a => String(a.email || '').toLowerCase()));
+
+  const submittedCount = eligible.filter(st => submittedEmails.has(String(st.email || '').toLowerCase())).length;
+  const inProgressCount = eligible.filter(st => !submittedEmails.has(String(st.email || '').toLowerCase()) && activeEmails.has(String(st.email || '').toLowerCase())).length;
+  const unstartedCount = Math.max(0, eligible.length - submittedCount - inProgressCount);
+
+  reconWrap.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <span class="muted small" style="font-weight:600;">Roster Reconciliation (${eligible.length} eligible students):</span>
+      <div style="display:flex;gap:12px;font-size:0.8rem;font-weight:600;">
+        <span style="color:var(--ok);">✓ ${submittedCount} Submitted</span>
+        <span style="color:var(--accent);">🔄 ${inProgressCount} In Progress</span>
+        <span style="color:var(--bad);">⏳ ${unstartedCount} Unstarted</span>
+      </div>
+    </div>
+  `;
+}
+
+async function toggleEmergencyStop() {
+  const isCurrentlyPaused = !!CACHE.emergencyStopActive;
+  const actionName = isCurrentlyPaused ? 'Resume exam admissions' : 'Pause new exam admissions';
+  if (!confirm(`Are you sure you want to ${actionName}?`)) return;
+
+  try {
+    const r = await api('teacherToggleEmergencyStop', {
+      idToken: await idToken(),
+      active: !isCurrentlyPaused
+    });
+    if (!r.ok) {
+      toast(r.message || 'Could not update emergency admissions state.', 'bad');
+      return;
+    }
+    CACHE.emergencyStopActive = r.active;
+    updateEmergencyStopUI(r.active);
+    toast(r.active ? '🚨 New exam admissions paused.' : '✅ Exam admissions resumed.', 'ok');
+  } catch (err) {
+    toast('Error: ' + (err?.message || err), 'bad');
+  }
+}
+
+function updateEmergencyStopUI(isActive) {
+  const banner = $('bannerEmergencyStop');
+  if (banner) banner.hidden = !isActive;
+  const menuBtn = $('menuToggleEmergency');
+  if (menuBtn) {
+    menuBtn.hidden = !CACHE.isAdmin;
+    const span = menuBtn.querySelector('span');
+    if (span) {
+      span.textContent = isActive
+        ? '✅ Resume New Exam Admissions'
+        : '🚨 Pause New Exam Admissions';
+    }
+  }
 }

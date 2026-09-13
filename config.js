@@ -31,12 +31,25 @@ export const DPO_EMAIL = 'cecitproctor@gmail.com';
 
 /* Feature flags for gradual pilot rollout and circuit breaker controls. */
 export const FEATURE_FLAGS = {
-  useDeltaAutosave: false,
-  usePersistentAttemptLedger: false,
+  useDeltaAutosave: true,
+  usePersistentAttemptLedger: true,
   requirePrivacyAck: true,
   privacyAckVersion: 'privacy_ack_2026_1',
-  pilotExamCodes: []
+  pilotExamCodes: ['PILOT01', 'IT101'],
+  emergencyStopActive: false
 };
+
+/**
+ * Checks if delta autosave should be used for a given exam code.
+ * If pilotExamCodes is empty, all exams use delta autosave if useDeltaAutosave is true.
+ * If pilotExamCodes has entries, only those exams use delta autosave.
+ */
+export function isDeltaAutosaveEnabled(examCode) {
+  if (!FEATURE_FLAGS.useDeltaAutosave) return false;
+  const list = FEATURE_FLAGS.pilotExamCodes || [];
+  if (!list.length) return true;
+  return list.some(c => String(c).trim().toUpperCase() === String(examCode || '').trim().toUpperCase());
+}
 
 
 /* ------------------------------------------------------------------

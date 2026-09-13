@@ -46,6 +46,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>👑 Manage Portal Access</span>
       </button>
+      <button class="menu-item" id="menuToggleEmergency" type="button" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>🚨 Pause Exam Admissions</span>
+      </button>
       <button class="menu-item" id="menuTheme" type="button">
         <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg>
         <span>Switch Theme</span>
@@ -59,6 +63,9 @@
   </div>
 </header>
 <main class="tshell" id="tmain" tabindex="-1">
+  <div id="bannerEmergencyStop" class="emergency-banner" style="background:#dc2626; color:#ffffff; padding:8px 16px; border-radius:var(--r-md); font-size:0.875rem; font-weight:600; display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;" hidden>
+    <span>🚨 EMERGENCY: New exam admissions are currently paused. Ongoing exams can continue.</span>
+  </div>
   <section id="scTLoading">
     <div class="card center solo"><div class="spinner" aria-hidden="true"></div><p class="muted" id="tLoadingText">Starting up…</p></div>
   </section>
@@ -236,6 +243,7 @@
               <span>Live Monitor (15s)</span>
             </label>
             <button class="btn-sm btn-outline" id="btnExportCSV" type="button">📥 Export CSV</button>
+            <button class="btn-sm btn-outline" id="btnExportIncidentTelemetry" type="button" title="Export non-adjudicative operational telemetry log">🛡️ Export Telemetry</button>
           </div>
         </div>
 
@@ -252,6 +260,20 @@
         </div>
 
         <div id="detailResultsList" class="muted small">No submissions yet.</div>
+        <div id="rosterReconciliationWrap" style="margin-top:14px; padding:10px 12px; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md);"></div>
+      </div>
+      <div class="card cell-wide" id="activeSessionsCard">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+          <div>
+            <p class="eyebrow" style="margin:0;">Live Proctoring</p>
+            <h4 style="margin:0; font-size:1.1rem;">Active &amp; Interrupted Sessions</h4>
+          </div>
+          <button class="btn-sm btn-outline" id="btnRefreshActiveAttempts" type="button">🔄 Refresh Sessions</button>
+        </div>
+        <p class="muted small" style="margin-bottom:10px;">
+          Live and interrupted exam attempts tracked in the persistent ledger. Live answers and question keys are never displayed.
+        </p>
+        <div id="activeAttemptsList" class="muted small">No active attempts for this exam.</div>
       </div>
     </div>
 
@@ -734,6 +756,37 @@
       <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
         <button class="btn btn-outline" id="btnCancelDeleteModal" type="button">Cancel</button>
         <button class="btn btn-danger" id="btnConfirmDeleteExam" type="button" disabled style="background:var(--bad); color:#fff;">Permanently Delete Exam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reopen Attempt Modal -->
+  <div class="modal-backdrop" id="reopenAttemptModal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🔄 Reopen Interrupted Exam Attempt</h3>
+        <button class="close-btn" id="btnCloseReopenModal" type="button">✕</button>
+      </div>
+      <div class="hint" style="margin-bottom:12px;">
+        Reopen an interrupted or expired session for a student who suffered power loss or hardware failure. This unlocks the attempt and adds extra minutes to their timer. All reopen actions are recorded in the <b>_AuditLog</b>.
+      </div>
+      <input type="hidden" id="reopenAttemptId">
+      <div class="fld" style="margin-bottom:10px;">
+        <label class="lbl" for="reopenStudentEmail">Student Email / ID</label>
+        <input class="field mono" id="reopenStudentEmail" readonly style="background:var(--sunk);">
+      </div>
+      <div class="fld" style="margin-bottom:10px;">
+        <label class="lbl" for="reopenExtraMinutes">Additional Time (Minutes)</label>
+        <input type="number" class="field" id="reopenExtraMinutes" min="1" max="120" value="10" required>
+      </div>
+      <div class="fld" style="margin-bottom:12px;">
+        <label class="lbl" for="reopenReason">Reason for Reopening</label>
+        <input class="field" id="reopenReason" placeholder="e.g. Laboratory power outage / laptop rebooted" required>
+      </div>
+      <div id="reopenModalMsg" style="margin-bottom:12px;"></div>
+      <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-outline" id="btnCancelReopenModal" type="button">Cancel</button>
+        <button class="btn btn-accent" id="btnConfirmReopen" type="button">Reopen Attempt</button>
       </div>
     </div>
   </div>
