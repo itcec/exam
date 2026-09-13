@@ -3048,7 +3048,12 @@ function renderResultsTable(wrap, rows, total) {
         <div style="font-weight:600;">${esc(row.name || '—')}</div>
         ${metaStr ? `<div class="muted small" style="font-weight:normal; margin-top:2px;">${esc(metaStr)}</div>` : ''}
       </th>
-      <td><b>${row.score != null ? row.score + ' / ' + total : '—'}</b></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <b>${row.score != null ? row.score + ' / ' + total : '—'}</b>
+          ${row.score != null ? `<button type="button" class="btn-sm btn-ghost btn-correct-score" data-email="${esc(row.email)}" data-attempt="${esc(row.attempt || 1)}" data-score="${esc(row.score)}" title="Audit Grade Correction" style="padding:1px 4px;font-size:11px;">✏️</button>` : ''}
+        </div>
+      </td>
       <td><span class="pill-try">Try #${row.attempt || 1}</span></td>
       <td><span aria-hidden="true">${statusIcon}</span> <span style="font-size:0.8125rem;">${statusWord}</span></td>
       <td>${row.minutes != null ? row.minutes + 'm' : '—'}</td>
@@ -3079,6 +3084,13 @@ function renderResultsTable(wrap, rows, total) {
     tbody.append(tr);
   });
   tbl.append(tbody);
+
+  tbl.querySelectorAll('.btn-correct-score').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openGradeCorrectionModal(btn.dataset.email, btn.dataset.attempt, btn.dataset.score);
+    };
+  });
   wrap.append(tbl);
 }
 
@@ -3700,6 +3712,8 @@ function updateEmergencyStopUI(isActive) {
   const menuBtn = $('menuToggleEmergency');
   if (menuBtn) {
     menuBtn.hidden = !CACHE.isAdmin;
+    const backupBtn = $('menuExportBackup');
+    if (backupBtn) backupBtn.hidden = !CACHE.isAdmin;
     const span = menuBtn.querySelector('span');
     if (span) {
       span.textContent = isActive
@@ -3707,4 +3721,172 @@ function updateEmergencyStopUI(isActive) {
         : '🚨 Pause New Exam Admissions';
     }
   }
+}
+
+
+/* ================================================================
+   Phase 5 — Continuous Health Checks, Reconciliation & Audited Corrections
+   ================================================================ */
+
+async function loadSystemHealth() {
+  const badge = $('healthBadgeStatus');
+  if (badge) { badge.textContent = 'CHECKING…'; badge.style.background = 'var(--accent)'; }
+  try {
+    const r = await api('teacherGetSystemHealth', { idToken: await idToken() });
+    if (!r.ok && r.message) {
+      if (badge) { badge.textContent = 'WARNING'; badge.style.background = 'var(--bad)'; }
+      return;
+    }
+    if ($('healthVersion')) $('healthVersion').textContent = r.version || 'v2.5.0-phase5';
+    if ($('healthEmergencyStop')) {
+      $('healthEmergencyStop').textContent = r.emergencyStopActive ? '🚨 Active' : 'Normal';
+      $('healthEmergencyStop').style.color = r.emergencyStopActive ? 'var(--bad)' : 'inherit';
+    }
+    if ($('healthCleanupTrigger')) {
+      $('healthCleanupTrigger').textContent = r.cleanupTriggerInstalled ? '✓ Installed' : '✗ Missing';
+      $('healthCleanupTrigger').style.color = r.cleanupTriggerInstalled ? 'var(--ok)' : 'var(--bad)';
+    }
+    if ($('healthRecentFailures')) $('healthRecentFailures').textContent = String(r.recentFailureCount || 0);
+    if ($('healthLedgerRows')) $('healthLedgerRows').textContent = String(r.activeLedgerCount || 0);
+
+    if (badge) {
+      if (r.ok && r.cleanupTriggerInstalled && (r.recentFailureCount || 0) === 0) {
+        badge.textContent = 'HEALTHY';
+        badge.style.background = 'var(--ok)';
+      } else {
+        badge.textContent = 'ATTENTION';
+        badge.style.background = 'var(--warn, #f59e0b)';
+      }
+    }
+
+    if ($('healthLastDetails')) {
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      $('healthLastDetails').textContent = 'Last checked: ' + timeStr + ' · ' + (r.examCount || 0) + ' exam(s), ' + (r.totalRows || 0) + ' total rows.';
+    }
+  } catch (err) {
+    if (badge) { badge.textContent = 'ERROR'; badge.style.background = 'var(--bad)'; }
+    console.error('loadSystemHealth error: ' + err);
+  }
+}
+
+if ($('btnRefreshSystemHealth')) {
+  $('btnRefreshSystemHealth').onclick = () => loadSystemHealth();
+}
+
+if ($('menuSystemHealth')) {
+  $('menuSystemHealth').onclick = () => {
+    if ($('teacherMenuDropdown')) $('teacherMenuDropdown').hidden = true;
+    loadSystemHealth();
+    const card = $('systemHealthCard');
+    if (card) card.scrollIntoView({ behavior: 'smooth' });
+  };
+}
+
+async function exportSystemBackup() {
+  if (!CACHE.isAdmin) {
+    toast('Only administrators can export system backups.', 'bad');
+    return;
+  }
+  try {
+    toast('Generating full system backup snapshot…', 'ok');
+    const r = await api('teacherExportBackup', { idToken: await idToken() });
+    if (!r.ok) {
+      toast(r.message || 'Backup export failed.', 'bad');
+      return;
+    }
+    const jsonStr = JSON.stringify(r.backup, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateTag = new Date().toISOString().slice(0, 10);
+    a.download = 'exam-proctor-backup-' + dateTag + '.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast('Downloaded exam-proctor-backup-' + dateTag + '.json', 'ok');
+  } catch (err) {
+    toast('Backup export failed: ' + (err?.message || err), 'bad');
+  }
+}
+
+if ($('menuExportBackup')) {
+  $('menuExportBackup').onclick = () => {
+    if ($('teacherMenuDropdown')) $('teacherMenuDropdown').hidden = true;
+    exportSystemBackup();
+  };
+}
+
+function openGradeCorrectionModal(email, attemptNo, currentScore) {
+  if ($('corrStudentEmail')) $('corrStudentEmail').value = email || '';
+  if ($('corrAttemptNo')) $('corrAttemptNo').value = attemptNo || '1';
+  if ($('corrCurrentScore')) $('corrCurrentScore').value = currentScore != null ? currentScore : '—';
+  if ($('corrNewScore')) $('corrNewScore').value = '';
+  if ($('corrReason')) $('corrReason').value = '';
+  if ($('corrModalErr')) $('corrModalErr').hidden = true;
+  openModal($('gradeCorrectionModal'), $('corrNewScore'));
+}
+
+if ($('btnCloseGradeCorrection')) $('btnCloseGradeCorrection').onclick = () => closeModal($('gradeCorrectionModal'));
+if ($('btnCancelCorrection')) $('btnCancelCorrection').onclick = () => closeModal($('gradeCorrectionModal'));
+
+if ($('btnSubmitCorrection')) {
+  $('btnSubmitCorrection').onclick = async () => {
+    const email = $('corrStudentEmail').value;
+    const tryNumber = $('corrAttemptNo').value;
+    const newScore = parseFloat($('corrNewScore').value);
+    const reason = ($('corrReason').value || '').trim();
+
+    if (isNaN(newScore) || newScore < 0) {
+      if ($('corrModalErr')) {
+        $('corrModalErr').textContent = 'Please enter a valid numeric score (0 or greater).';
+        $('corrModalErr').hidden = false;
+      }
+      return;
+    }
+
+    if (!reason) {
+      if ($('corrModalErr')) {
+        $('corrModalErr').textContent = 'A written justification/reason is required for audited grade corrections.';
+        $('corrModalErr').hidden = false;
+      }
+      return;
+    }
+
+    const btn = $('btnSubmitCorrection');
+    btn.disabled = true;
+    btn.textContent = 'Applying…';
+
+    try {
+      const r = await api('teacherCorrectGrade', {
+        idToken: await idToken(),
+        code: _currentDetailExamCode,
+        email,
+        tryNumber,
+        newScore,
+        reason
+      });
+
+      if (!r.ok) {
+        if ($('corrModalErr')) {
+          $('corrModalErr').textContent = r.message || 'Grade correction failed.';
+          $('corrModalErr').hidden = false;
+        }
+        return;
+      }
+
+      toast('✓ Score corrected and recorded in _AuditLog.', 'ok');
+      closeModal($('gradeCorrectionModal'));
+      if (_currentDetailExamCode) {
+        await loadExamResults(_currentDetailExamCode);
+      }
+    } catch (err) {
+      if ($('corrModalErr')) {
+        $('corrModalErr').textContent = err?.message || String(err);
+        $('corrModalErr').hidden = false;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Apply & Audit Log';
+    }
+  };
 }

@@ -113,3 +113,60 @@ The system includes an automated retention maintenance trigger:
 If the spreadsheet is copied or project triggers are reset:
 1. In Google Sheets, navigate to **📝 Exam ▸ Setup ▸ Install daily cleanup trigger**.
 2. A confirmation prompt will verify successful registration of the 2:00 AM daily trigger.
+
+---
+
+## 7. Departmental Backup & Restoration Procedure
+
+### Backup Routine
+1. **Manual Snapshot Export**:
+   - In Google Sheets: Select **📝 Exam ▸ Setup ▸ Export system snapshot backup**.
+   - In Teacher Portal: Click **Menu (⋮) ▸ 💾 Export Snapshot** (Administrator only).
+   - This produces a JSON backup containing all exam configurations, roster entries, student scores, and the last 500 audit log entries.
+2. **Periodic Schedule**:
+   - Create a weekly departmental backup archive at the conclusion of every examination cycle.
+
+### Critical Rule for Restoration Testing
+> [!CAUTION]
+> **NEVER test restoration into the active production spreadsheet.**
+> Restorations must strictly be performed in a separate, isolated copy of the workbook to avoid overwriting live student grades or corrupting active examination ledgers.
+
+### Restoration Verification Checklist
+When testing a restore in an isolated workbook:
+1. Confirm all exam tabs are present with their corresponding `-RESULTS` tabs.
+2. Verify that roster student IDs match the restored results rows.
+3. Check for any duplicate submission rows using **Run System Health Check** or `reconcileExamData_`.
+4. Reinstall the daily cleanup trigger using **Setup ▸ Install daily cleanup trigger**.
+
+---
+
+## 8. Termly Access & Privileged Account Governance
+
+1. **Term-Start Access Audit**:
+   - Audit registered faculty in the Teacher Portal (**👑 Manage Portal Access**) or `_Config` sheet.
+   - Remove adjunct faculty or instructors who are not teaching exam courses during the current term.
+   - Verify that only the Academic Department Head or designated coordinator is designated as **System Administrator** (index 0).
+2. **Term-End Archival & Access Revocation**:
+   - At the conclusion of each semester, revoke edit permissions for departing faculty.
+   - Export an end-of-term backup snapshot for long-term departmental records.
+3. **Monthly Audit Log Review**:
+   - Inspect `_AuditLog` monthly for:
+     - Unexpected `GRADE_CORRECTION` actions and verify teacher justifications.
+     - Any `SECURITY_ORIGIN_REJECT` entries indicating unauthorized external callers.
+     - Verification of daily `CLEANUP` runs without errors.
+
+---
+
+## 9. Student Privacy Rights, Data Access & Dispute Workflow
+
+1. **Compliance Standard**:
+   - All student inquiries and proctoring reviews must adhere to Republic Act No. 10173 (Data Privacy Act of 2012) and National Privacy Commission **NPC Advisory No. 2020-1**.
+2. **Non-Adjudicative Telemetry Rule**:
+   - Tab-switch counts, blur events, and away durations represent technical diagnostics, not absolute proof of cheating.
+   - Instructors must review the student's timestamped notes in `-RESULTS` or the exported CSV and give the student an opportunity to explain before any disciplinary determination.
+3. **Formal Grade Dispute Process**:
+   - If a student disputes an automated score or reports an unrecorded disconnection:
+     1. The instructor checks `-RESULTS` and `_ActiveAttempts` for timestamps.
+     2. If an audited score correction is justified, the teacher uses **Audited Grade Correction** (`teacherCorrectGrade`), specifying the exact reason and change.
+     3. For escalated formal disputes, the student may contact the institutional Data Protection Officer at `cecitproctor@gmail.com`.
+

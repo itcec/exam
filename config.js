@@ -33,6 +33,9 @@ export const DPO_EMAIL = 'cecitproctor@gmail.com';
 export const PRODUCTION_HOST = 'https://onlinecec-bec0e.web.app';
 export const GITHUB_MIRROR = 'https://itcec.github.io/exam';
 
+/* Application release version tag */
+export const APP_VERSION = 'v2.5.0-phase5';
+
 /* Feature flags for gradual pilot rollout and circuit breaker controls. */
 export const FEATURE_FLAGS = {
   useDeltaAutosave: true,

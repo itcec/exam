@@ -50,6 +50,14 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span>🚨 Pause Exam Admissions</span>
       </button>
+      <button class="menu-item" id="menuSystemHealth" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span>🩺 System Health</span>
+      </button>
+      <button class="menu-item" id="menuExportBackup" type="button" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>💾 Export Snapshot</span>
+      </button>
       <button class="menu-item" id="menuTheme" type="button">
         <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.4M12 19.4v2.4M4.2 12H1.8M22.2 12h-2.4M6.5 6.5 4.8 4.8M19.2 19.2l-1.7-1.7M17.5 6.5l1.7-1.7M4.8 19.2l1.7-1.7"/></svg>
         <span>Switch Theme</span>
@@ -82,6 +90,7 @@
         Having trouble with popup? Sign in with redirect
       </button>
       <p class="err small" id="tSignInErr" role="alert" hidden></p>
+      <span class="version-tag" style="opacity:0.7; font-size:0.75rem; display:block; text-align:center; margin-top:12px;">v2.5.0-phase5</span>
     </div>
   </section>
   <section id="scTDenied" hidden>
@@ -274,6 +283,41 @@
           Live and interrupted exam attempts tracked in the persistent ledger. Live answers and question keys are never displayed.
         </p>
         <div id="activeAttemptsList" class="muted small">No active attempts for this exam.</div>
+      </div>
+      <div class="card cell-wide" id="systemHealthCard" style="margin-top:16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+          <div>
+            <p class="eyebrow" style="margin:0;">Platform Operations</p>
+            <h4 style="margin:0; font-size:1.1rem;">🩺 System Health &amp; Diagnostics</h4>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="badge" id="healthBadgeStatus" style="background:var(--ok); color:#fff; font-size:0.75rem; padding:3px 8px; border-radius:12px;">HEALTHY</span>
+            <button class="btn-sm btn-outline" id="btnRefreshSystemHealth" type="button">🔄 Run Health Check</button>
+          </div>
+        </div>
+        <div id="systemHealthContent" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-top:8px;">
+          <div style="background:var(--sunk); padding:10px; border-radius:var(--r-md); border:1px solid var(--edge);">
+            <div class="muted small">Platform Version</div>
+            <div id="healthVersion" style="font-weight:700; font-size:0.95rem;">v2.5.0-phase5</div>
+          </div>
+          <div style="background:var(--sunk); padding:10px; border-radius:var(--r-md); border:1px solid var(--edge);">
+            <div class="muted small">Emergency Stop</div>
+            <div id="healthEmergencyStop" style="font-weight:700; font-size:0.95rem;">Normal</div>
+          </div>
+          <div style="background:var(--sunk); padding:10px; border-radius:var(--r-md); border:1px solid var(--edge);">
+            <div class="muted small">Daily Retention Trigger</div>
+            <div id="healthCleanupTrigger" style="font-weight:700; font-size:0.95rem;">Active</div>
+          </div>
+          <div style="background:var(--sunk); padding:10px; border-radius:var(--r-md); border:1px solid var(--edge);">
+            <div class="muted small">Recent Errors (7d)</div>
+            <div id="healthRecentFailures" style="font-weight:700; font-size:0.95rem;">0</div>
+          </div>
+          <div style="background:var(--sunk); padding:10px; border-radius:var(--r-md); border:1px solid var(--edge);">
+            <div class="muted small">Active Ledger Rows</div>
+            <div id="healthLedgerRows" style="font-weight:700; font-size:0.95rem;">0</div>
+          </div>
+        </div>
+        <div id="healthLastDetails" class="muted small" style="margin-top:10px;">Last checked: Just now</div>
       </div>
     </div>
 
@@ -787,6 +831,46 @@
       <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
         <button class="btn btn-outline" id="btnCancelReopenModal" type="button">Cancel</button>
         <button class="btn btn-accent" id="btnConfirmReopen" type="button">Reopen Attempt</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="gradeCorrectionModal" hidden>
+    <div class="modal-card modal-card-sm" style="max-width:480px;">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="margin:0;">Audited Grade Correction</h3>
+        <button class="close-btn" id="btnCloseGradeCorrection" type="button">✕</button>
+      </div>
+      <div class="modal-body stack-s" style="margin-top:12px;">
+        <p class="muted small">
+          Submitted grades are immutable by default. Any change is permanently recorded in the submission's Notes and the institutional <code>_AuditLog</code>.
+        </p>
+        <div class="fld" style="margin-bottom:10px;">
+          <label class="lbl" style="font-size:0.8rem;">Student Email</label>
+          <input class="field mono" id="corrStudentEmail" readonly style="background:var(--sunk);">
+        </div>
+        <div class="two" style="display:flex; gap:10px; margin-bottom:10px;">
+          <div class="fld" style="flex:1;">
+            <label class="lbl" style="font-size:0.8rem;">Attempt #</label>
+            <input class="field mono" id="corrAttemptNo" readonly style="background:var(--sunk);">
+          </div>
+          <div class="fld" style="flex:1;">
+            <label class="lbl" style="font-size:0.8rem;">Current Score</label>
+            <input class="field mono" id="corrCurrentScore" readonly style="background:var(--sunk);">
+          </div>
+        </div>
+        <div class="fld" style="margin-bottom:10px;">
+          <label class="lbl" for="corrNewScore" style="font-size:0.8rem;">New Score</label>
+          <input class="field mono" id="corrNewScore" type="number" min="0" step="0.5" placeholder="e.g. 24" required>
+        </div>
+        <div class="fld" style="margin-bottom:10px;">
+          <label class="lbl" for="corrReason" style="font-size:0.8rem;">Justification / Reason (Mandatory)</label>
+          <textarea class="field" id="corrReason" rows="3" placeholder="e.g. Credit awarded for question 3 alternate spelling; approved by Department Head." required></textarea>
+        </div>
+        <p class="err small" id="corrModalErr" hidden></p>
+        <div class="actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+          <button class="btn btn-outline" id="btnCancelCorrection" type="button">Cancel</button>
+          <button class="btn btn-primary" id="btnSubmitCorrection" type="button">Apply &amp; Audit Log</button>
+        </div>
       </div>
     </div>
   </div>
