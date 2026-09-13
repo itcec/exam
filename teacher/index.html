@@ -246,25 +246,41 @@
             <p class="eyebrow" style="margin:0;">Proctoring &amp; Submissions</p>
             <h4 style="margin:0; font-size:1.1rem;">Exam Results &amp; Anti-Cheat Monitor</h4>
           </div>
-          <div style="display:flex; align-items:center; gap:10px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <label class="toggle-control small muted" style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
               <input type="checkbox" id="chkAutoRefreshResults">
               <span>Live Monitor (15s)</span>
             </label>
+            <button class="btn-sm btn-primary" id="btnCopyScores" type="button" title="Copy scores table formatted for spreadsheets (TSV)">📋 Copy Scores</button>
             <button class="btn-sm btn-outline" id="btnExportCSV" type="button">📥 Export CSV</button>
-            <button class="btn-sm btn-outline" id="btnExportIncidentTelemetry" type="button" title="Export non-adjudicative operational telemetry log">🛡️ Export Telemetry</button>
+            <button class="btn-sm btn-outline" id="btnExportIncidentTelemetry" type="button" title="Export non-adjudicative operational telemetry log" hidden>🛡️ Export Telemetry</button>
           </div>
         </div>
 
         <div class="results-toolbar" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-          <div class="filter-pills" id="resultsFilterTabs" style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button type="button" class="btn-sm btn-filter on" data-filter="all" id="filterResAll">All (<span id="countResAll">0</span>)</button>
-            <button type="button" class="btn-sm btn-filter" data-filter="flagged" id="filterResFlagged" style="color:var(--bad);">🚩 Flagged / Cheating (<span id="countResFlagged">0</span>)</button>
-            <button type="button" class="btn-sm btn-filter" data-filter="done" id="filterResDone">✅ Completed (<span id="countResDone">0</span>)</button>
-            <button type="button" class="btn-sm btn-filter" data-filter="in-progress" id="filterResBusy">🔄 In Progress (<span id="countResBusy">0</span>)</button>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <!-- Display Mode Selector (All, Highest, Average) -->
+            <div class="view-mode-toggle" id="resultsViewModeToggle" role="group" aria-label="Score Display Mode" style="display:flex; gap:2px; background:var(--sunk); padding:2px; border-radius:var(--r-md); border:1px solid var(--edge);">
+              <button type="button" class="btn-sm btn-ghost on" data-mode="all" id="btnModeAll" style="font-size:0.75rem; font-weight:600;">All Attempts</button>
+              <button type="button" class="btn-sm btn-ghost" data-mode="highest" id="btnModeHighest" style="font-size:0.75rem; font-weight:600;">Highest Score</button>
+              <button type="button" class="btn-sm btn-ghost" data-mode="average" id="btnModeAverage" style="font-size:0.75rem; font-weight:600;">Average Score</button>
+            </div>
+            <!-- EDP Code Filter Dropdown -->
+            <select class="field-sm" id="detailEdpFilter" aria-label="Filter results by EDP Code" style="font-weight:600; min-width:130px;">
+              <option value="">All EDP Codes</option>
+            </select>
           </div>
-          <div style="min-width:220px; flex:1; max-width:320px;">
-            <input class="field-sm" id="searchResultQuery" aria-label="Search submissions" placeholder="Search student name, ID, notes…" style="width:100%;">
+
+          <div style="display:flex; align-items:center; gap:8px; flex:1; justify-content:flex-end; min-width:260px;">
+            <div class="filter-pills" id="resultsFilterTabs" style="display:flex; gap:4px; flex-wrap:wrap;">
+              <button type="button" class="btn-sm btn-filter on" data-filter="all" id="filterResAll">All (<span id="countResAll">0</span>)</button>
+              <button type="button" class="btn-sm btn-filter" data-filter="flagged" id="filterResFlagged" style="color:var(--bad);">🚩 Flagged (<span id="countResFlagged">0</span>)</button>
+              <button type="button" class="btn-sm btn-filter" data-filter="done" id="filterResDone">✅ Done (<span id="countResDone">0</span>)</button>
+              <button type="button" class="btn-sm btn-filter" data-filter="in-progress" id="filterResBusy">🔄 In Progress (<span id="countResBusy">0</span>)</button>
+            </div>
+            <div style="min-width:160px; max-width:240px; flex:1;">
+              <input class="field-sm" id="searchResultQuery" aria-label="Search submissions" placeholder="Search student name, ID, notes…" style="width:100%;">
+            </div>
           </div>
         </div>
 
@@ -284,7 +300,7 @@
         </p>
         <div id="activeAttemptsList" class="muted small">No active attempts for this exam.</div>
       </div>
-      <div class="card cell-wide" id="systemHealthCard" style="margin-top:16px;">
+      <div class="card cell-wide" id="systemHealthCard" style="margin-top:16px;" hidden>
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
           <div>
             <p class="eyebrow" style="margin:0;">Platform Operations</p>
@@ -348,7 +364,7 @@
             <label class="lbl" for="tExamTimerModeSelect" style="color:var(--accent); font-weight:700;">⏱️ Exam Delivery &amp; Timer Mode</label>
             <select class="field" id="tExamTimerModeSelect" style="font-weight:600;">
               <option value="whole-exam">One timer for the whole exam (Scroll all questions)</option>
-              <option value="per-section">One timer per section (Scroll per section with cinematic transition)</option>
+              <option value="per-section">One timer per section</option>
               <option value="per-question">One timer per question (Step 1 by 1 with question timer)</option>
             </select>
 
@@ -664,6 +680,11 @@
       <div style="display:flex;gap:8px;align-items:center; flex-wrap:wrap;">
         <select class="field-sm" id="resultsExamPicker" aria-label="Select exam to view results"><option value="">Choose exam…</option></select>
         <select class="field-sm" id="resultsEdpPicker" aria-label="Filter results by EDP code" disabled><option value="">All EDP codes</option></select>
+        <div role="group" aria-label="Score view mode" style="display:flex;gap:2px;">
+          <button class="btn-sm btn-filter on" id="btnViewAll"     type="button" aria-pressed="true"  title="Show every attempt row">All</button>
+          <button class="btn-sm btn-filter"    id="btnViewHighest" type="button" aria-pressed="false" title="One row per student — highest score">Highest</button>
+          <button class="btn-sm btn-filter"    id="btnViewAverage" type="button" aria-pressed="false" title="One row per student — average of all scored attempts">Average</button>
+        </div>
         <button class="btn-sm btn-outline" id="btnRefreshResults" type="button">🔄 Refresh</button>
       </div>
     </div>
@@ -893,6 +914,6 @@
     <span>Results</span>
   </button>
 </nav>
-<script type="module" src="teacher.js?v=20260913b"></script>
+<script type="module" src="teacher.js?v=20260913c"></script>
 </body>
 </html>

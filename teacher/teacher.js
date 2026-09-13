@@ -803,6 +803,10 @@ let _allResultRows = [];
 let _currentResultsTotal = 0;
 let _currentResultsFilter = 'all';
 let _currentResultsSearch = '';
+let _currentResultsViewMode = 'all'; // 'all' | 'highest' | 'average'
+let _resultsTabRows  = [];           // full enriched rows for the loaded Results-tab exam
+let _resultsTabTotal = 0;
+let _resultsTabRefresh = null;       // re-renders table+copy without re-fetching
 let _autoRefreshTimer = null;
 
 async function openExamDetail(ex) {
@@ -1134,6 +1138,55 @@ function updateResultsFilterCounts() {
   if ($('countResBusy')) $('countResBusy').textContent = busyCount;
 }
 
+/* ------------------------------------------------------------------ */
+/* Results view-mode helper (All / Highest / Average)                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Collapses rows to one-per-student according to the current view mode.
+ * Returns a new array — never mutates the original.
+ *
+ * all:     unchanged
+ * highest: one row per email, max score; tie-break = earliest ended date
+ * average: one row per email, mean of all scored attempts (2 decimal places)
+ */
+function applyViewMode_(rows) {
+  const mode = _currentResultsViewMode || 'all';
+  if (mode === 'all') return rows;
+
+  const byEmail = new Map();
+  rows.forEach(row => {
+    const key = String(row.email || row.name || '').toLowerCase();
+    if (!byEmail.has(key)) byEmail.set(key, []);
+    byEmail.get(key).push(row);
+  });
+
+  const out = [];
+  byEmail.forEach(group => {
+    if (mode === 'highest') {
+      const scored = group.filter(r => r.score != null);
+      if (!scored.length) { out.push(group[0]); return; }
+      scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        // tie-break: earlier submission first
+        return String(a.ended || a.date || '').localeCompare(String(b.ended || b.date || ''));
+      });
+      out.push(scored[0]);
+    } else if (mode === 'average') {
+      const scored = group.filter(r => r.score != null);
+      if (!scored.length) { out.push({ ...group[0], score: null, attempt: 'Avg', _isAggregate: true }); return; }
+      const avg = scored.reduce((s, r) => s + r.score, 0) / scored.length;
+      out.push({
+        ...scored[0],
+        score: Math.round(avg * 100) / 100, // stored as number, rendered as toFixed(2)
+        attempt: 'Avg',
+        _isAggregate: true
+      });
+    }
+  });
+  return out;
+}
+
 function applyResultsFilterAndRender() {
   const list = $('detailResultsList');
   if (!list) return;
@@ -1158,6 +1211,18 @@ function applyResultsFilterAndRender() {
       String(r.notes || '').toLowerCase().includes(q)
     );
   }
+
+  // Apply view mode (Highest / Average collapse per student).
+  filtered = applyViewMode_(filtered);
+
+  // EDP-first sort (numeric-aware), then by student name.
+  filtered = filtered.slice().sort((a, b) => {
+    const edpA = String(a.edpCode || '');
+    const edpB = String(b.edpCode || '');
+    const edpCmp = edpA.localeCompare(edpB, undefined, { numeric: true });
+    if (edpCmp !== 0) return edpCmp;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
 
   if (!filtered.length) {
     list.innerHTML = `<div class="muted small" style="padding:16px; text-align:center;">No submissions matching current filter or search.</div>`;
@@ -1217,9 +1282,9 @@ const BUILDER_INPUT_HINT = {
 const builderPlan = {};
 BUILDER_TYPES.forEach(t => {
   if (t.key === 'MA') {
-    builderPlan[t.key] = { on: false, count: 5, mins: 1, secs: 30, level: 'average', order: 'shuffled' };
+    builderPlan[t.key] = { on: false, count: 5, mins: 1, secs: 30, level: 'average', order: 'shuffled', touched: false };
   } else {
-    builderPlan[t.key] = { on: false, count: 10, mins: 0, secs: 45, level: 'average', order: 'shuffled' };
+    builderPlan[t.key] = { on: false, count: 10, mins: 0, secs: 45, level: 'average', order: 'shuffled', touched: false };
   }
 });
 
@@ -1382,7 +1447,11 @@ function onBuilderPlanChange(e) {
     }
   } else {
     const field = t.getAttribute('data-f');
-    if (field) builderPlan[k][field] = t.value;
+    if (field) {
+      builderPlan[k][field] = t.value;
+      // Mark this section's timer as teacher-edited so switching modes never overwrites it.
+      if (field === 'mins' || field === 'secs') builderPlan[k].touched = true;
+    }
   }
 
   const checkbox = document.querySelector(`.type input[data-k="${k}"]`);
@@ -1419,10 +1488,18 @@ if ($('tExamTimerModeSelect')) {
     const mode = currentBuilderTimerMode();
     const hints = {
       'whole-exam': 'Questions will be delivered continuously on one page. Total exam duration is set above.',
-      'per-section': 'Questions are delivered section by section. Each section gets its own timer and a dramatic transition screen.',
+      'per-section': 'Questions are delivered section by section. Each section gets its own timer.',
       'per-question': 'Questions are delivered 1 by 1 with an individual countdown timer per question.'
     };
     if ($('tTimerModeHint')) $('tTimerModeHint').textContent = hints[mode] || '';
+    // When switching TO per-section, seed each type to 5 min only if the teacher
+    // has never manually edited that section's timer (touched flag).
+    if (mode === 'per-section') {
+      BUILDER_TYPES.forEach(t => {
+        const p = builderPlan[t.key];
+        if (!p.touched) { p.mins = 5; p.secs = 0; }
+      });
+    }
     buildBuilderStep1();
   });
 }
@@ -2918,6 +2995,14 @@ function resetResults() {
 $('resultsExamPicker').onchange = async function () {
   const code = this.value;
   if (!code) { resetResults(); return; }
+  // Reset view mode to 'All' on each new exam selection.
+  _currentResultsViewMode = 'all';
+  ['btnViewAll', 'btnViewHighest', 'btnViewAverage'].forEach((id, i) => {
+    const b = $(id);
+    if (!b) return;
+    b.classList.toggle('on', i === 0);
+    b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+  });
   $('resultsContent').innerHTML = '<div class="card center solo"><div class="spinner"></div></div>';
   try {
     const r = await api('teacherGetResults', { idToken: await idToken(), code });
@@ -2969,18 +3054,32 @@ $('resultsExamPicker').onchange = async function () {
 
     wrap.append(summary);
     if (r.rows?.length) {
+      // Store rows at module scope so view-mode buttons can re-render without re-fetching.
+      _resultsTabRows  = r.rows;
+      _resultsTabTotal = r.total;
+
       const tCard = document.createElement('div');
       tCard.className = 'card';
       tCard.innerHTML = '<p class="eyebrow">All submissions</p>';
       const tableWrap = document.createElement('div');
       tableWrap.style.overflowX = 'auto';
+
+      // shownRows applies EDP filter → view-mode collapse → EDP-first sort.
       const shownRows = () => {
         const edp = $('resultsEdpPicker')?.value || '';
-        return edp ? r.rows.filter(row => String(row.edpCode || '') === edp) : r.rows;
+        let rows = edp
+          ? _resultsTabRows.filter(row => String(row.edpCode || '') === edp)
+          : _resultsTabRows.slice();
+        rows = applyViewMode_(rows);
+        return rows.sort((a, b) => {
+          const ec = String(a.edpCode || '').localeCompare(String(b.edpCode || ''), undefined, { numeric: true });
+          return ec !== 0 ? ec : String(a.name || '').localeCompare(String(b.name || ''));
+        });
       };
-      renderResultsTable(tableWrap, shownRows(), r.total);
+
+      renderResultsTable(tableWrap, shownRows(), _resultsTabTotal);
       tCard.append(tableWrap);
-      // Export CSV button
+
       const exportBtn = document.createElement('button');
       exportBtn.className = 'btn-sm btn-outline';
       exportBtn.type = 'button';
@@ -2990,12 +3089,22 @@ $('resultsExamPicker').onchange = async function () {
       let copyControls = buildResultCopyControls(shownRows, code);
       tCard.append(copyControls, exportBtn);
       wrap.append(tCard);
-      $('resultsEdpPicker').onchange = () => {
-        renderResultsTable(tableWrap, shownRows(), r.total);
+
+      // Shared refresh: re-renders table and copy controls using current EDP + view mode.
+      const doRefresh = () => {
+        if (!$('resultsContent').contains(tableWrap)) return; // stale closure guard
+        renderResultsTable(tableWrap, shownRows(), _resultsTabTotal);
         const replacement = buildResultCopyControls(shownRows, code);
         copyControls.replaceWith(replacement);
         copyControls = replacement;
       };
+      _resultsTabRefresh = doRefresh;
+
+      $('resultsEdpPicker').onchange = doRefresh;
+    } else {
+      _resultsTabRows  = [];
+      _resultsTabTotal = 0;
+      _resultsTabRefresh = null;
     }
     $('resultsContent').replaceChildren(wrap);
   } catch (err) { $('resultsContent').textContent = 'Error: ' + err.message; console.error(err); }
@@ -3010,9 +3119,10 @@ if ($('btnRefreshResults')) {
 
 function renderResultsTable(wrap, rows, total) {
   wrap.replaceChildren();
+  const isAvgMode = (_currentResultsViewMode === 'average');
   const tbl = document.createElement('table');
   tbl.className = 'results-table';
-  tbl.innerHTML = `<caption>${rows.length} submission${rows.length === 1 ? '' : 's'}</caption>
+  tbl.innerHTML = `<caption>${rows.length} student${rows.length === 1 ? '' : 's'} · ${isAvgMode ? 'average' : (_currentResultsViewMode === 'highest' ? 'highest score' : 'all attempts')}</caption>
   <thead><tr>
     <th scope="col">Student</th>
     <th scope="col">Score</th>
@@ -3037,10 +3147,24 @@ function renderResultsTable(wrap, rows, total) {
       : row.done ? 'Done' : 'Not started';
 
     const metaParts = [];
+    if (row.edpCode) metaParts.push('EDP ' + row.edpCode);
     if (row.course) metaParts.push(row.course);
     if (row.section) metaParts.push('Sec ' + row.section);
     if (row.email) metaParts.push(row.email);
     const metaStr = metaParts.join(' · ');
+
+    // Score display: show 2 decimal places only for averages.
+    const scoreDisplay = row.score != null
+      ? (row._isAggregate ? row.score.toFixed(2) : row.score) + ' / ' + total
+      : '—';
+    // Grade-correction button: hidden for aggregate rows.
+    const corrBtn = (row.score != null && !row._isAggregate)
+      ? `<button type="button" class="btn-sm btn-ghost btn-correct-score" data-email="${esc(row.email)}" data-attempt="${esc(row.attempt || 1)}" data-score="${esc(row.score)}" title="Audit Grade Correction" style="padding:1px 4px;font-size:11px;">✏️</button>`
+      : '';
+    // Attempt badge: 'Avg' for averages, try number otherwise.
+    const attemptBadge = row._isAggregate
+      ? `<span class="pill-try">Avg</span>`
+      : `<span class="pill-try">Try #${row.attempt || 1}</span>`;
 
     tr.innerHTML = `
       <th scope="row">
@@ -3049,17 +3173,17 @@ function renderResultsTable(wrap, rows, total) {
       </th>
       <td>
         <div style="display:flex;align-items:center;gap:6px;">
-          <b>${row.score != null ? row.score + ' / ' + total : '—'}</b>
-          ${row.score != null ? `<button type="button" class="btn-sm btn-ghost btn-correct-score" data-email="${esc(row.email)}" data-attempt="${esc(row.attempt || 1)}" data-score="${esc(row.score)}" title="Audit Grade Correction" style="padding:1px 4px;font-size:11px;">✏️</button>` : ''}
+          <b>${scoreDisplay}</b>
+          ${corrBtn}
         </div>
       </td>
-      <td><span class="pill-try">Try #${row.attempt || 1}</span></td>
-      <td><span aria-hidden="true">${statusIcon}</span> <span style="font-size:0.8125rem;">${statusWord}</span></td>
-      <td>${row.minutes != null ? row.minutes + 'm' : '—'}</td>
+      <td>${attemptBadge}</td>
+      <td><span aria-hidden="true">${statusIcon}</span> <span style="font-size:0.8125rem;">${row._isAggregate ? '—' : statusWord}</span></td>
+      <td>${row.minutes != null && !row._isAggregate ? row.minutes + 'm' : '—'}</td>
       <td class="notes-cell"></td>`;
 
     const tdNotes = tr.cells[5];
-    if (row.flagged || row.status === 'flagged' || (row.notes && row.notes.trim())) {
+    if (!row._isAggregate && (row.flagged || row.status === 'flagged' || (row.notes && row.notes.trim()))) {
       const flagBox = document.createElement('div');
       if (row.flagged || row.status === 'flagged') {
         const badge = document.createElement('div');
@@ -3075,7 +3199,7 @@ function renderResultsTable(wrap, rows, total) {
         flagBox.append(timeline);
       }
       tdNotes.append(flagBox);
-    } else if (row.done) {
+    } else if (!row._isAggregate && row.done) {
       tdNotes.innerHTML = `<span class="clean-session">✓ Clean session (No tab switch)</span>`;
     } else {
       tdNotes.innerHTML = `<span class="muted small">—</span>`;
@@ -3196,7 +3320,7 @@ function fallbackCopyResultText(text, done) {
   area.remove();
 }
 
-/* Results Toolbar Listeners */
+/* Results Toolbar Listeners — status filter */
 ['all', 'flagged', 'done', 'in-progress'].forEach(mode => {
   const btnId = mode === 'all' ? 'filterResAll'
     : mode === 'flagged' ? 'filterResFlagged'
@@ -3214,6 +3338,31 @@ function fallbackCopyResultText(text, done) {
       applyResultsFilterAndRender();
     };
   }
+});
+
+/* Results Toolbar Listeners — view mode (All / Highest / Average) */
+[['btnViewAll', 'all'], ['btnViewHighest', 'highest'], ['btnViewAverage', 'average']].forEach(([id, mode]) => {
+  const btn = $(id);
+  if (!btn) return;
+  btn.onclick = () => {
+    _currentResultsViewMode = mode;
+    ['btnViewAll', 'btnViewHighest', 'btnViewAverage'].forEach(bid => {
+      const b = $(bid);
+      if (!b) return;
+      b.classList.remove('on');
+      b.setAttribute('aria-pressed', 'false');
+    });
+    btn.classList.add('on');
+    btn.setAttribute('aria-pressed', 'true');
+    // Refresh whichever panel is currently active.
+    // Results tab (scTResults) uses _resultsTabRefresh;
+    // Exam detail (scTExamDetail) uses applyResultsFilterAndRender.
+    if ($('scTResults') && !$('scTResults').hidden) {
+      _resultsTabRefresh?.();
+    } else {
+      applyResultsFilterAndRender();
+    }
+  };
 });
 
 if ($('searchResultQuery')) {
@@ -3281,7 +3430,8 @@ function esc(s) {
    Teacher Portal Access & Roles Modal (Admin Only)
    ================================================================ */
 
-let _accessEmails = [];
+let _accessEmails    = [];
+let _adminEmailsList = []; // tracks which emails currently have admin role
 
 function isValidEmail(e) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim());
@@ -3303,7 +3453,11 @@ async function openManageAccessModal() {
       if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">${esc(r.message)}</div>`;
       return;
     }
-    _accessEmails = Array.isArray(r.accounts) ? r.accounts.slice() : [];
+    _accessEmails    = Array.isArray(r.accounts) ? r.accounts.slice() : [];
+    // Populate admin list from new `admins` field; fall back to single `admin` for old deployments.
+    _adminEmailsList = Array.isArray(r.admins)   ? r.admins.slice()
+                     : (r.admin                  ? [r.admin]
+                     : (_accessEmails.length     ? [_accessEmails[0]] : []));
     renderAccessList();
   } catch (err) {
     if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">${esc(err.message || err)}</div>`;
@@ -3316,9 +3470,10 @@ function updateAccessTally() {
     $('tAccessTotalChip').innerHTML = `Configured: <b>${valid.length}</b>`;
   }
   if ($('tAccessAdminChip') && $('tAccessAdminEmail')) {
-    if (valid.length > 0) {
+    const firstAdmin = _adminEmailsList.find(a => a.trim()) || '';
+    if (firstAdmin) {
       $('tAccessAdminChip').hidden = false;
-      $('tAccessAdminEmail').textContent = valid[0];
+      $('tAccessAdminEmail').textContent = firstAdmin;
     } else {
       $('tAccessAdminChip').hidden = true;
     }
@@ -3341,7 +3496,7 @@ function renderAccessList() {
   }
 
   _accessEmails.forEach((email, index) => {
-    const isAdmin = (index === 0);
+    const isAdmin = _adminEmailsList.includes(email);
     const row = document.createElement('div');
     row.className = 'account-row' + (isAdmin ? ' is-admin' : '');
 
@@ -3353,9 +3508,9 @@ function renderAccessList() {
     const emailDesc = email ? email : `account #${index + 1}`;
     if (!isAdmin) {
       actionsHtml += `<button type="button" class="btn-make-admin" data-action="make-admin" data-index="${index}" title="Promote to Administrator" aria-label="Promote ${esc(emailDesc)} to Administrator">👑 Make Admin</button>`;
-    }
-    if (index > 1) {
-      actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="move-up" data-index="${index}" title="Move Up" aria-label="Move ${esc(emailDesc)} up" style="padding:2px 6px;font-size:10px;">▲</button>`;
+    } else if (_adminEmailsList.length > 1) {
+      // Allow revoking admin only when there is more than one admin.
+      actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="revoke-admin" data-index="${index}" title="Revoke admin role" aria-label="Revoke admin from ${esc(emailDesc)}" style="font-size:10px;">↓ Revoke Admin</button>`;
     }
     actionsHtml += `<button type="button" class="btn-sm btn-ghost" data-action="delete" data-index="${index}" title="Remove account" aria-label="Remove ${esc(emailDesc)}" style="color:var(--bad);padding:2px 6px;font-size:11px;">✕</button>`;
 
@@ -3376,8 +3531,14 @@ if ($('tAccessList')) {
   $('tAccessList').addEventListener('input', (e) => {
     if (e.target && e.target.tagName === 'INPUT') {
       const idx = parseInt(e.target.getAttribute('data-index'), 10);
+      const previous = _accessEmails[idx];
       const val = e.target.value.trim().toLowerCase();
       _accessEmails[idx] = val;
+      // Editing an administrator's email edits that account rather than
+      // silently transferring the role to whichever teacher is first.
+      if (_adminEmailsList.includes(previous)) {
+        _adminEmailsList = _adminEmailsList.map(email => email === previous ? val : email);
+      }
       if (val && !isValidEmail(val)) {
         e.target.classList.add('invalid');
       } else {
@@ -3394,12 +3555,29 @@ if ($('tAccessList')) {
     const index = parseInt(btn.getAttribute('data-index'), 10);
 
     if (action === 'make-admin') {
-      const target = _accessEmails.splice(index, 1)[0];
-      _accessEmails.unshift(target);
+      const target = _accessEmails[index];
+      if (target && !_adminEmailsList.includes(target)) {
+        _adminEmailsList.push(target);
+      }
       renderAccessList();
       toast(`👑 ${target || 'Account'} is now designated as Administrator.`, 'ok');
+    } else if (action === 'revoke-admin') {
+      const target = _accessEmails[index];
+      if (_adminEmailsList.length > 1) {
+        _adminEmailsList = _adminEmailsList.filter(e => e !== target);
+        renderAccessList();
+        toast(`${target || 'Account'} role changed to Teacher.`, 'ok');
+      } else {
+        toast('Cannot revoke the last administrator.', 'bad');
+      }
     } else if (action === 'delete') {
+      const target = _accessEmails[index];
+      if (_adminEmailsList.includes(target) && _adminEmailsList.length <= 1) {
+        toast('Add another administrator before removing the last administrator account.', 'bad');
+        return;
+      }
       _accessEmails.splice(index, 1);
+      _adminEmailsList = _adminEmailsList.filter(email => email !== target);
       renderAccessList();
     } else if (action === 'move-up') {
       if (index > 1) {
@@ -3482,6 +3660,15 @@ if ($('btnSaveManageAccess')) {
       cleanList.push(em);
     }
 
+    if (!cleanList.length) {
+      if ($('tAccessMsg')) $('tAccessMsg').innerHTML = `<div class="msg bad">At least one teacher account is required.</div>`;
+      return;
+    }
+
+    // Build the admin list: only keep admins that still appear in the teacher list.
+    let cleanAdmins = cleanList.filter(em => _adminEmailsList.includes(em));
+    if (!cleanAdmins.length) cleanAdmins = [cleanList[0]]; // safety: first teacher inherits
+
     $('btnSaveManageAccess').disabled = true;
     $('btnSaveManageAccess').textContent = 'Saving…';
     if ($('tAccessMsg')) $('tAccessMsg').innerHTML = '<p class="muted small">Saving settings…</p>';
@@ -3489,7 +3676,8 @@ if ($('btnSaveManageAccess')) {
     try {
       const r = await api('teacherSaveAccounts', {
         idToken: await idToken(),
-        accounts: cleanList
+        accounts: cleanList,
+        admins:   cleanAdmins
       });
 
       $('btnSaveManageAccess').disabled = false;
@@ -3500,7 +3688,8 @@ if ($('btnSaveManageAccess')) {
         return;
       }
 
-      _accessEmails = Array.isArray(r.accounts) ? r.accounts.slice() : cleanList;
+      _accessEmails    = Array.isArray(r.accounts) ? r.accounts.slice() : cleanList;
+      _adminEmailsList = Array.isArray(r.admins)   ? r.admins.slice()   : cleanAdmins;
       renderAccessList();
       toast('✓ Teacher access settings saved!', 'ok');
       closeModal($('manageAccessModal'));
