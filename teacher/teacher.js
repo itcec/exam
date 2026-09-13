@@ -2745,6 +2745,16 @@ function renderStudentTable(students) {
       actions.append(btnUnlink);
     }
 
+    if (s.canDelete) {
+      const btnDelete = document.createElement('button');
+      btnDelete.type = 'button';
+      btnDelete.className = 'btn-tbl-action delete';
+      btnDelete.innerHTML = '🗑️ Delete';
+      btnDelete.setAttribute('aria-label', `Delete student ${studentName} from the roster`);
+      btnDelete.onclick = () => openDeleteStudent(s);
+      actions.append(btnDelete);
+    }
+
     row.append(info, actions);
     wrap.append(row);
   });
@@ -2838,6 +2848,53 @@ if ($('btnConfirmUnlinkStudent')) {
       toast(err.message, 'bad');
     } finally {
       btn.disabled = false; btn.textContent = 'Unlink Email';
+    }
+  };
+}
+
+/* Delete Student — a roster deletion is permanent, so it needs an explicit
+   confirmation word as well as the server-side ownership check. */
+function openDeleteStudent(s) {
+  $('deleteStudentRow').value = s.row;
+  $('deleteStudentConfirm').value = '';
+  $('btnConfirmDeleteStudent').disabled = true;
+  $('deleteStudentText').innerHTML = `Delete <b>${esc(s.firstName)} ${esc(s.lastName)}</b> from the roster?`;
+  openModal($('deleteStudentModal'), $('deleteStudentConfirm'));
+}
+
+if ($('deleteStudentConfirm')) {
+  $('deleteStudentConfirm').oninput = e => {
+    $('btnConfirmDeleteStudent').disabled = e.target.value.trim().toUpperCase() !== 'DELETE';
+  };
+}
+if ($('btnCloseDeleteStudent')) $('btnCloseDeleteStudent').onclick = () => closeModal($('deleteStudentModal'));
+if ($('btnCancelDeleteStudent')) $('btnCancelDeleteStudent').onclick = () => closeModal($('deleteStudentModal'));
+
+if ($('btnConfirmDeleteStudent')) {
+  $('btnConfirmDeleteStudent').onclick = async () => {
+    const row = $('deleteStudentRow').value;
+    const btn = $('btnConfirmDeleteStudent');
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    try {
+      const r = await api('teacherDeleteStudent', { idToken: await idToken(), row });
+      if (!r.ok) { toast(r.message || 'Delete failed', 'bad'); return; }
+      closeModal($('deleteStudentModal'));
+      toast('Student removed from the roster.', 'ok');
+      play('pop');
+      if (CACHE.students) {
+        CACHE.students = CACHE.students.filter(st => String(st.row) !== String(row));
+        if (CACHE.dashboard && Number.isFinite(CACHE.dashboard.students)) {
+          CACHE.dashboard.students = Math.max(0, CACHE.dashboard.students - 1);
+          renderDashboard(CACHE.dashboard);
+        }
+        populateStudentFilters(CACHE.students);
+        saveCache();
+        renderStudentTable(CACHE.students);
+      }
+    } catch (err) {
+      toast(err.message || 'Delete failed', 'bad');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Delete student';
     }
   };
 }

@@ -454,7 +454,7 @@ const S = {
 
 /* ---------------- boot ---------------- */
 
-async function boot() {
+async function boot(destination = 'scStart') {
   let r;
   try {
     r = await api('bootstrap', { idToken: await idToken() });
@@ -534,13 +534,13 @@ async function boot() {
 
   renderExams(r.exams);
   renderHistory(r.history);
-  show('scStart');
+  show(destination === 'scHistory' ? 'scHistory' : 'scStart');
 }
 
 /**
  * Exams already sat, read from the student's Roster row. The server decides
- * whether a score may be shown — it holds one back while the student could
- * still sit the exam again.
+ * whether a score may be shown, respecting the exam's "Show students"
+ * setting while showing completed attempts immediately.
  *
  * The badge is the best score. Where there was more than one attempt, the
  * row opens to show the average and each try, so a student who improved can
@@ -1494,6 +1494,24 @@ function stopQuestion() {
   }
 }
 
+function startGlobal() {
+  if ($('pillTimer')) $('pillTimer').hidden = false;
+  if ($('timerBar')) $('timerBar').hidden = false;
+  S.span = Math.max(1, Math.round((S.deadline - Date.now()) / 1000));
+  paint(S.span);
+  S.globalTick = setInterval(() => {
+    if (S.finished || !S.deadline) return;
+    const left = Math.max(0, Math.round((S.deadline - Date.now()) / 1000));
+    paint(left);
+    if (left <= 0) {
+      clearInterval(S.globalTick);
+      S.globalTick = null;
+      S.finished = true;
+      finish();
+    }
+  }, 1000);
+}
+
 function paint(sec) {
   sec = Math.max(0, Math.round(sec));
   const m = Math.floor(sec / 60), s = sec % 60;
@@ -1884,6 +1902,7 @@ function autosave() {
 function finish() {
   closeAway();
   stopQuestion();
+  if (S.globalTick) { clearInterval(S.globalTick); S.globalTick = null; }
   if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
   S.finished = true;
   show('scSending');
@@ -2000,6 +2019,8 @@ function done(r) {
   if ($('cntBlank')) $('cntBlank').textContent = blankCount;
 
   renderReviewList('all');
+  $('btnDoneExams').onclick = () => leaveFinishedExam('scStart');
+  $('btnDoneHistory').onclick = () => leaveFinishedExam('scHistory');
   show('scDone');
 }
 
@@ -2310,22 +2331,27 @@ function syncBar(id) {
 /**
  * Where a tab goes when it is tapped.
  *
- * Exams has no home of its own — it is a flow, not a place. Tapping it
- * returns to the last exam screen if one is still live, and otherwise falls
- * back to the picker rather than showing an empty shell.
+ * Exams returns to the picker. A completed attempt is no longer treated as
+ * live, so students always have a route back to the list.
  */
 function tabTarget(tab) {
   if (tab !== 'exams') return TAB_SCREENS[tab]?.[0] || 'scStart';
-  // Exams is a flow, not a place: go back to the finished-exam screen if one
-  // is still live, otherwise to the picker.
-  if (S.finished && S.token) return 'scDone';
   return 'scStart';
+}
+
+/** Reload the dashboard after a submission so the new attempt appears in
+    history before the student changes screens. */
+function leaveFinishedExam(destination) {
+  S.token = '';
+  S.finished = false;
+  boot(destination);
 }
 
 for (const btn of document.querySelectorAll('.appbar-tab')) {
   btn.addEventListener('click', () => {
     feedback('nav', 8);
     const dest = tabTarget(btn.dataset.tab);
+    if (S.finished) { leaveFinishedExam(dest); return; }
     crossFade(() => show(dest));   // same treatment the theme toggle gets
   });
 }

@@ -12,7 +12,7 @@
      a teacher on the same wifi is not owed a worse deal than their class.
      gstatic stays: that is the Firebase SDK, not a font. -->
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
-<link rel="stylesheet" href="teacher.css?v=20260912e">
+<link rel="stylesheet" href="teacher.css?v=20260913a">
 <link rel="stylesheet" href="../fx.css">
 <script>
   try {
@@ -573,6 +573,25 @@
         </div>
       </div>
     </div>
+
+    <!-- Delete Student Modal -->
+    <div class="modal-backdrop" id="deleteStudentModal" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="bad">🗑️ Delete student</h3>
+          <button class="close-btn" id="btnCloseDeleteStudent" type="button">✕</button>
+        </div>
+        <p class="modal-body" id="deleteStudentText"></p>
+        <p class="muted small" style="margin-top:8px;">Submitted results remain in their exam results sheets, but this student will no longer be on the roster or able to sign in.</p>
+        <input type="hidden" id="deleteStudentRow">
+        <label class="lbl" for="deleteStudentConfirm" style="margin-top:12px;">Type DELETE to confirm</label>
+        <input class="field mono" id="deleteStudentConfirm" autocomplete="off" placeholder="DELETE">
+        <div class="actions" style="margin-top:12px;">
+          <button class="btn btn-ghost" id="btnCancelDeleteStudent" type="button">Cancel</button>
+          <button class="btn btn-danger" id="btnConfirmDeleteStudent" type="button" disabled style="background:var(--bad);color:#fff;">Delete student</button>
+        </div>
+      </div>
+    </div>
   </section>
   <section id="scTResults" hidden>
     <div class="section-header">
@@ -738,6 +757,6 @@
     <span>Results</span>
   </button>
 </nav>
-<script type="module" src="teacher.js?v=20260912e"></script>
+<script type="module" src="teacher.js?v=20260913a"></script>
 </body>
 </html>

@@ -16,9 +16,9 @@
       prefers-reduced-motion turns the motion off, not down. Sound is
       off until it is asked for and stays off once refused.
 
-   3. Cheap phones are the target device. Continuous effects are
-      confined to fine pointers, which keeps the particle field and the
-      cursor off the exact hardware the CSS already dials blur back for.
+   3. Cheap phones are the target device. The optional cursor effect is
+      confined to fine pointers, keeping it off the hardware the CSS already
+      dials blur back for.
    ================================================================== */
 
 /* ---------------- user preferences ---------------- */
@@ -29,7 +29,7 @@ const mqNarrow = matchMedia('(width < 480px)');
 
 export const reducedMotion = () => mqMotion.matches;
 
-/** Continuous background work is for machines that can spare it. */
+/** Keep the optional canvas decoration off reduced-motion and small touch devices. */
 const ambientAllowed = () => !reducedMotion() && !(mqCoarse.matches && mqNarrow.matches);
 
 const SOUND_KEY = 'exam_sound_v1';
@@ -465,9 +465,8 @@ export function initCursor() {
 
 /* ---------------- ambient background ----------------
 
-   A slow drift of motes behind the glass. The CSS mesh does the colour;
-   this adds the parallax that makes it read as depth rather than as a
-   gradient. It parks itself whenever the tab is hidden. */
+   A still field of motes behind the glass. The CSS mesh does the colour;
+   the field preserves visual depth without a permanent animation frame. */
 
 export function initAmbient() {
   if (!ambientAllowed()) return;
@@ -479,7 +478,7 @@ export function initAmbient() {
   const c = cv.getContext('2d');
   if (!c) { cv.remove(); return; }
 
-  let w = 0, h = 0, motes = [], raf = null, drift = 0;
+  let w = 0, h = 0, motes = [];
 
   function size() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -494,11 +493,9 @@ export function initAmbient() {
       x: Math.random() * w,
       y: Math.random() * h,
       r: Math.random() * 1.9 + 0.6,
-      sx: (Math.random() - 0.5) * 0.12,
-      sy: -Math.random() * 0.16 - 0.03,
-      a: Math.random() * 0.30 + 0.06,
-      ph: Math.random() * Math.PI * 2
+      a: Math.random() * 0.30 + 0.06
     }));
+    draw();
   }
 
   /** Warm motes on the oat ground, cool ones on the night sky. */
@@ -510,38 +507,23 @@ export function initAmbient() {
 
   let rgb = tint();
 
-  function frame() {
-    drift += 0.006;
+  function draw() {
     c.clearRect(0, 0, w, h);
     for (const m of motes) {
-      m.x += m.sx + Math.sin(drift + m.ph) * 0.08;
-      m.y += m.sy;
-      if (m.y < -12) { m.y = h + 12; m.x = Math.random() * w; }
-      if (m.x < -12) m.x = w + 12;
-      if (m.x > w + 12) m.x = -12;
-      const pulse = 0.72 + Math.sin(drift * 2 + m.ph) * 0.28;
       c.beginPath();
       c.arc(m.x, m.y, m.r, 0, Math.PI * 2);
-      c.fillStyle = 'rgba(' + rgb + ',' + (m.a * pulse).toFixed(3) + ')';
+      c.fillStyle = 'rgba(' + rgb + ',' + m.a.toFixed(3) + ')';
       c.fill();
     }
-    raf = requestAnimationFrame(frame);
   }
 
-  function start() { if (!raf) { rgb = tint(); frame(); } }
-  function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
-
   size();
-  start();
 
   let rs = null;
   addEventListener('resize', () => { clearTimeout(rs); rs = setTimeout(size, 200); }, { passive: true });
-  document.addEventListener('visibilitychange', () => { document.hidden ? stop() : start(); });
-  // The theme toggle repaints them without a reload.
-  new MutationObserver(() => { rgb = tint(); })
+  // The theme toggle repaints the still field without starting an animation.
+  new MutationObserver(() => { rgb = tint(); draw(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-  mqMotion.addEventListener('change', () => { reducedMotion() ? stop() : start(); });
-  addEventListener('pagehide', stop);
 }
 
 /* ---------------- confetti ---------------- */
