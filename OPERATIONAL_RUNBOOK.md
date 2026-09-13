@@ -152,7 +152,7 @@ When testing a restore in an isolated workbook:
 3. **Monthly Audit Log Review**:
    - Inspect `_AuditLog` monthly for:
      - Unexpected `GRADE_CORRECTION` actions and verify teacher justifications.
-     - Any `SECURITY_ORIGIN_REJECT` entries indicating unauthorized external callers.
+     - Authentication, authorization, cleanup, and execution-failure entries. A browser-provided origin is not treated as an authorization control.
      - Verification of daily `CLEANUP` runs without errors.
 
 ---
@@ -169,4 +169,3 @@ When testing a restore in an isolated workbook:
      1. The instructor checks `-RESULTS` and `_ActiveAttempts` for timestamps.
      2. If an audited score correction is justified, the teacher uses **Audited Grade Correction** (`teacherCorrectGrade`), specifying the exact reason and change.
      3. For escalated formal disputes, the student may contact the institutional Data Protection Officer at `cecitproctor@gmail.com`.
-

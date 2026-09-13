@@ -11,17 +11,17 @@
 
 | Component | Target URL / Identifier | Role | Security Enforcement |
 | :--- | :--- | :--- | :--- |
-| **Primary Production Host** | `https://onlinecec-bec0e.web.app` | Authoritative Student & Teacher Portal | Enforces CSP, HSTS, X-Frame-Options, Cache-Control via `firebase.json` |
+| **Primary Production Host** | `https://cec-exam.web.app` | Authoritative Student & Teacher Portal | Enforces CSP, HSTS, X-Frame-Options, Cache-Control via `firebase.json` |
 | **Alternative Auth Host** | `https://onlinecec-bec0e.firebaseapp.com` | Firebase Default Domain | Authorized OAuth callback and fallback domain |
 | **Source Control & Mirror** | `https://github.com/itcec/exam.git` (`itcec.github.io/exam`) | Git Version Control / Mirror | Source code repository; strictly non-production mirror |
-| **Backend API Engine** | Google Apps Script `/exec` Endpoint | Authoritative Grading, Token Verification, Sheets Ledger | Private-key verification, token email-binding, origin check |
+| **Backend API Engine** | Google Apps Script `/exec` Endpoint | Authoritative Grading, Token Verification, Sheets Ledger | Firebase ID-token verification, identity binding, role and ownership checks |
 | **Durable Database** | Google Sheets (`Workbook`) | Permanent Grade Storage & Audit Trails | Hidden system sheets (`_ActiveAttempts`, `_AuditLog`, `Log`) |
 
 ---
 
 ## 2. Live Verified Production Headers (HTTP 200 OK)
 
-A live curl check on `https://onlinecec-bec0e.web.app` confirmed active deployment of all security headers:
+A live curl check on `https://cec-exam.web.app` confirms active deployment of all security headers.
 
 ```http
 HTTP/1.1 200 OK
@@ -36,12 +36,10 @@ Referrer-Policy: strict-origin-when-cross-origin
 
 ---
 
-## 3. Server Safeguards & Origin Verification
+## 3. Server Safeguards & Authorization
 
-1. **Client Origin Whitelist**:
-   Apps Script verifies incoming `req.clientOrigin` against:
-   `['https://onlinecec-bec0e.web.app', 'https://onlinecec-bec0e.firebaseapp.com', 'https://itcec.github.io', 'http://localhost:5000', 'http://127.0.0.1:5000', 'http://localhost:3000', 'http://localhost:8080']`.
-   Calls from unapproved origins are rejected and logged to `_AuditLog` as `SECURITY_ORIGIN_REJECT`.
+1. **Authorization boundary**:
+   The Apps Script endpoint does not treat a client-supplied origin value as proof of origin; request bodies can be forged. State-changing actions require a verified Firebase ID token and then enforce the authenticated account's role, attempt ownership, exam ownership, and server-side deadline.
 2. **Formula Injection Sanitization**:
    All text fields entering Google Sheets (`studentName`, `notes`, `course`, `section`, `mistakes`) are escaped with a leading single-quote if starting with `=`, `+`, `-`, `@`, `\t`, or `\r`.
 3. **Identity Binding**:
@@ -93,6 +91,6 @@ Referrer-Policy: strict-origin-when-cross-origin
 
 Before any future deployment:
 1. **Automated Test Verification**: Run `node tests/all.js` (all 5 test suites must pass 100%).
-2. **Deployed Header Verification**: Run `curl.exe -I https://onlinecec-bec0e.web.app` to ensure security headers are active.
+2. **Deployed Header Verification**: Run `curl.exe -I https://cec-exam.web.app` to ensure security headers are active.
 3. **Teacher Portal Smoke Test**: Log in to the Teacher Portal, verify exam list, active sessions, and system health status.
 4. **Rollback Plan**: In the event of an unexpected regression, toggle Emergency Pause or revert to the prior Git commit (`git revert <commit>`), rebuild, and redeploy to Firebase Hosting.

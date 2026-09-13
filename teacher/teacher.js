@@ -177,7 +177,6 @@ async function api(action, body = {}, tries = 3) {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action,
-          clientOrigin: (typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : '',
           ...body
         })
       });

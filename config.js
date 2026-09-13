@@ -2,10 +2,10 @@
    The only file you need to edit.
 
    Both values below are safe to commit publicly. A Firebase apiKey is an
-   identifier, not a secret — access is controlled by the Authorized
-   domains list in the Firebase console and by the domain check on the
-   Apps Script side. The /exec URL is likewise public by necessity; it is
-   protected by ID-token verification, not by being hard to guess.
+   identifier, not a secret — access is controlled by the Firebase
+   Authorized Domains configuration. The /exec URL is likewise public by
+   necessity; it is protected by ID-token verification plus server-side
+   role and ownership checks, not by being hard to guess.
    ------------------------------------------------------------------ */
 
 export const FIREBASE_CONFIG = {
@@ -30,7 +30,8 @@ export const HOSTED_DOMAIN = '';
 export const DPO_EMAIL = 'cecitproctor@gmail.com';
 
 /* Primary secure production host (enforces CSP, anti-framing, HSTS, and cache headers via Firebase Hosting) */
-export const PRODUCTION_HOST = 'https://onlinecec-bec0e.web.app';
+export const PRODUCTION_HOST = 'https://cec-exam.web.app';
+export const FALLBACK_HOST = 'https://onlinecec-bec0e.web.app';
 export const GITHUB_MIRROR = 'https://itcec.github.io/exam';
 
 /* Application release version tag */
