@@ -41,13 +41,13 @@
 <main class="legal-shell">
   <div class="legal-card">
     <span class="badge-dpo">NPC Advisory No. 2020-1 Compliance</span>
-    <h1>Privacy Notice & Exam Policies</h1>
+    <h1>Privacy Notice &amp; Exam Policies</h1>
     <p class="muted">Effective Academic Year 2026–2027 • Information Technology Department</p>
 
     <h2>1. Purpose Limitation</h2>
     <p>This exam portal collects and processes your student credentials, submitted responses, and technical telemetry exclusively for the administration, evaluation, and record-keeping of your academic examinations. Your data will never be utilized for commercial purposes or disclosed to third parties outside the educational institution.</p>
 
-    <h2>2. Data Collected & Proctoring Telemetry Disclosure</h2>
+    <h2>2. Data Collected &amp; Proctoring Telemetry Disclosure</h2>
     <p>When you sit an examination on this platform, the following data points are processed:</p>
     <ul>
       <li><strong>Identification:</strong> Verified Google institutional email, student ID number, full name, year level, course, and section.</li>
@@ -56,17 +56,31 @@
     </ul>
     <p><strong>Important Note on Telemetry:</strong> In compliance with fair assessment principles, focus-loss counts and question timings constitute <em>operational telemetry</em> to assist instructors in diagnosing technical difficulties. Telemetry is non-adjudicative and does not serve as automated proof of academic dishonesty without faculty inquiry.</p>
 
-    <h2>3. Data Retention Schedule</h2>
-    <p>Examination submissions, question breakdowns, and score histories are stored securely in departmental academic records for a duration of <strong>one (1) academic year</strong> following completion of the term. Upon expiration of the retention window, raw answer logs are securely purged.</p>
+    <h2>3. Data Retention &amp; Minimization Schedule</h2>
+    <p>In accordance with data minimization principles, the system enforces a multi-tier lifecycle retention policy:</p>
+    <ul>
+      <li><strong>Immediate Answer Purge:</strong> Active attempt answer buffers in the temporary ledger are immediately and permanently wiped of all student responses, question texts, and choice maps upon final submission.</li>
+      <li><strong>Temporary Ledger Purge:</strong> Completed ledger delivery metadata is purged after <strong>48 hours</strong>. Unsubmitted or abandoned sessions are permanently deleted after <strong>7 days</strong> via automated daily cleanup.</li>
+      <li><strong>Official Academic Records:</strong> Final scores, mistake summaries, and submission records in departmental sheets are preserved for <strong>one (1) academic year</strong> following completion of the academic term, after which they are securely archived or destroyed.</li>
+    </ul>
 
-    <h2>4. Student Grade Dispute & Technical Incident Process</h2>
+    <h2>4. Student Grade Dispute &amp; Technical Incident Process</h2>
     <p>If you encounter a network failure, premature session timeout, or wish to dispute an automated grade:</p>
     <ul>
       <li>Notify your instructor immediately with your Student ID and Exam Code.</li>
       <li>In the event of an unresolvable technical discrepancy, students may request an audit of their attempt timestamps and recovery journal through the Department Head.</li>
     </ul>
 
-    <h2>5. Data Protection Officer (DPO) Contact</h2>
+    <h2>5. Faculty Attempt Reopening &amp; Audit Trail</h2>
+    <p>Instructors may unlock an expired or interrupted attempt and provide additional time strictly to resolve verified hardware or power interruptions. Every reopen request, extension amount, and instructor justification is permanently and immutably recorded in the institutional <code>_AuditLog</code>.</p>
+
+    <h2>6. Commercial Disclaimers &amp; Tracking (Not Applicable)</h2>
+    <ul>
+      <li><strong>Commercial Sales &amp; Refunds: Not Applicable.</strong> This platform is strictly a non-commercial educational proctoring service. No commercial fees, payments, or refunds are processed.</li>
+      <li><strong>Third-Party Advertising &amp; Tracking Cookies: Not Applicable.</strong> No marketing cookies, analytics pixels, or third-party trackers are utilized. All local storage is strictly limited to session persistence, theme preference, and offline journal resilience.</li>
+    </ul>
+
+    <h2>7. Data Protection Officer (DPO) Contact</h2>
     <p>For questions regarding your data privacy rights, correction of personal records, or compliance inquiries under Republic Act No. 10173 (Data Privacy Act of 2012):</p>
     <p><strong>Office of the Data Protection Officer</strong><br>
     Email: <code>cecitproctor@gmail.com</code><br>

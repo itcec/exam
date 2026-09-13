@@ -175,7 +175,11 @@ async function api(action, payload = {}, { tries = 4, onRetry } = {}) {
       const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action, ...payload })
+        body: JSON.stringify({
+          action,
+          clientOrigin: (typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : '',
+          ...payload
+        })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const text = await res.text();
