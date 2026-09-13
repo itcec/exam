@@ -198,50 +198,29 @@
 
 /* ---------------------------------------------------------------- */
 @layer mesh {
-  .neat-bg-canvas {
-    position: fixed;
-    inset: 0;
-    inline-size: 100vw;
-    block-size: 100vh;
-    z-index: -2;
-    pointer-events: none;
-    opacity: 0.92;
-    transition: opacity 0.5s ease, filter 0.5s ease;
-  }
-
-  [data-theme="dark"] .neat-bg-canvas {
-    opacity: 0.40;
-    filter: brightness(0.68) contrast(1.18) saturate(1.15);
-  }
-
-  /* Soft glows behind everything. Kept static during an exam so the visual
-     depth remains without spending frames on background motion. */
   body::before {
     content: "";
     position: fixed;
-    inset: -30%;
+    inset: -20%;
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(circle at 20% 15%, var(--mesh-1) 0%, transparent 48%),
-      radial-gradient(circle at 80% 80%, var(--mesh-2) 0%, transparent 46%),
-      radial-gradient(circle at 65% 35%, var(--mesh-3) 0%, transparent 54%),
-      transparent;
-    transform: scale(1.04) translate(-1%, 1.5%);
+      radial-gradient(circle at 20% 20%, var(--mesh-1), transparent 38%),
+      radial-gradient(circle at 80% 70%, var(--mesh-2), transparent 42%);
+    animation: ambient-drift 28s ease-in-out infinite alternate;
+    will-change: transform;
   }
+}
 
-  /* The second sheet preserves the original layered mesh depth. */
-  body::after {
-    content: "";
-    position: fixed;
-    inset: -40%;
-    z-index: -1;
-    pointer-events: none;
-    opacity: .85;
-    background:
-      radial-gradient(closest-side at 72% 22%, var(--mesh-2) 0%, transparent 70%),
-      radial-gradient(closest-side at 24% 74%, var(--mesh-1) 0%, transparent 72%);
-    transform: scale(1.04) translate(1%, -1%);
+@keyframes ambient-drift {
+  to {
+    transform: translate3d(2%, -1.5%, 0) scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
   }
 }
 /* ---------------------------------------------------------------- */

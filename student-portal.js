@@ -11,12 +11,11 @@ import {
   onAuthStateChanged, setPersistence, browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
 
-import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig } from './config.js';
+import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig, FEATURE_FLAGS } from './config.js';
 import {
   initFx, play, haptic, feedback, announce, confetti, revealIn,
   openModal, closeModal, mountSoundToggle, reducedMotion
 } from './fx.js';
-let NeatGradient = null;
 
 const $ = id => document.getElementById(id);
 
@@ -44,8 +43,11 @@ const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
 const activeTheme = () => document.documentElement.dataset.theme || (prefersDark() ? 'dark' : 'light');
 
 function labelTheme() {
-  $('btnTheme').setAttribute('aria-label',
-    activeTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  const btn = $('btnTheme');
+  if (btn) {
+    btn.setAttribute('aria-label',
+      activeTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  }
 }
 
 function setTheme(t) {
@@ -75,11 +77,13 @@ function crossFade(update) {
   t.updateCallbackDone?.catch(() => {});
 }
 
-$('btnTheme').onclick = () => {
-  const next = activeTheme() === 'dark' ? 'light' : 'dark';
-  crossFade(() => setTheme(next));
-};
-labelTheme();
+if ($('btnTheme')) {
+  $('btnTheme').onclick = () => {
+    const next = activeTheme() === 'dark' ? 'light' : 'dark';
+    crossFade(() => setTheme(next));
+  };
+  labelTheme();
+}
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (!document.documentElement.dataset.theme) labelTheme();
 });
@@ -91,160 +95,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
    to the theme button and is off until a student asks for it. */
 
 initFx();
-mountSoundToggle($('btnTheme'));
-
-/* ================================================================
-   Student Portal Neat WebGL Fluid Animated Background
-   ================================================================ */
-
-let studentNeatGradientInstance = null;
-
-async function initStudentNeatGradient() {
-  const canvas = $('student-neat-gradient');
-  if (!canvas) return;
-
-  try {
-    if (!NeatGradient) {
-      try {
-        const mod = await import('./neat.js');
-        NeatGradient = mod.NeatGradient;
-      } catch (localErr) {
-        console.warn('[NeatGradient] Local neat.js load failed, attempting CDN fallback:', localErr);
-        try {
-          const mod = await import('https://esm.sh/@firecms/neat');
-          NeatGradient = mod.NeatGradient;
-        } catch (cdnErr) {
-          console.warn('[NeatGradient] Failed to load Neat gradient library:', cdnErr);
-          return;
-        }
-      }
-    }
-    if (!NeatGradient) return;
-
-    const config = {
-      colors: [
-        { color: '#167CB3', enabled: true },
-        { color: '#CB9854', enabled: true },
-        { color: '#CE96CE', enabled: true },
-        { color: '#E0115F', enabled: true },
-        { color: '#FFFFFF', enabled: false },
-        { color: '#000000', enabled: false },
-      ],
-      speed: 2.5,
-      horizontalPressure: 5,
-      verticalPressure: 5,
-      waveFrequencyX: 2,
-      waveFrequencyY: 3,
-      waveAmplitude: 6,
-      secondaryWaveEnabled: false,
-      secondaryWaveFrequencyX: 3,
-      secondaryWaveFrequencyY: 3,
-      secondaryWaveAmplitude: 5,
-      secondaryWaveSpeed: 0.6,
-      secondaryWaveAngle: 1,
-      shadows: 2,
-      highlights: 0,
-      colorBrightness: 0.9,
-      colorSaturation: -3,
-      wireframe: false,
-      antialias: false,
-      colorBlending: 5,
-      backgroundColor: '#A1A4B7',
-      backgroundAlpha: 1,
-      grainScale: 0,
-      grainSparsity: 0,
-      grainIntensity: 0,
-      grainSpeed: 0,
-      resolution: 0.4,
-      yOffset: -0.0714111328125,
-      yOffsetWaveMultiplier: 1,
-      yOffsetColorMultiplier: 4.8,
-      yOffsetFlowMultiplier: 5.3,
-      flowDistortionA: 3.7,
-      flowDistortionB: 0.8,
-      flowScale: 1.6,
-      flowEase: 0.32,
-      flowEnabled: true,
-      enableProceduralTexture: false,
-      transparentTextureVoid: true,
-      textureMode: 'bitmap',
-      bakeEdgeSoftness: 1,
-      textureVoidLikelihood: 0.29,
-      textureVoidWidthMin: 120,
-      textureVoidWidthMax: 420,
-      textureBandDensity: 2.9,
-      textureColorBlending: 0.06,
-      textureSeed: 536,
-      textureEase: 0.93,
-      proceduralBackgroundColor: '#775454',
-      textureShapeTriangles: 48,
-      textureShapeCircles: 15,
-      textureShapeBars: 15,
-      textureShapeSquiggles: 27,
-      domainWarpEnabled: true,
-      domainWarpIntensity: 0.1,
-      domainWarpScale: 2.4,
-      vignetteIntensity: 0.45,
-      vignetteRadius: 0.55,
-      fresnelEnabled: false,
-      fresnelPower: 2.7,
-      fresnelIntensity: 1.3,
-      fresnelColor: '#F7E7CE',
-      iridescenceEnabled: false,
-      iridescenceIntensity: 0.5,
-      iridescenceSpeed: 1,
-      prismEdgeEnabled: false,
-      prismEdgeIntensity: 0.5,
-      prismEdgeThinness: 3,
-      prismEdgeSpread: 1,
-      prismEdgeSpeed: 0.5,
-      prismEdgeRipple: 1,
-      bloomIntensity: 1.9,
-      bloomThreshold: 0.6,
-      chromaticAberration: 17,
-      shapeType: 'ribbon',
-      shapeRotationX: 0.3480000000000001,
-      shapeRotationY: -26.783,
-      shapeRotationZ: -0.29,
-      shapeAutoRotateSpeedX: 0,
-      shapeAutoRotateSpeedY: 0,
-      sphereRadius: 15,
-      torusRadius: 15,
-      torusTube: 5,
-      cylinderRadius: 10,
-      cylinderHeight: 40,
-      planeBend: 2.3,
-      planeTwist: -2.9,
-      silhouetteFade: 0.83,
-      cylinderFade: 0.08,
-      ribbonFade: 0.31,
-      flatShading: false,
-      cameraLock: false,
-      cameraX: 0,
-      cameraY: 0,
-      cameraZ: 0,
-      cameraRotationX: -0.014,
-      cameraRotationY: -0.23800000000000002,
-      cameraRotationZ: 0,
-      cameraZoom: 1,
-    };
-
-    studentNeatGradientInstance = new NeatGradient({
-      ref: canvas,
-      ...config
-    });
-
-    window.addEventListener('scroll', () => {
-      if (studentNeatGradientInstance) {
-        studentNeatGradientInstance.yOffset = window.scrollY * 0.0005;
-      }
-    }, { passive: true });
-  } catch (err) {
-    console.warn('[NeatGradient] WebGL initialization failed or not supported:', err);
-  }
-}
-
-initStudentNeatGradient();
+if ($('btnTheme')) mountSoundToggle($('btnTheme'));
 
 /* ---------------- screens ---------------- */
 
@@ -1066,21 +917,71 @@ function brief(r) {
   }
   if (r.student?.section) fact('Section', r.student.section);
 
-  $('btnBegin').onclick = begin;
+  $('btnBegin').onclick = () => ensurePrivacyConsent(begin);
   $('btnBriefBack').onclick = () => show('scStart');
   show('scBrief');
+}
+
+function ensurePrivacyConsent(onProceed) {
+  if (!FEATURE_FLAGS?.requirePrivacyAck) {
+    onProceed();
+    return;
+  }
+  let acked = false;
+  try {
+    acked = !!localStorage.getItem('privacy_ack_v1');
+  } catch (e) {}
+
+  if (acked) {
+    onProceed();
+    return;
+  }
+
+  const modal = $('privacyAckModal');
+  const chk = $('chkPrivacyAck');
+  const btnProceed = $('btnConfirmPrivacyAck');
+  const btnCancel = $('btnCancelPrivacyAck');
+
+  if (!modal || !chk || !btnProceed) {
+    onProceed();
+    return;
+  }
+
+  chk.checked = false;
+  btnProceed.disabled = true;
+
+  chk.onchange = () => {
+    btnProceed.disabled = !chk.checked;
+  };
+
+  if (btnCancel) {
+    btnCancel.onclick = () => {
+      closeModal(modal);
+    };
+  }
+
+  btnProceed.onclick = () => {
+    try {
+      localStorage.setItem('privacy_ack_v1', new Date().toISOString());
+    } catch (e) {}
+    closeModal(modal);
+    onProceed();
+  };
+
+  openModal(modal);
 }
 
 async function doResume(token) {
   const b = $('btnResume');
   b.disabled = true; b.textContent = 'Loading…';
   try {
-    const r = await api('resume', { token });
+    const userToken = await idToken().catch(() => '');
+    const r = await api('resume', { token, idToken: userToken });
     if (!r.ok) { fatal('Could not resume', r.message); return; }
     prepare(r);
     S.queue = S.questions.filter(q => S.answers[q.no] == null);
     if (!S.queue.length) { finish(); return; }
-    begin();
+    ensurePrivacyConsent(begin);
   } catch {
     fatal('Could not resume', 'Check your connection and reload.');
   } finally {
@@ -1892,9 +1793,10 @@ let saveTimer = null;
 
 function autosave() {
   if (saveTimer) clearInterval(saveTimer);
-  saveTimer = setInterval(() => {
+  saveTimer = setInterval(async () => {
     if (!S.token || S.finished) return;
-    api('save', { token: S.token, answers: S.answers, perQ: S.perQ }, { tries: 1 })
+    const userToken = await idToken().catch(() => '');
+    api('save', { token: S.token, answers: S.answers, perQ: S.perQ, idToken: userToken }, { tries: 1 })
       .catch(() => {});
   }, 20000);
 }
@@ -1915,8 +1817,9 @@ async function send() {
   $('btnRetry').hidden = true;
 
   try {
+    const userToken = await idToken().catch(() => '');
     const r = await api('submit',
-      { token: S.token, answers: S.answers, flags: S.flags },
+      { token: S.token, answers: S.answers, flags: S.flags, idToken: userToken },
       { tries: 6, onRetry: (n, of) => { $('sendText').textContent = `Connection is slow — retrying (${n} of ${of})…`; } });
 
     if (!r.ok) {

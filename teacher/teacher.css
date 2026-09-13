@@ -203,48 +203,29 @@
 }
 
 @layer mesh {
-  .neat-bg-canvas {
-    position: fixed;
-    inset: 0;
-    inline-size: 100vw;
-    block-size: 100vh;
-    z-index: -2;
-    pointer-events: none;
-    opacity: 0.95;
-    transition: opacity 0.5s ease;
-  }
-
-  [data-theme="dark"] .neat-bg-canvas {
-    opacity: 0.38;
-    filter: brightness(0.7) contrast(1.1);
-  }
-
   body::before {
-    content: '';
+    content: "";
     position: fixed;
-    inset: -30%;
+    inset: -20%;
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(circle at 12% 12%, var(--mesh-1) 0%, transparent 48%),
-      radial-gradient(circle at 85% 82%, var(--mesh-2) 0%, transparent 46%),
-      radial-gradient(circle at 58% 38%, var(--mesh-3) 0%, transparent 54%),
-      transparent;
-    animation: teacherAurora 28s ease-in-out infinite alternate;
+      radial-gradient(circle at 20% 20%, var(--mesh-1), transparent 38%),
+      radial-gradient(circle at 80% 70%, var(--mesh-2), transparent 42%);
+    animation: ambient-drift 28s ease-in-out infinite alternate;
+    will-change: transform;
   }
 }
 
-@keyframes teacherAurora {
-  0% {
-    transform: scale(1) translate(0, 0);
+@keyframes ambient-drift {
+  to {
+    transform: translate3d(2%, -1.5%, 0) scale(1.03);
   }
+}
 
-  50% {
-    transform: scale(1.08) translate(-2%, 3%);
-  }
-
-  100% {
-    transform: scale(1.02) translate(3%, -2%);
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
   }
 }
 

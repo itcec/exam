@@ -20,8 +20,6 @@
 </script>
 </head>
 <body>
-<canvas id="student-neat-gradient" class="neat-bg-canvas" aria-hidden="true"></canvas>
-
 <a class="skip-link" href="#main">Skip to content</a>
 
 <!-- Time remaining, as one glanceable bar. -->
@@ -74,6 +72,9 @@
         Continue with Google
       </button>
       <p class="err small" id="signInErr" role="alert" aria-live="assertive" hidden></p>
+      <p class="muted small" style="margin-top:20px; font-size:0.8rem; text-align:center;">
+        By signing in, you agree to the <a href="privacy.html" target="_blank" rel="noopener" style="text-decoration:underline;">Privacy Notice &amp; Exam Policies</a>.
+      </p>
     </div>
   </section>
 
@@ -167,6 +168,9 @@
 
       <hr class="hr">
       <p class="muted small">Your score is recorded under this account. Sign out only if this is not you.</p>
+      <p class="muted small" style="margin-top:8px;">
+        <a href="privacy.html" target="_blank" rel="noopener" style="text-decoration:underline;">Privacy Notice &amp; Exam Policies (NPC Advisory 2020-1)</a>
+      </p>
       <button class="btn btn-ghost" id="btnSignOut" type="button">Sign out</button>
     </div>
   </section>
@@ -423,6 +427,27 @@
       <button class="btn btn-ghost" id="btnCancelExit" type="button">Keep going (Return to exam)</button>
       <button class="btn btn-outline" id="btnPauseExit" type="button" style="border:1px solid var(--edge-hi); font-weight:600;">⏸ Pause &amp; Resume Later</button>
       <button class="btn btn-danger" id="btnConfirmExit" type="button" style="background:var(--bad);color:#fff;">Quit &amp; Submit Final Score</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pre-Exam Privacy & Telemetry Acknowledgment Modal (NPC Advisory No. 2020-1) -->
+<div class="modal-backdrop" id="privacyAckModal" hidden>
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="modal-icon-badge" aria-hidden="true">🛡️</span>
+      <h3 class="modal-title">Privacy &amp; Telemetry Notice</h3>
+    </div>
+    <p class="modal-body" style="font-size:0.9rem; line-height:1.5;">
+      In compliance with NPC Advisory No. 2020-1 and the Data Privacy Act of 2012, this platform collects your verified student identity, answers, and operational telemetry (such as tab focus-loss and connection heartbeats) strictly for examination administration.
+    </p>
+    <label style="display:flex; align-items:flex-start; gap:10px; margin: 16px 0; font-size:0.88rem; cursor:pointer;">
+      <input type="checkbox" id="chkPrivacyAck" style="margin-top:3px; accent-color:var(--brand);">
+      <span>I have read and agree to the <a href="privacy.html" target="_blank" rel="noopener" style="text-decoration:underline;">Privacy Notice &amp; Exam Policies</a>.</span>
+    </label>
+    <div class="actions">
+      <button class="btn btn-ghost" id="btnCancelPrivacyAck" type="button">Cancel</button>
+      <button class="btn btn-primary" id="btnConfirmPrivacyAck" type="button" disabled>Acknowledge &amp; Proceed</button>
     </div>
   </div>
 </div>

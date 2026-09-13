@@ -27,6 +27,15 @@ export const SCHOOL_NAME = 'Information Technology';
    properties. Leave blank to show all accounts. */
 export const HOSTED_DOMAIN = '';
 
+export const DPO_EMAIL = 'cecitproctor@gmail.com';
+
+/* Feature flags for gradual pilot rollout and circuit breaker controls. */
+export const FEATURE_FLAGS = {
+  useFirebaseEngine: false,
+  pilotExamCodes: [],
+  requirePrivacyAck: true
+};
+
 
 /* ------------------------------------------------------------------
    Checks the values above before the app tries to use them.
