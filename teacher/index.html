@@ -12,7 +12,7 @@
      a teacher on the same wifi is not owed a worse deal than their class.
      gstatic stays: that is the Firebase SDK, not a font. -->
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
-<link rel="stylesheet" href="teacher.css?v=20260913b">
+<link rel="stylesheet" href="teacher.css?v=20260916b">
 <link rel="stylesheet" href="../fx.css">
 <script>
   try {
@@ -108,14 +108,29 @@
       </div>
       <button class="btn-sm btn-outline" id="btnRefreshDash" type="button">🔄 Refresh</button>
     </div>
-    <div class="bento stat-bento">
-      <div class="card stat-card center"><p class="eyebrow" id="lbl_dashOpenNum">Open exams</p><p class="stat-num" id="dashOpenNum" aria-labelledby="lbl_dashOpenNum dashOpenNum">—</p></div>
-      <div class="card stat-card center"><p class="eyebrow" id="lbl_dashStudentNum">Total students</p><p class="stat-num" id="dashStudentNum" aria-labelledby="lbl_dashStudentNum dashStudentNum">—</p></div>
-      <div class="card stat-card center"><p class="eyebrow" id="lbl_dashTodayNum">Submissions today</p><p class="stat-num" id="dashTodayNum" aria-labelledby="lbl_dashTodayNum dashTodayNum">—</p></div>
+    <div id="dashSkeleton" hidden>
+      <div class="bento stat-bento">
+        <div class="card stat-card center"><div class="skeleton skeleton-text" style="width:70px; margin:0 auto 8px;"></div><div class="skeleton skeleton-num"></div></div>
+        <div class="card stat-card center"><div class="skeleton skeleton-text" style="width:80px; margin:0 auto 8px;"></div><div class="skeleton skeleton-num"></div></div>
+        <div class="card stat-card center"><div class="skeleton skeleton-text" style="width:90px; margin:0 auto 8px;"></div><div class="skeleton skeleton-num"></div></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="skeleton skeleton-text" style="width:120px; margin-bottom:12px;"></div>
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+      </div>
     </div>
-    <div class="card" style="margin-top:16px;">
-      <p class="eyebrow">Recent activity</p>
-      <div id="dashRecentList" class="muted small" style="margin-top:8px;">No recent submissions recorded today.</div>
+    <div id="dashRealContent">
+      <div class="bento stat-bento">
+        <div class="card stat-card center"><p class="eyebrow" id="lbl_dashOpenNum">Open exams</p><p class="stat-num" id="dashOpenNum" aria-labelledby="lbl_dashOpenNum dashOpenNum">—</p></div>
+        <div class="card stat-card center"><p class="eyebrow" id="lbl_dashStudentNum">Total students</p><p class="stat-num" id="dashStudentNum" aria-labelledby="lbl_dashStudentNum dashStudentNum">—</p></div>
+        <div class="card stat-card center"><p class="eyebrow" id="lbl_dashTodayNum">Submissions today</p><p class="stat-num" id="dashTodayNum" aria-labelledby="lbl_dashTodayNum dashTodayNum">—</p></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <p class="eyebrow">Recent activity</p>
+        <div id="dashRecentList" class="muted small" style="margin-top:8px;">No recent submissions recorded today.</div>
+      </div>
     </div>
   </section>
   <section id="scTExams" hidden>
@@ -123,6 +138,7 @@
       <h2 class="section-title">Exams</h2>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn-sm btn-outline" id="btnRefreshExams" type="button">🔄 Refresh</button>
+        <button class="btn-sm btn-outline" id="btnOpenEdpCatalog" type="button">🏷️ EDP Codes</button>
         <button class="btn-sm btn-accent" id="btnNewExam" type="button">+ New exam</button>
       </div>
     </div>
@@ -209,6 +225,10 @@
             </select>
           </div>
         </div>
+        <div style="margin-top:10px;">
+          <label class="lbl" for="newExamClosesAt">Deadline (Closes At - optional)</label>
+          <input class="field" type="datetime-local" id="newExamClosesAt">
+        </div>
         <div class="actions" style="margin-top:12px;">
           <button class="btn btn-ghost" id="btnCancelNewExam" type="button">Cancel</button>
           <button class="btn btn-primary" id="btnSubmitNewExam" type="button">Create Exam</button>
@@ -223,7 +243,9 @@
       <span class="exam-code-label" id="detailCode"></span>
       <span class="grow"></span>
       <button class="btn-sm btn-outline" id="btnToggleActiveDetail" type="button">▶ Set Active</button>
+      <button class="btn-sm btn-outline" id="btnSetDeadlineDetail" type="button">⏰ Set Deadline</button>
       <button class="btn-sm btn-outline" id="btnManageEdpDetail" type="button">🏷️ EDP Codes</button>
+      <button class="btn-sm btn-outline" id="btnManageProctoringDetail" type="button">🛡️ Proctoring</button>
       <button class="btn-sm btn-outline" id="btnDuplicateExamDetail" type="button">📋 Duplicate</button>
       <button class="btn-sm btn-outline" id="btnManageQuestions" type="button">🧩 Manage Questions</button>
       <button class="btn-sm btn-accent" id="btnOpenAddQuestions" type="button">+ Add Questions</button>
@@ -247,12 +269,13 @@
             <h4 style="margin:0; font-size:1.1rem;">Exam Results &amp; Anti-Cheat Monitor</h4>
           </div>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <label class="toggle-control small muted" style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+            <label class="toggle-control small muted" for="chkAutoRefreshResults" style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
               <input type="checkbox" id="chkAutoRefreshResults">
               <span>Live Monitor (15s)</span>
             </label>
             <button class="btn-sm btn-primary" id="btnCopyScores" type="button" title="Copy scores table formatted for spreadsheets (TSV)">📋 Copy Scores</button>
             <button class="btn-sm btn-outline" id="btnExportCSV" type="button">📥 Export CSV</button>
+            <button class="btn-sm btn-outline" id="btnBatchSyncResults" type="button" title="Sync all submitted results to the Google Sheet archive">💾 Sync to Sheet</button>
             <button class="btn-sm btn-outline" id="btnExportIncidentTelemetry" type="button" title="Export non-adjudicative operational telemetry log" hidden>🛡️ Export Telemetry</button>
           </div>
         </div>
@@ -284,6 +307,16 @@
           </div>
         </div>
 
+        <div class="results-sort-bar" id="resultsSortBar" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:12px; font-size:0.75rem;">
+          <span class="muted" style="font-weight:600;">Sort:</span>
+          <button type="button" class="btn-sort-pill on" id="btnSortDefault" data-sort="default">Default</button>
+          <button type="button" class="btn-sort-pill" id="btnSortHighest" data-sort="score-desc">🏆 Highest Score</button>
+          <button type="button" class="btn-sort-pill" id="btnSortLowest" data-sort="score-asc">📉 Lowest Score</button>
+          <button type="button" class="btn-sort-pill" id="btnSortAlpha" data-sort="name-asc">🔤 Name (A-Z)</button>
+          <button type="button" class="btn-sort-pill" id="btnSortRecent" data-sort="submitted-desc">🕒 Recently Submitted</button>
+          <button type="button" class="btn-sort-pill" id="btnSortFlagged" data-sort="flagged-desc">🚩 Flagged First</button>
+        </div>
+
         <div id="detailResultsList" class="muted small">No submissions yet.</div>
         <div id="rosterReconciliationWrap" style="margin-top:14px; padding:10px 12px; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md);"></div>
       </div>
@@ -293,7 +326,11 @@
             <p class="eyebrow" style="margin:0;">Live Proctoring</p>
             <h4 style="margin:0; font-size:1.1rem;">Active &amp; Interrupted Sessions</h4>
           </div>
-          <button class="btn-sm btn-outline" id="btnRefreshActiveAttempts" type="button">🔄 Refresh Sessions</button>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button class="btn-sm btn-outline" id="btnRebuildLiveView" type="button" title="Rebuild realtime live projection from Firestore">🔄 Rebuild Live View</button>
+            <button class="btn-sm btn-outline" id="btnRefreshActiveAttempts" type="button">🔄 Refresh Sessions</button>
+            <button class="btn-sm btn-outline" id="btnPurgeActiveSessions" type="button" style="color:var(--bad, #dc2626); border-color:var(--bad, #dc2626);" title="Force reset all in-progress student sessions for this exam">🚨 Clear In-Progress Sessions</button>
+          </div>
         </div>
         <p class="muted small" style="margin-bottom:10px;">
           Live and interrupted exam attempts tracked in the persistent ledger. Live answers and question keys are never displayed.
@@ -370,7 +407,7 @@
 
             <!-- Whole Exam Timer Setup -->
             <div id="tWholeExamTimerRow" style="margin-top:10px;">
-              <label class="lbl" style="font-size:0.75rem;">Total Exam Timer Setup</label>
+              <div class="lbl" style="font-size:0.75rem;">Total Exam Timer Setup</div>
               <div class="two" style="max-width:260px;">
                 <div style="display:flex; align-items:center; gap:6px;">
                   <input type="number" id="tWholeExamMins" min="0" max="600" value="30" class="field" style="text-align:center; font-weight:700;">
@@ -587,7 +624,8 @@
       <select class="field-sm" id="filterSection" aria-label="Filter by section"><option value="">All sections</option></select>
       <select class="field-sm" id="filterEdp" aria-label="Filter by EDP code"><option value="">All EDP codes</option></select>
     </div>
-    <div id="studentTable" class="stack"></div>
+    <div id="studentCountSummary" class="text-subtle" style="font-size:0.875rem; color:var(--fg-3); margin:6px 0 10px 0;"></div>
+    <div id="studentTable" class="stack" role="list" aria-label="Enrolled students"></div>
     <div class="modal-backdrop" id="addStudentsModal" hidden>
       <div class="modal-card">
         <div class="modal-header"><h3>Add students</h3><button class="close-btn" id="btnCloseAdd" type="button">✕</button></div>
@@ -618,16 +656,37 @@
         </div>
         <input type="hidden" id="editStudentRow">
         <div class="two">
-          <div><label class="lbl" for="editStudentLast">Last Name</label><input class="field" id="editStudentLast" required></div>
-          <div><label class="lbl" for="editStudentFirst">First Name</label><input class="field" id="editStudentFirst" required></div>
+          <div><label class="lbl" for="editStudentLast">Last Name</label><input class="field" id="editStudentLast" placeholder="Last name"></div>
+          <div><label class="lbl" for="editStudentFirst">First Name</label><input class="field" id="editStudentFirst" placeholder="First name"></div>
         </div>
         <div class="two">
-          <div><label class="lbl" for="editStudentCourse">Course</label><input class="field" id="editStudentCourse" required></div>
-          <div><label class="lbl" for="editStudentSection">Section</label><input class="field" id="editStudentSection" required></div>
+          <div>
+            <label class="lbl" for="editStudentCourse">Course</label>
+            <input class="field" id="editStudentCourse" list="editStudentCourseOptions" placeholder="Select or type course…">
+            <datalist id="editStudentCourseOptions"></datalist>
+          </div>
+          <div>
+            <label class="lbl" for="editStudentSection">Section</label>
+            <input class="field" id="editStudentSection" list="editStudentSectionOptions" placeholder="Select or type section…">
+            <datalist id="editStudentSectionOptions"></datalist>
+          </div>
         </div>
         <div class="two">
-          <div><label class="lbl" for="editStudentYear">Year Level</label><input class="field" id="editStudentYear" placeholder="e.g. 1ST"></div>
-          <div><label class="lbl" for="editStudentEdp">EDP Code</label><input class="field mono" id="editStudentEdp" placeholder="e.g. 10234"></div>
+          <div>
+            <label class="lbl" for="editStudentYear">Year Level</label>
+            <select class="field" id="editStudentYear">
+              <option value="">Any / Not set</option>
+              <option value="1ST">1ST</option>
+              <option value="2ND">2ND</option>
+              <option value="3RD">3RD</option>
+              <option value="4TH">4TH</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl" for="editStudentEdp">EDP Code</label>
+            <input class="field mono" id="editStudentEdp" list="editStudentEdpOptions" placeholder="Select or type EDP…">
+            <datalist id="editStudentEdpOptions"></datalist>
+          </div>
         </div>
         <div><label class="lbl" for="editStudentId">Student ID Number</label><input class="field mono" id="editStudentId" placeholder="e.g. 2024-00123"></div>
         <div><label class="lbl" for="editStudentEmail">Linked Email (Leave blank if unlinked)</label><input class="field mono" id="editStudentEmail" placeholder="student@gmail.com"></div>
@@ -691,6 +750,37 @@
     <div id="resultsContent"><div class="card center solo muted small">Select an exam above to view results.</div></div>
   </section>
 
+  <!-- Set Exam Deadline Modal -->
+  <div class="modal-backdrop" id="setDeadlineModal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="setDeadlineModalTitle">⏰ Set Exam Deadline</h3>
+        <button class="close-btn" id="btnCloseSetDeadline" type="button">✕</button>
+      </div>
+      <p class="muted small" style="margin-bottom:12px;">
+        Students will not be able to start attempts after this deadline passes. Existing attempts will adhere to their time limit.
+      </p>
+      <div>
+        <label class="lbl" for="inputExamDeadline">Deadline (Closes At)</label>
+        <input class="field" type="datetime-local" id="inputExamDeadline">
+      </div>
+      <div style="margin-top:10px;">
+        <span class="lbl" style="display:block; margin-bottom:6px;">Quick Presets:</span>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" class="btn-sm btn-outline" id="btnPreset1Hour">+1 Hour</button>
+          <button type="button" class="btn-sm btn-outline" id="btnPresetEndOfDay">Today 11:59 PM</button>
+          <button type="button" class="btn-sm btn-outline" id="btnPresetTomorrow">Tomorrow 11:59 PM</button>
+          <button type="button" class="btn-sm btn-outline" id="btnPresetClearDeadline" style="color:var(--bad);">Clear Deadline</button>
+        </div>
+      </div>
+      <div class="actions" style="margin-top:16px;">
+        <button class="btn btn-ghost" id="btnCancelSetDeadline" type="button">Cancel</button>
+        <button class="btn btn-primary" id="btnSaveSetDeadline" type="button">Save Deadline</button>
+      </div>
+      <div id="setDeadlineOut" role="alert" aria-live="assertive" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
   <!-- Manage Teacher Access Modal (Admin only) -->
   <div class="modal-backdrop" id="manageAccessModal" hidden>
     <div class="modal-card modal-card-lg">
@@ -748,7 +838,7 @@
         Assign multiple EDP codes to this single exam so students enrolled under different sections or schedules for the same subject can all access and take this exam.
       </div>
       <div class="fld" style="margin-bottom:12px;">
-        <label class="lbl">Currently Assigned EDP Codes</label>
+        <div class="lbl">Currently Assigned EDP Codes</div>
         <div id="edpChipsList" class="chips-container" style="display:flex; gap:6px; flex-wrap:wrap; min-height:40px; padding:8px; border:1px solid var(--edge); border-radius:var(--r-md); background:var(--sunk); align-items:center;">
           <span class="muted small" id="edpChipsEmpty">No EDP codes assigned yet (using sections).</span>
         </div>
@@ -761,10 +851,53 @@
         </div>
         <span class="muted small" style="display:block; margin-top:4px;">Tip: You can paste a comma-separated list of EDP codes.</span>
       </div>
+      <div class="fld" style="margin-bottom:12px;">
+        <div class="lbl">Select from Saved EDP Catalog</div>
+        <div id="edpCatalogQuickSelect" style="display:flex; gap:6px; flex-wrap:wrap; max-height:120px; overflow-y:auto; padding:8px; border:1px solid var(--edge); border-radius:var(--r-md); background:var(--sunk);">
+          <span class="muted small">No saved EDP codes found in catalog.</span>
+        </div>
+      </div>
       <div id="edpModalMsg" style="margin-bottom:12px;"></div>
       <div class="actions" style="display:flex; justify-content:flex-end; gap:8px;">
         <button class="btn btn-outline" id="btnCancelEdpModal" type="button">Cancel</button>
         <button class="btn btn-accent" id="btnSaveEdpCodes" type="button">Save EDP Codes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Master EDP Catalog Modal -->
+  <div class="modal-backdrop" id="edpCatalogModal" hidden>
+    <div class="modal-card modal-card-lg" style="max-width:560px;">
+      <div class="modal-header">
+        <h3 id="edpCatalogModalTitle">🏷️ Manage EDP Codes &amp; Subjects</h3>
+        <button class="close-btn" id="btnCloseEdpCatalogModal" type="button">✕</button>
+      </div>
+      <p class="muted small" style="margin-bottom:12px;">
+        Register EDP codes with their corresponding subject. These saved EDP codes are kept in storage for easy assignment to exams and filtering of student results.
+      </p>
+      <div class="two" style="gap:10px; margin-bottom:10px;">
+        <div>
+          <label class="lbl" for="catalogInputEdp">EDP Code *</label>
+          <input class="field mono" id="catalogInputEdp" placeholder="e.g. 10234">
+        </div>
+        <div>
+          <label class="lbl" for="catalogInputSubject">Subject Name *</label>
+          <input class="field" id="catalogInputSubject" placeholder="e.g. IT302 / Web Systems">
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
+        <button class="btn-sm btn-primary" id="btnAddCatalogEdp" type="button">+ Save to Storage</button>
+      </div>
+
+      <div class="fld">
+        <div class="lbl">Saved EDP Codes in Storage</div>
+        <div id="edpCatalogList" style="max-height:220px; overflow-y:auto; border:1px solid var(--edge); border-radius:var(--r-md); background:var(--sunk); padding:8px; display:flex; flex-direction:column; gap:6px;">
+          <span class="muted small">No EDP codes saved in storage yet.</span>
+        </div>
+      </div>
+      <div id="edpCatalogMsg" style="margin-top:8px;"></div>
+      <div class="actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+        <button class="btn btn-outline" id="btnCloseEdpCatalogBtn" type="button">Close</button>
       </div>
     </div>
   </div>
@@ -865,17 +998,50 @@
         <p class="muted small">
           Submitted grades are immutable by default. Any change is permanently recorded in the submission's Notes and the institutional <code>_AuditLog</code>.
         </p>
+
+        <!-- Retake / Redo Test Authorization Card -->
+        <div class="retake-action-card" id="corrRetakeCard" style="background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); padding:12px; margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:700; font-size:0.9rem; display:flex; align-items:center; gap:6px;">
+                <span>🔄 Authorize Retake (Redo Exam)</span>
+              </div>
+              <p class="muted small" style="margin:2px 0 0;">
+                Void this submission and allow this student to retake the exam from scratch.
+              </p>
+            </div>
+            <button type="button" class="btn-sm btn-accent" id="btnShowRetakeForm">Authorize Retake</button>
+          </div>
+          <div id="corrRetakeForm" hidden style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--line2, #ccc);">
+            <div class="fld" style="margin-bottom:8px;">
+              <label class="lbl" for="corrRetakeReason" style="font-size:0.8rem;">Reason for Retake (Mandatory)</label>
+              <input class="field" id="corrRetakeReason" placeholder="e.g. Student experienced power disruption / tab switch false alarm" required>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px;">
+              <button type="button" class="btn-sm btn-outline" id="btnCancelRetakeForm">Cancel</button>
+              <button type="button" class="btn-sm btn-danger" id="btnConfirmRetake">Confirm &amp; Grant Retake</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; margin: 4px 0 10px;">
+          <span style="height:1px; flex:1; background:var(--edge);"></span>
+          <span class="muted small" style="font-weight:600; text-transform:uppercase; font-size:0.75rem; letter-spacing:0.05em;">Or Modify Grade</span>
+          <span style="height:1px; flex:1; background:var(--edge);"></span>
+        </div>
+
+        <input type="hidden" id="corrAttemptId">
         <div class="fld" style="margin-bottom:10px;">
-          <label class="lbl" style="font-size:0.8rem;">Student Email</label>
+          <label class="lbl" for="corrStudentEmail" style="font-size:0.8rem;">Student Email</label>
           <input class="field mono" id="corrStudentEmail" readonly style="background:var(--sunk);">
         </div>
         <div class="two" style="display:flex; gap:10px; margin-bottom:10px;">
           <div class="fld" style="flex:1;">
-            <label class="lbl" style="font-size:0.8rem;">Attempt #</label>
+            <label class="lbl" for="corrAttemptNo" style="font-size:0.8rem;">Attempt #</label>
             <input class="field mono" id="corrAttemptNo" readonly style="background:var(--sunk);">
           </div>
           <div class="fld" style="flex:1;">
-            <label class="lbl" style="font-size:0.8rem;">Current Score</label>
+            <label class="lbl" for="corrCurrentScore" style="font-size:0.8rem;">Current Score</label>
             <input class="field mono" id="corrCurrentScore" readonly style="background:var(--sunk);">
           </div>
         </div>
@@ -888,10 +1054,58 @@
           <textarea class="field" id="corrReason" rows="3" placeholder="e.g. Credit awarded for question 3 alternate spelling; approved by Department Head." required></textarea>
         </div>
         <p class="err small" id="corrModalErr" hidden></p>
-        <div class="actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+        <div class="actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px; border-top:1px solid var(--edge); padding-top:12px;">
           <button class="btn btn-outline" id="btnCancelCorrection" type="button">Cancel</button>
           <button class="btn btn-primary" id="btnSubmitCorrection" type="button">Apply &amp; Audit Log</button>
         </div>
+      </div>
+    </div>
+  </div>
+  <!-- Proctoring & Anti-Cheat Settings Modal -->
+  <div class="modal-backdrop" id="proctoringModal" hidden>
+    <div class="modal-card" style="max-width:520px;">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="margin:0; display:flex; align-items:center; gap:8px;">
+          <span>🛡️ Proctoring &amp; Anti-Cheat Settings</span>
+        </h3>
+        <button class="close-btn" id="btnCloseProctoringModal" type="button">✕</button>
+      </div>
+      <div class="modal-body stack-s" style="margin-top:12px;">
+        <p class="muted small">
+          Configure real-time monitoring and anti-cheat enforcement for <strong id="procExamCodeLabel"></strong>.
+        </p>
+
+        <div class="fld" style="margin-bottom:12px;">
+          <label class="lbl" for="procMaxStrikes">Allowable Strikes Before Auto-Submit</label>
+          <select class="field" id="procMaxStrikes">
+            <option value="0">Disabled (0) — Monitor &amp; log departures only, do not auto-submit</option>
+            <option value="1">1 strike — Auto-submit immediately on 1st departure</option>
+            <option value="2">2 strikes — 1 warning on 1st departure, auto-submit on 2nd</option>
+            <option value="3">3 strikes (Default) — Warn on 1st &amp; 2nd, auto-submit on 3rd</option>
+            <option value="4">4 strikes — Warn on 1st, 2nd, 3rd, auto-submit on 4th</option>
+            <option value="5">5 strikes — Warn on 1st to 4th, auto-submit on 5th</option>
+          </select>
+          <span class="muted small" style="display:block; margin-top:4px;">
+            When enabled, switching tabs or opening other applications consumes strikes. Reaching the limit forces automatic exam submission.
+          </span>
+        </div>
+
+        <div class="fld" style="margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline;">
+            <label class="lbl" for="procWarningNotes">Proctoring Warning Notes (Shown to Students)</label>
+            <button type="button" class="btn-ghost small" id="btnResetProcDefault" style="font-size:0.75rem; text-decoration:underline; cursor:pointer;">Reset to default</button>
+          </div>
+          <textarea class="field" id="procWarningNotes" rows="4" style="resize:vertical;" placeholder="Custom warning text displayed inside student test before and during focus loss..."></textarea>
+          <span class="muted small" style="display:block; margin-top:4px;">
+            This text is displayed to students in the pre-exam briefing and in the modal warning upon tab switching.
+          </span>
+        </div>
+
+        <div id="procSaveOut" style="margin-top:4px;"></div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+        <button class="btn btn-outline" id="btnCancelProctoringModal" type="button">Cancel</button>
+        <button class="btn btn-primary" id="btnSaveProctoring" type="button">Save Proctoring Settings</button>
       </div>
     </div>
   </div>
@@ -914,6 +1128,6 @@
     <span>Results</span>
   </button>
 </nav>
-<script type="module" src="teacher.js?v=20260913c"></script>
+<script type="module" src="teacher.js?v=20260914a"></script>
 </body>
 </html>

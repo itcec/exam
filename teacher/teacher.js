@@ -10,6 +10,8 @@ import { initializeApp }           from 'https://www.gstatic.com/firebasejs/10.1
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut,
          onAuthStateChanged, setPersistence, browserLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
+import { getDatabase, ref, onValue, off }
+  from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js';
 
 import { FIREBASE_CONFIG, API_URL, validateConfig } from '../config.js';
 import {
@@ -129,6 +131,8 @@ initFx();
 
 const app  = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
+let rtdb = null;
+try { rtdb = getDatabase(app); } catch (e) { console.warn('[teacher] RTDB init notice:', e); }
 try {
   await setPersistence(auth, browserLocalPersistence);
 } catch (e) {
@@ -293,19 +297,27 @@ document.querySelectorAll('#tAppBar .appbar-tab').forEach(btn => {
   });
 });
 
+function setDashboardSkeleton(show) {
+  if ($('dashSkeleton')) $('dashSkeleton').hidden = !show;
+  if ($('dashRealContent')) $('dashRealContent').hidden = !!show;
+}
+
 function showTab(tab) {
   show(TAB_SCREENS[tab]);
   if (tab === 'dashboard') {
-    if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
-    else loadDashboard();
+    if (CACHE.dashboard && (CACHE.dashboard.students > 0 || CACHE.dashboard.today > 0)) {
+      renderDashboard(CACHE.dashboard);
+    } else {
+      loadDashboard();
+    }
   } else if (tab === 'exams') {
-    if (CACHE.exams) renderExamCards(CACHE.exams);
+    if (CACHE.exams && CACHE.exams.length) renderExamCards(CACHE.exams);
     else loadExams();
   } else if (tab === 'students') {
-    if (CACHE.students) renderStudentTable(CACHE.students);
+    if (CACHE.students && CACHE.students.length) renderStudentTable(CACHE.students);
     else loadStudents();
   } else if (tab === 'results') {
-    if (CACHE.exams) populateResultsPicker(CACHE.exams);
+    if (CACHE.exams && CACHE.exams.length) populateResultsPicker(CACHE.exams);
     else resetResults();
   }
 }
@@ -369,6 +381,7 @@ onAuthStateChanged(auth, async user => {
     CACHE.exams     = r.exams || [];
     CACHE.students  = r.students || [];
     CACHE.options   = r.options || {};
+    CACHE.edpCatalog = r.edpCatalog || [];
     CACHE.timestamp = r.serverTimestamp || Date.now();
     CACHE.emergencyStopActive = !!r.emergencyStopActive;
     updateEmergencyStopUI(CACHE.emergencyStopActive);
@@ -377,9 +390,24 @@ onAuthStateChanged(auth, async user => {
     // Paint initial screens from cache
     if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
     if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); populateAddStudentEdpOptions(CACHE.exams); }
-    if (CACHE.students) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
+    if (CACHE.students && CACHE.students.length) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
 
     showTab('dashboard');
+
+    // Show skeleton if students or full dashboard stats have not yet arrived
+    if (!CACHE.students || !CACHE.students.length || !CACHE.dashboard?.students) {
+      setDashboardSkeleton(true);
+    }
+
+    // Sequentially preload sections in background to prevent Apps Script concurrent request starvation
+    (async () => {
+      try {
+        await loadDashboard();
+        await loadStudents();
+      } finally {
+        setDashboardSkeleton(false);
+      }
+    })();
   } catch (err) {
     // A dropped connection is not a refusal. Saying "Access denied" to a
     // teacher whose wifi blinked has them emailing their administrator
@@ -415,38 +443,23 @@ $('btnTSignIn').onclick = async () => {
     console.warn('[teacher] sign-in note:', err);
     const code = err?.code || '';
     if (code === 'auth/popup-blocked') {
-      $('tSignInErr').innerHTML = 'Your browser blocked the sign-in popup. <button type="button" class="btn-tbl-action" id="btnErrUseRedirect" style="margin-top:6px;">Switch to Redirect Sign-In</button>';
+      $('tSignInErr').textContent = 'Your browser blocked the sign-in popup. Please allow popups for this site and click Sign in with Google again.';
       $('tSignInErr').hidden = false;
-      if ($('btnErrUseRedirect')) $('btnErrUseRedirect').onclick = () => signInWithRedirect(auth, provider);
     } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-      $('tSignInErr').innerHTML = 'Sign-in window closed. If popup fails on your browser, try: <button type="button" class="btn-tbl-action" id="btnErrUseRedirect" style="margin-top:6px;">Sign in with redirect</button>';
+      $('tSignInErr').textContent = 'Sign-in was cancelled. Click Sign in with Google to try again.';
       $('tSignInErr').hidden = false;
-      if ($('btnErrUseRedirect')) $('btnErrUseRedirect').onclick = () => signInWithRedirect(auth, provider);
     } else if (code === 'auth/unauthorized-domain') {
-      $('tSignInErr').textContent = 'This domain is not authorised in Firebase Authentication settings (add it under Authorized Domains in Firebase console).';
+      $('tSignInErr').textContent = 'This domain is not authorised in Firebase Authentication settings.';
       $('tSignInErr').hidden = false;
     } else {
-      $('tSignInErr').innerHTML = `Sign-in note: ${esc(err?.message || code)} <br><button type="button" class="btn-tbl-action" id="btnErrUseRedirect" style="margin-top:6px;">Try Redirect Sign-In</button>`;
+      $('tSignInErr').textContent = 'Sign-in error: ' + (err?.message || code);
       $('tSignInErr').hidden = false;
-      if ($('btnErrUseRedirect')) $('btnErrUseRedirect').onclick = () => signInWithRedirect(auth, provider);
     }
   } finally {
     _signingIn = false;
     b.disabled = false;
   }
 };
-
-if ($('btnTSignInRedirect')) {
-  $('btnTSignInRedirect').onclick = async () => {
-    $('tSignInErr').hidden = true;
-    try {
-      await signInWithRedirect(auth, provider);
-    } catch (err) {
-      $('tSignInErr').textContent = 'Redirect sign-in error: ' + (err?.message || err);
-      $('tSignInErr').hidden = false;
-    }
-  };
-}
 
 /* Sign out. The cache holds a whole class list, so it goes with the session. */
 function doSignOut() {
@@ -465,6 +478,7 @@ async function syncAllData() {
       CACHE.exams     = r.exams || [];
       CACHE.students  = r.students || [];
       CACHE.options   = r.options || {};
+      CACHE.edpCatalog = r.edpCatalog || [];
       CACHE.timestamp = r.serverTimestamp || Date.now();
       saveCache();
 
@@ -488,6 +502,9 @@ async function syncAllData() {
 
 function renderDashboard(data) {
   if (!data) return;
+  if (data.students > 0 || data.today > 0 || (data.recent && data.recent.length)) {
+    setDashboardSkeleton(false);
+  }
   // Counting up is the only sign these three numbers were refreshed at all;
   // a re-render to the same value is otherwise completely silent.
   countTo($('dashOpenNum'),    data.openExams);
@@ -497,17 +514,49 @@ function renderDashboard(data) {
   const list = $('dashRecentList');
   if (!data.recent?.length) { list.textContent = 'No submissions yet today.'; return; }
   list.replaceChildren();
-  data.recent.slice(0, 8).forEach(sub => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--edge);';
-    const name = document.createElement('span');
-    name.textContent = sub.name;
-    const meta = document.createElement('span');
-    meta.style.cssText = 'color:var(--fg-3);font-size:.8125rem;white-space:nowrap;';
-    meta.textContent = sub.exam + '  · ' + (sub.score != null ? sub.score + '/' + sub.total : 'Submitted');
-    row.append(name, meta);
-    list.append(row);
-  });
+  list.classList.remove('is-scrolling');
+
+  const recent = data.recent.slice(0, 8);
+  const makeRecentSet = duplicate => {
+    const set = document.createElement('div');
+    set.className = 'recent-taker-set';
+    if (duplicate) set.setAttribute('aria-hidden', 'true');
+
+    recent.forEach(sub => {
+      const row = document.createElement('div');
+      row.className = 'recent-taker-row';
+
+      const avatar = document.createElement('span');
+      avatar.className = 'recent-taker-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.textContent = String(sub.name || '?')
+        .split(/\s+/).filter(Boolean).slice(0, 2).map(part => part.charAt(0)).join('').toUpperCase();
+
+      const name = document.createElement('strong');
+      name.textContent = sub.name;
+
+      const exam = document.createElement('span');
+      exam.className = 'recent-taker-exam';
+      exam.textContent = sub.exam || 'Exam';
+
+      const score = document.createElement('span');
+      score.className = 'recent-taker-score';
+      score.textContent = sub.score != null ? sub.score + '/' + sub.total : 'Submitted';
+
+      row.append(avatar, name, exam, score);
+      set.append(row);
+    });
+    return set;
+  };
+
+  const track = document.createElement('div');
+  track.className = 'recent-taker-track';
+  track.append(makeRecentSet(false));
+  if (recent.length > 5) {
+    track.append(makeRecentSet(true));
+    list.classList.add('is-scrolling');
+  }
+  list.append(track);
 }
 
 async function loadDashboard() {
@@ -517,6 +566,12 @@ async function loadDashboard() {
     const r = await api('teacherDashboard', { idToken: await idToken() });
     if (!r.ok) return;
     CACHE.dashboard = r;
+    if (r.exams && Array.isArray(r.exams)) {
+      CACHE.exams = r.exams;
+      renderExamCards(CACHE.exams);
+      populateResultsPicker(CACHE.exams);
+      populateAddStudentEdpOptions(CACHE.exams);
+    }
     saveCache();
     renderDashboard(r);
   } catch (err) {
@@ -628,6 +683,19 @@ function renderExamCards(exams) {
     };
     actionRow.append(edpBtn);
 
+    // Quick Deadline Manage
+    const deadlineBtn = document.createElement('button');
+    deadlineBtn.className = 'btn-sm btn-outline';
+    deadlineBtn.type = 'button';
+    deadlineBtn.textContent = '⏰ Deadline';
+    deadlineBtn.setAttribute('aria-label', 'Set deadline for ' + ex.code);
+    deadlineBtn.onclick = (e) => {
+      e.stopPropagation();
+      feedback('tap', 8);
+      openSetDeadlineModal(ex);
+    };
+    actionRow.append(deadlineBtn);
+
     // Quick Duplicate
     const dupBtn = document.createElement('button');
     dupBtn.className = 'btn-sm btn-outline';
@@ -653,7 +721,7 @@ function renderExamCards(exams) {
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-sm btn-outline btn-danger';
     delBtn.type = 'button';
-    delBtn.textContent = '🗑️';
+    delBtn.textContent = '🗑️ Delete';
     delBtn.title = 'Delete ' + ex.code;
     delBtn.setAttribute('aria-label', 'Delete ' + ex.code);
     delBtn.onclick = (e) => {
@@ -662,6 +730,25 @@ function renderExamCards(exams) {
       openDeleteModal(ex);
     };
     actionRow.append(delBtn);
+
+    // Keep the card calm: the two common actions stay visible while setup,
+    // duplication and deletion live in one clearly labelled management menu.
+    // All original button elements and handlers are preserved.
+    const primaryActions = document.createElement('div');
+    primaryActions.className = 'exam-primary-actions';
+    detailBtn.className = 'btn-sm btn-primary';
+    primaryActions.append(toggleBtn, detailBtn);
+
+    const manageActions = document.createElement('details');
+    manageActions.className = 'exam-actions-more';
+    const manageSummary = document.createElement('summary');
+    manageSummary.className = 'exam-actions-summary';
+    manageSummary.textContent = '⚙ Manage exam';
+    const manageMenu = document.createElement('div');
+    manageMenu.className = 'exam-actions-menu';
+    Array.from(actionRow.children).forEach(btn => manageMenu.append(btn));
+    manageActions.append(manageSummary, manageMenu);
+    actionRow.replaceChildren(primaryActions, manageActions);
 
     card.addEventListener('click', (e) => {
       if (e.target.closest('.exam-card-actions')) return;
@@ -723,6 +810,7 @@ $('btnNewExam').onclick = () => {
   $('newExamTimerMode').value = 'per-question';
   $('newExamTries').value = '1';
   $('newExamStatus').value = 'draft';
+  if ($('newExamClosesAt')) $('newExamClosesAt').value = '';
   // Through the handler, or the duration label keeps whatever the last open
   // left behind — "Minutes for whole exam" above a box holding 45 seconds.
   $('newExamTimerMode').onchange();
@@ -751,6 +839,7 @@ $('btnSubmitNewExam').onclick = async () => {
   const duration = parseInt($('newExamDuration').value, 10) || (timerMode === 'whole-exam' ? 30 : 45);
   const tries = $('newExamTries').value;
   const status = $('newExamStatus').value;
+  const closesAt = $('newExamClosesAt')?.value.trim() || '';
 
   const btn = $('btnSubmitNewExam');
   btn.disabled = true; btn.textContent = 'Creating…';
@@ -764,7 +853,7 @@ $('btnSubmitNewExam').onclick = async () => {
       // question whose own Seconds cell is blank, so the box is not ignored.
       defaultTimer: timerMode === 'whole-exam' ? 45 : duration,
       wholeExamMinutes: timerMode === 'whole-exam' ? duration : 30,
-      tries, status
+      tries, status, closesAt
     };
 
     const r = await api('teacherCreateExam', payload);
@@ -804,10 +893,76 @@ let _currentResultsTotal = 0;
 let _currentResultsFilter = 'all';
 let _currentResultsSearch = '';
 let _currentResultsViewMode = 'all'; // 'all' | 'highest' | 'average'
+let _resultsSortKey = 'default';     // 'default' | 'score-desc' | 'score-asc' | 'name-asc' | 'name-desc' | 'submitted-desc' | 'flagged-desc'
 let _resultsTabRows  = [];           // full enriched rows for the loaded Results-tab exam
 let _resultsTabTotal = 0;
 let _resultsTabRefresh = null;       // re-renders table+copy without re-fetching
 let _autoRefreshTimer = null;
+
+
+let _liveExamListener = null;
+
+function subscribeLiveExam(code) {
+  unsubscribeLiveExam();
+  if (!rtdb || !code) return;
+  const uid = auth?.currentUser?.uid;
+  if (!uid) return;
+  try {
+    const liveRef = ref(rtdb, 'teacherLive/' + uid + '/' + code);
+    _liveExamListener = liveRef;
+    onValue(liveRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const activeKeys = Object.keys(data.active || {});
+      const flaggedKeys = Object.keys(data.flagged || {});
+
+      if ($('detailLiveActive')) $('detailLiveActive').textContent = activeKeys.length;
+      if ($('detailLiveFlagged')) $('detailLiveFlagged').textContent = flaggedKeys.length;
+
+      renderLiveFlaggedAlerts(data.flagged || {});
+    });
+  } catch (err) {
+    console.warn('[teacher] RTDB subscribe error:', err);
+  }
+}
+
+function unsubscribeLiveExam() {
+  if (_liveExamListener) {
+    try { off(_liveExamListener); } catch (e) {}
+    _liveExamListener = null;
+  }
+}
+
+function renderLiveFlaggedAlerts(flaggedMap) {
+  let box = $('liveFlaggedAlertBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'liveFlaggedAlertBox';
+    const parent = $('detailStats')?.parentElement;
+    if (parent) parent.insertBefore(box, $('detailStats'));
+  }
+  const keys = Object.keys(flaggedMap);
+  if (!keys.length) {
+    box.innerHTML = '';
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `
+    <div style="background:var(--bad-bg,#fee2e2);border:1px solid var(--bad-border,#fca5a5);border-radius:var(--r-md,8px);padding:10px 14px;margin-bottom:14px;">
+      <div style="font-weight:700;color:var(--bad,#dc2626);margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+        <span>⚠️ Live Cheating Alerts (${keys.length})</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${keys.map(k => {
+          const f = flaggedMap[k];
+          return `<div style="font-size:0.85rem;color:var(--fg-1,#1f2937);">
+            <b>${esc(f.studentName || f.email)}</b> · Flagged ${esc(f.flagCount || 1)}x · Reason: <i>${esc(f.reason || 'Left exam page')}</i> <span class="muted" style="font-size:0.75rem;">(${esc(f.time || '')})</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
 
 async function openExamDetail(ex) {
   _currentDetailExamCode = ex.code;
@@ -815,16 +970,69 @@ async function openExamDetail(ex) {
   $('detailCode').textContent = ex.code + (ex.title ? ' — ' + ex.title : '');
   updateDetailStatsAndControls(ex);
   show('scTExamDetail');
+  subscribeLiveExam(ex.code);
   await loadExamResults(ex.code);
   await loadActiveAttempts(ex.code);
 }
 
 function updateDetailStatsAndControls(ex) {
+  const deadlineRaw = ex.closesAt || ex.closesAtIso;
+  let deadlineStr = 'None';
+  if (deadlineRaw) {
+    try {
+      const d = new Date(deadlineRaw);
+      if (!isNaN(d.getTime())) {
+        deadlineStr = d.toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      } else {
+        deadlineStr = String(deadlineRaw);
+      }
+    } catch (e) {
+      deadlineStr = String(deadlineRaw);
+    }
+  }
+
   $('detailStats').innerHTML = `
     <div><p class="eyebrow">Status</p>${statusChip(ex.status)}</div>
+    <div><p class="eyebrow">Deadline</p><p class="stat-num-sm chip-deadline" id="detailDeadline" style="font-size:0.88rem; font-weight:600; white-space:nowrap;">${esc(deadlineStr)}</p></div>
     <div><p class="eyebrow">Questions</p><p class="stat-num-sm" id="detailQCount">${ex.questions ?? '—'}</p></div>
+    <div><p class="eyebrow">Live Active</p><p class="stat-num-sm" id="detailLiveActive" style="color:var(--ok,#16a34a);">0</p></div>
+    <div><p class="eyebrow">Flagged</p><p class="stat-num-sm" id="detailLiveFlagged" style="color:var(--bad,#dc2626);">0</p></div>
     <div><p class="eyebrow">Finished</p><p class="stat-num-sm" id="detailFinished">…</p></div>
     <div><p class="eyebrow">Average</p><p class="stat-num-sm" id="detailAvg">…</p></div>`;
+
+  if ($('btnRebuildLiveView')) {
+    $('btnRebuildLiveView').onclick = async () => {
+      toast('Rebuilding live view from Firestore…', 'ok');
+      try {
+        const r = await api('teacherRebuildLiveView', { idToken: await idToken(), code: ex.code });
+        if (r.ok) {
+          toast(`Live view rebuilt! (${r.activeCount || 0} active)`, 'ok');
+          play('pop');
+        } else {
+          toast(r.message || 'Could not rebuild live view.', 'bad');
+        }
+      } catch (e) {
+        toast('Rebuild failed: ' + e.message, 'bad');
+      }
+    };
+  }
+
+  if ($('btnBatchSyncResults')) {
+    $('btnBatchSyncResults').onclick = async () => {
+      toast('Syncing results to sheet archive…', 'ok');
+      try {
+        const r = await api('teacherBatchSyncResults', { idToken: await idToken(), code: ex.code });
+        if (r.ok) {
+          toast(r.message || 'Results synchronized to sheet archive!', 'ok');
+          play('pop');
+        } else {
+          toast(r.message || 'Sync failed.', 'bad');
+        }
+      } catch (e) {
+        toast('Sync failed: ' + e.message, 'bad');
+      }
+    };
+  }
 
   if ($('btnToggleActiveDetail')) {
     const isOpen = ex.status === 'open';
@@ -839,11 +1047,114 @@ function updateDetailStatsAndControls(ex) {
 
   updateDetailEdpBadges(ex);
 
+  if ($('btnSetDeadlineDetail')) $('btnSetDeadlineDetail').onclick = () => openSetDeadlineModal(ex);
   if ($('btnManageEdpDetail')) $('btnManageEdpDetail').onclick = () => openEdpModal(ex);
   if ($('btnManageEdpInline')) $('btnManageEdpInline').onclick = () => openEdpModal(ex);
+  if ($('btnManageProctoringDetail')) $('btnManageProctoringDetail').onclick = () => openProctoringModal(ex);
   if ($('btnDuplicateExamDetail')) $('btnDuplicateExamDetail').onclick = () => openDuplicateModal(ex);
   if ($('btnDeleteExamDetail')) $('btnDeleteExamDetail').onclick = () => openDeleteModal(ex);
   if ($('btnRefreshActiveAttempts')) $('btnRefreshActiveAttempts').onclick = () => loadActiveAttempts(ex.code);
+}
+
+/* Set Exam Deadline Modal Handlers */
+function openSetDeadlineModal(ex) {
+  _currentDetailExamCode = ex.code;
+  _currentDetailExam = ex;
+  if ($('setDeadlineModalTitle')) $('setDeadlineModalTitle').textContent = '⏰ Set Exam Deadline — ' + ex.code;
+  const input = $('inputExamDeadline');
+  if (input) {
+    const rawVal = ex.closesAtIso || ex.closesAt;
+    if (rawVal) {
+      try {
+        const d = new Date(rawVal);
+        if (!isNaN(d.getTime())) {
+          input.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        } else {
+          input.value = '';
+        }
+      } catch (e) {
+        input.value = '';
+      }
+    } else {
+      input.value = '';
+    }
+  }
+  if ($('setDeadlineOut')) $('setDeadlineOut').replaceChildren();
+  openModal($('setDeadlineModal'), $('inputExamDeadline'));
+}
+
+if ($('btnCloseSetDeadline')) $('btnCloseSetDeadline').onclick = () => closeModal($('setDeadlineModal'));
+if ($('btnCancelSetDeadline')) $('btnCancelSetDeadline').onclick = () => closeModal($('setDeadlineModal'));
+
+if ($('btnPreset1Hour')) {
+  $('btnPreset1Hour').onclick = () => {
+    const d = new Date(Date.now() + 60 * 60 * 1000);
+    $('inputExamDeadline').value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+}
+if ($('btnPresetEndOfDay')) {
+  $('btnPresetEndOfDay').onclick = () => {
+    const d = new Date();
+    d.setHours(23, 59, 0, 0);
+    $('inputExamDeadline').value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+}
+if ($('btnPresetTomorrow')) {
+  $('btnPresetTomorrow').onclick = () => {
+    const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    d.setHours(23, 59, 0, 0);
+    $('inputExamDeadline').value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+}
+if ($('btnPresetClearDeadline')) {
+  $('btnPresetClearDeadline').onclick = () => {
+    $('inputExamDeadline').value = '';
+  };
+}
+
+if ($('btnSaveSetDeadline')) {
+  $('btnSaveSetDeadline').onclick = async () => {
+    const btn = $('btnSaveSetDeadline');
+    const out = $('setDeadlineOut');
+    const rawVal = $('inputExamDeadline')?.value || '';
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    if (out) out.replaceChildren();
+
+    try {
+      const r = await api('teacherUpdateDeadline', {
+        idToken: await idToken(),
+        code: _currentDetailExamCode,
+        closesAt: rawVal
+      });
+      if (!r.ok) {
+        if (out) out.innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(r.message || 'Failed to update deadline.')}</div>`;
+        return;
+      }
+      closeModal($('setDeadlineModal'));
+      toast('Deadline updated for ' + _currentDetailExamCode + '!', 'ok');
+      play('pop');
+
+      if (_currentDetailExam && _currentDetailExam.code === _currentDetailExamCode) {
+        _currentDetailExam.closesAt = r.closesAt;
+        _currentDetailExam.closesAtIso = r.closesAtIso;
+        updateDetailStatsAndControls(_currentDetailExam);
+      }
+      if (CACHE.exams) {
+        const target = CACHE.exams.find(e => e.code === _currentDetailExamCode);
+        if (target) {
+          target.closesAt = r.closesAt;
+          target.closesAtIso = r.closesAtIso;
+          renderExamCards(CACHE.exams);
+        }
+      }
+    } catch (err) {
+      if (out) out.innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(err.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Deadline';
+    }
+  };
 }
 
 function updateDetailEdpBadges(ex) {
@@ -871,7 +1182,6 @@ function updateDetailEdpBadges(ex) {
   });
 }
 
-/* Manage EDP Codes Modal */
 function openEdpModal(ex) {
   _currentDetailExamCode = ex.code;
   _currentDetailExam = ex;
@@ -885,6 +1195,7 @@ function openEdpModal(ex) {
   }
   _currentEditingEdpCodes = list;
   renderEdpChips();
+  renderEdpCatalogQuickSelect();
   if ($('inputNewEdp')) $('inputNewEdp').value = '';
   if ($('edpModalMsg')) $('edpModalMsg').replaceChildren();
   openModal($('edpCodesModal'), $('inputNewEdp'));
@@ -900,23 +1211,54 @@ function renderEdpChips() {
     empty.id = 'edpChipsEmpty';
     empty.textContent = 'No EDP codes assigned yet (using sections).';
     wrap.append(empty);
+  } else {
+    _currentEditingEdpCodes.forEach((edp, idx) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip-edp';
+      chip.innerHTML = `<span>${esc(edp)}</span>`;
+      const rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'chip-remove';
+      rmBtn.setAttribute('aria-label', 'Remove EDP code ' + edp);
+      rmBtn.innerHTML = '×';
+      rmBtn.onclick = () => {
+        _currentEditingEdpCodes.splice(idx, 1);
+        renderEdpChips();
+      };
+      chip.append(rmBtn);
+      wrap.append(chip);
+    });
+  }
+  renderEdpCatalogQuickSelect();
+}
+
+function renderEdpCatalogQuickSelect() {
+  const wrap = $('edpCatalogQuickSelect');
+  if (!wrap) return;
+  wrap.replaceChildren();
+
+  const catalog = CACHE.edpCatalog || [];
+  if (!catalog.length) {
+    wrap.innerHTML = '<span class="muted small">No saved EDP codes in catalog yet. Click "🏷️ EDP Codes" above to register codes.</span>';
     return;
   }
-  _currentEditingEdpCodes.forEach((edp, idx) => {
-    const chip = document.createElement('span');
-    chip.className = 'chip-edp';
-    chip.innerHTML = `<span>${esc(edp)}</span>`;
-    const rmBtn = document.createElement('button');
-    rmBtn.type = 'button';
-    rmBtn.className = 'chip-remove';
-    rmBtn.setAttribute('aria-label', 'Remove EDP code ' + edp);
-    rmBtn.innerHTML = '×';
-    rmBtn.onclick = () => {
-      _currentEditingEdpCodes.splice(idx, 1);
+
+  catalog.forEach(item => {
+    const isSelected = _currentEditingEdpCodes.some(c => String(c).toLowerCase() === String(item.edpCode).toLowerCase());
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'edp-quick-chip' + (isSelected ? ' selected' : '');
+    chip.innerHTML = `${isSelected ? '✓ ' : '+ '}<b>${esc(item.edpCode)}</b> <span style="opacity:0.85;font-weight:normal;">(${esc(item.subject || 'No subject')})</span>`;
+    chip.onclick = () => {
+      const idx = _currentEditingEdpCodes.findIndex(c => String(c).toLowerCase() === String(item.edpCode).toLowerCase());
+      if (idx >= 0) {
+        _currentEditingEdpCodes.splice(idx, 1);
+      } else {
+        _currentEditingEdpCodes.push(item.edpCode);
+      }
       renderEdpChips();
     };
-    chip.append(rmBtn);
-    wrap.append(chip);
+    wrap.appendChild(chip);
   });
 }
 
@@ -978,11 +1320,123 @@ if ($('btnSaveEdpCodes')) {
         _currentDetailExam.edpCode = r.edpCode;
         _currentDetailExam.edpCodes = r.edpCodes;
         updateDetailEdpBadges(_currentDetailExam);
+        populateDetailEdpFilter(_currentDetailExam, _allResultRows);
       }
     } catch (err) {
       if ($('edpModalMsg')) $('edpModalMsg').innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(err.message)}</div>`;
     } finally {
       btn.disabled = false; btn.textContent = 'Save EDP Codes';
+    }
+  };
+}
+
+/* Master EDP Catalog Modal Handlers */
+function openEdpCatalogModal() {
+  if ($('catalogInputEdp')) $('catalogInputEdp').value = '';
+  if ($('catalogInputSubject')) $('catalogInputSubject').value = '';
+  if ($('edpCatalogMsg')) $('edpCatalogMsg').replaceChildren();
+  renderEdpCatalogList();
+  openModal($('edpCatalogModal'), $('catalogInputEdp'));
+}
+
+function renderEdpCatalogList() {
+  const wrap = $('edpCatalogList');
+  if (!wrap) return;
+  wrap.replaceChildren();
+
+  const list = CACHE.edpCatalog || [];
+  if (!list.length) {
+    wrap.innerHTML = '<span class="muted small" style="padding:12px; text-align:center;">No EDP codes registered in storage yet.</span>';
+    return;
+  }
+
+  list.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'catalog-edp-row';
+    row.innerHTML = `
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="catalog-edp-code">EDP ${esc(item.edpCode)}</span>
+        <span class="catalog-edp-subject">· ${esc(item.subject || 'No Subject')}</span>
+      </div>
+      <button type="button" class="btn-sm btn-ghost" data-edp="${esc(item.edpCode)}" style="color:var(--bad); font-size:11px; padding:2px 6px;" title="Remove EDP code from storage">🗑️</button>
+    `;
+    const btnDel = row.querySelector('button');
+    btnDel.onclick = async () => {
+      btnDel.disabled = true;
+      try {
+        const r = await api('teacherDeleteEdpCatalog', { idToken: await idToken(), edpCode: item.edpCode });
+        if (r.ok) {
+          CACHE.edpCatalog = r.catalog || [];
+          saveCache();
+          renderEdpCatalogList();
+          if (_currentDetailExam) populateDetailEdpFilter(_currentDetailExam, _allResultRows);
+          toast(`EDP ${item.edpCode} removed from storage.`, 'ok');
+          play('pop');
+        } else {
+          toast(r.message || 'Could not delete EDP code.', 'bad');
+        }
+      } catch (e) {
+        toast('Error deleting EDP code: ' + e.message, 'bad');
+      } finally {
+        btnDel.disabled = false;
+      }
+    };
+    wrap.appendChild(row);
+  });
+}
+
+if ($('btnOpenEdpCatalog')) $('btnOpenEdpCatalog').onclick = openEdpCatalogModal;
+if ($('btnCloseEdpCatalogModal')) $('btnCloseEdpCatalogModal').onclick = () => closeModal($('edpCatalogModal'));
+if ($('btnCloseEdpCatalogBtn')) $('btnCloseEdpCatalogBtn').onclick = () => closeModal($('edpCatalogModal'));
+
+if ($('btnAddCatalogEdp')) {
+  $('btnAddCatalogEdp').onclick = async () => {
+    const edpInput = $('catalogInputEdp');
+    const subInput = $('catalogInputSubject');
+    const msg = $('edpCatalogMsg');
+    const btn = $('btnAddCatalogEdp');
+
+    const edpCode = (edpInput?.value || '').trim();
+    const subject = (subInput?.value || '').trim();
+
+    if (!edpCode) {
+      if (msg) msg.innerHTML = '<div class="msg bad" style="color:var(--bad);">Please enter an EDP Code.</div>';
+      edpInput?.focus();
+      return;
+    }
+    if (!subject) {
+      if (msg) msg.innerHTML = '<div class="msg bad" style="color:var(--bad);">Please enter a Subject Name.</div>';
+      subInput?.focus();
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    if (msg) msg.replaceChildren();
+
+    try {
+      const r = await api('teacherSaveEdpCatalog', {
+        idToken: await idToken(),
+        edpCode,
+        subject
+      });
+      if (!r.ok) {
+        if (msg) msg.innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(r.message || 'Failed to save EDP code')}</div>`;
+        return;
+      }
+      CACHE.edpCatalog = r.catalog || [];
+      saveCache();
+      renderEdpCatalogList();
+      if (_currentDetailExam) populateDetailEdpFilter(_currentDetailExam, _allResultRows);
+      edpInput.value = '';
+      subInput.value = '';
+      toast(`EDP ${edpCode} (${subject}) saved to storage!`, 'ok');
+      play('pop');
+    } catch (e) {
+      if (msg) msg.innerHTML = `<div class="msg bad" style="color:var(--bad);">${esc(e.message)}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '+ Save to Storage';
     }
   };
 }
@@ -1094,12 +1548,93 @@ if ($('btnConfirmDeleteExam')) {
 
 $('btnExamBack').onclick = () => {
   if (_autoRefreshTimer) { clearInterval(_autoRefreshTimer); _autoRefreshTimer = null; }
+  unsubscribeLiveExam();
   show('scTExams');
 };
 
 if ($('btnRefreshDetail')) {
   $('btnRefreshDetail').onclick = () => {
     if (_currentDetailExamCode) loadExamResults(_currentDetailExamCode);
+  };
+}
+
+/**
+ * Formats an EDP option label including Subject and Sections from enrolled students/results.
+ * Example: 'EDP 10234 · IT302 (Sec 1, 2)'
+ */
+function formatEdpOptionLabel(edpCode, examSubject, rows) {
+  const codeStr = String(edpCode || '').trim();
+  if (!codeStr) return 'All EDP codes';
+
+  // 1. Find subject from CACHE.edpCatalog or fallback to examSubject
+  let subject = '';
+  if (CACHE.edpCatalog && Array.isArray(CACHE.edpCatalog)) {
+    const hit = CACHE.edpCatalog.find(c => String(c.edpCode || '').trim().toLowerCase() === codeStr.toLowerCase());
+    if (hit && hit.subject) subject = hit.subject.trim();
+  }
+  if (!subject && examSubject) {
+    subject = String(examSubject).trim();
+  }
+
+  // 2. Find student sections associated with this EDP code
+  const secSet = new Set();
+  if (CACHE.students && Array.isArray(CACHE.students)) {
+    CACHE.students.forEach(s => {
+      if (String(s.edpCode || '').trim().toLowerCase() === codeStr.toLowerCase() && s.section) {
+        const sec = String(s.section).trim();
+        if (sec) secSet.add(sec);
+      }
+    });
+  }
+  if (rows && Array.isArray(rows)) {
+    rows.forEach(r => {
+      if (String(r.edpCode || '').trim().toLowerCase() === codeStr.toLowerCase() && r.section) {
+        const sec = String(r.section).trim();
+        if (sec) secSet.add(sec);
+      }
+    });
+  }
+
+  const secList = Array.from(secSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const subPart = subject ? ` · ${subject}` : '';
+  const secPart = secList.length ? ` (Sec ${secList.join(', ')})` : '';
+
+  return `EDP ${codeStr}${subPart}${secPart}`;
+}
+
+function populateDetailEdpFilter(ex, rows) {
+  const sel = $('detailEdpFilter');
+  if (!sel) return;
+  const previous = sel.value;
+
+  const codeSet = new Set();
+  if (ex) {
+    (ex.edpCodes || (ex.edpCode ? [ex.edpCode] : [])).forEach(c => {
+      const s = String(c || '').trim();
+      if (s) codeSet.add(s);
+    });
+  }
+  if (rows && Array.isArray(rows)) {
+    rows.forEach(r => {
+      const s = String(r.edpCode || '').trim();
+      if (s) codeSet.add(s);
+    });
+  }
+
+  const codes = Array.from(codeSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  sel.replaceChildren(new Option('All EDP Codes', ''));
+  const examSubject = ex ? (ex.subject || ex.title || '') : '';
+  codes.forEach(c => {
+    const label = formatEdpOptionLabel(c, examSubject, rows);
+    sel.add(new Option(label, c));
+  });
+
+  sel.disabled = !codes.length;
+  if (codes.includes(previous)) sel.value = previous;
+
+  sel.onchange = () => {
+    applyResultsFilterAndRender();
   };
 }
 
@@ -1116,6 +1651,7 @@ async function loadExamResults(code) {
     _allResultRows = r.rows || [];
     _currentResultsTotal = r.total || 0;
 
+    populateDetailEdpFilter(_currentDetailExam, _allResultRows);
     updateResultsFilterCounts();
     applyResultsFilterAndRender();
     updateRosterReconciliation(_currentDetailExam, _allResultRows, _allActiveAttempts);
@@ -1163,9 +1699,12 @@ function applyViewMode_(rows) {
 
   const out = [];
   byEmail.forEach(group => {
+    // Exclude voided/retaken attempts from grade calculations
+    const validGroup = group.filter(r => r.status !== 'retaken');
+    const targetGroup = validGroup.length ? validGroup : group;
     if (mode === 'highest') {
-      const scored = group.filter(r => r.score != null);
-      if (!scored.length) { out.push(group[0]); return; }
+      const scored = targetGroup.filter(r => r.score != null);
+      if (!scored.length) { out.push(targetGroup[0]); return; }
       scored.sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         // tie-break: earlier submission first
@@ -1173,8 +1712,8 @@ function applyViewMode_(rows) {
       });
       out.push(scored[0]);
     } else if (mode === 'average') {
-      const scored = group.filter(r => r.score != null);
-      if (!scored.length) { out.push({ ...group[0], score: null, attempt: 'Avg', _isAggregate: true }); return; }
+      const scored = targetGroup.filter(r => r.score != null);
+      if (!scored.length) { out.push({ ...targetGroup[0], score: null, attempt: 'Avg', _isAggregate: true }); return; }
       const avg = scored.reduce((s, r) => s + r.score, 0) / scored.length;
       out.push({
         ...scored[0],
@@ -1192,6 +1731,12 @@ function applyResultsFilterAndRender() {
   if (!list) return;
 
   let filtered = _allResultRows;
+
+  // EDP Filter
+  const edpFilterVal = $('detailEdpFilter')?.value?.trim();
+  if (edpFilterVal) {
+    filtered = filtered.filter(r => String(r.edpCode || '').trim().toLowerCase() === edpFilterVal.toLowerCase());
+  }
 
   if (_currentResultsFilter === 'flagged') {
     filtered = filtered.filter(r => r.flagged || r.status === 'flagged');
@@ -1215,14 +1760,8 @@ function applyResultsFilterAndRender() {
   // Apply view mode (Highest / Average collapse per student).
   filtered = applyViewMode_(filtered);
 
-  // EDP-first sort (numeric-aware), then by student name.
-  filtered = filtered.slice().sort((a, b) => {
-    const edpA = String(a.edpCode || '');
-    const edpB = String(b.edpCode || '');
-    const edpCmp = edpA.localeCompare(edpB, undefined, { numeric: true });
-    if (edpCmp !== 0) return edpCmp;
-    return String(a.name || '').localeCompare(String(b.name || ''));
-  });
+  // Apply sorting (quick-pills and sortable table column headers)
+  filtered = sortResultRows_(filtered, _resultsSortKey);
 
   if (!filtered.length) {
     list.innerHTML = `<div class="muted small" style="padding:16px; text-align:center;">No submissions matching current filter or search.</div>`;
@@ -1230,6 +1769,55 @@ function applyResultsFilterAndRender() {
   }
 
   renderResultsTable(list, filtered, _currentResultsTotal);
+}
+
+function sortResultRows_(rows, sortKey) {
+  const list = rows.slice();
+  list.sort((a, b) => {
+    switch (sortKey) {
+      case 'score-desc':
+        return (b.score ?? -Infinity) - (a.score ?? -Infinity) || String(a.name || '').localeCompare(String(b.name || ''));
+      case 'score-asc':
+        return (a.score ?? Infinity) - (b.score ?? Infinity) || String(a.name || '').localeCompare(String(b.name || ''));
+      case 'name-asc':
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      case 'name-desc':
+        return String(b.name || '').localeCompare(String(a.name || ''));
+      case 'submitted-desc':
+        return String(b.ended || b.date || '').localeCompare(String(a.ended || a.date || '')) || String(a.name || '').localeCompare(String(b.name || ''));
+      case 'submitted-asc':
+        return String(a.ended || a.date || '').localeCompare(String(b.ended || b.date || '')) || String(a.name || '').localeCompare(String(b.name || ''));
+      case 'flagged-desc': {
+        const flagA = (a.flagged || a.status === 'flagged' || (a.notes && a.notes.trim())) ? 1 : 0;
+        const flagB = (b.flagged || b.status === 'flagged' || (b.notes && b.notes.trim())) ? 1 : 0;
+        if (flagB !== flagA) return flagB - flagA;
+        return (b.score ?? -Infinity) - (a.score ?? -Infinity);
+      }
+      case 'attempt-desc':
+        return (parseInt(b.attempt, 10) || 1) - (parseInt(a.attempt, 10) || 1) || String(a.name || '').localeCompare(String(b.name || ''));
+      case 'attempt-asc':
+        return (parseInt(a.attempt, 10) || 1) - (parseInt(b.attempt, 10) || 1) || String(a.name || '').localeCompare(String(b.name || ''));
+      case 'time-desc':
+        return (parseFloat(b.minutes) || 0) - (parseFloat(a.minutes) || 0) || String(a.name || '').localeCompare(String(b.name || ''));
+      case 'time-asc':
+        return (parseFloat(a.minutes) || 0) - (parseFloat(b.minutes) || 0) || String(a.name || '').localeCompare(String(b.name || ''));
+      case 'default':
+      default: {
+        const edpA = String(a.edpCode || '');
+        const edpB = String(b.edpCode || '');
+        const edpCmp = edpA.localeCompare(edpB, undefined, { numeric: true });
+        if (edpCmp !== 0) return edpCmp;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      }
+    }
+  });
+  return list;
+}
+
+function updateSortPillsUI(sortKey) {
+  document.querySelectorAll('.btn-sort-pill').forEach(btn => {
+    btn.classList.toggle('on', btn.dataset.sort === sortKey);
+  });
 }
 
 /* ================================================================
@@ -2626,6 +3214,7 @@ function renderStudentTable(students) {
   const course   = $('filterCourse')?.value || '';
   const section  = $('filterSection')?.value || '';
   const edp      = $('filterEdp')?.value || '';
+  const total    = (students || []).length;
   const filtered = (students || []).filter(s =>
     (!course  || s.course  === course) &&
     (!section || String(s.section) === section) &&
@@ -2633,7 +3222,23 @@ function renderStudentTable(students) {
   );
   const wrap = $('studentTable');
   wrap.replaceChildren();
-  announce(filtered.length + (filtered.length === 1 ? ' student' : ' students') + ' shown');
+
+  const countSummary = $('studentCountSummary');
+  if (countSummary) {
+    if (!total) {
+      countSummary.textContent = '0 students in roster';
+    } else if (filtered.length === total) {
+      countSummary.innerHTML = `Showing all <b>${total}</b> student${total === 1 ? '' : 's'}`;
+    } else {
+      countSummary.innerHTML = `Showing <b>${filtered.length}</b> of <b>${total}</b> student${total === 1 ? '' : 's'} (filtered)`;
+    }
+  }
+
+  const announceText = (filtered.length === total)
+    ? `Showing all ${total} students`
+    : `Showing ${filtered.length} of ${total} students`;
+  announce(announceText);
+
   if (!filtered.length) {
     const p = document.createElement('p');
     p.className = 'muted small';
@@ -2643,6 +3248,9 @@ function renderStudentTable(students) {
   filtered.forEach(s => {
     const row = document.createElement('div');
     row.className = 'student-card';
+    row.setAttribute('role', 'listitem');
+    const studentName = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'student';
+    row.setAttribute('aria-label', studentName);
 
     const info = document.createElement('div');
     info.className = 'student-info';
@@ -2664,7 +3272,6 @@ function renderStudentTable(students) {
 
     const actions = document.createElement('div');
     actions.className = 'student-actions';
-    const studentName = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'student';
 
     const btnEdit = document.createElement('button');
     btnEdit.type = 'button';
@@ -2701,7 +3308,47 @@ function renderStudentTable(students) {
 }
 
 /* Edit & Unlink Student Handlers */
+function populateEditStudentDatalists() {
+  const courses = new Set(DEFAULT_COURSES || []);
+  const sections = new Set(DEFAULT_SECTIONS || []);
+  const edps = new Set();
+
+  if (CACHE.options?.courses) CACHE.options.courses.forEach(c => courses.add(c));
+  if (CACHE.options?.sections) CACHE.options.sections.forEach(s => sections.add(s));
+  if (CACHE.options?.edpCodes) CACHE.options.edpCodes.forEach(e => edps.add(e));
+
+  if (CACHE.students) {
+    CACHE.students.forEach(st => {
+      if (st.course) courses.add(st.course);
+      if (st.section) sections.add(st.section);
+      if (st.edpCode) String(st.edpCode).split(/[,;/]+/).forEach(e => { const t = e.trim(); if (t) edps.add(t); });
+    });
+  }
+  if (CACHE.exams) {
+    CACHE.exams.forEach(ex => {
+      if (Array.isArray(ex.edpCodes)) ex.edpCodes.forEach(e => edps.add(e));
+      else if (ex.edpCode) String(ex.edpCode).split(/[,;/]+/).forEach(e => { const t = e.trim(); if (t) edps.add(t); });
+    });
+  }
+
+  const fillDatalist = (id, items) => {
+    const el = $(id);
+    if (!el) return;
+    el.replaceChildren();
+    [...items].sort((a,b) => String(a).localeCompare(String(b), undefined, { numeric: true })).forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item;
+      el.appendChild(opt);
+    });
+  };
+
+  fillDatalist('editStudentCourseOptions', courses);
+  fillDatalist('editStudentSectionOptions', sections);
+  fillDatalist('editStudentEdpOptions', edps);
+}
+
 function openEditStudent(s) {
+  populateEditStudentDatalists();
   $('editStudentRow').value = s.row;
   $('editStudentLast').value = s.lastName || '';
   $('editStudentFirst').value = s.firstName || '';
@@ -2731,8 +3378,8 @@ if ($('btnSaveEditStudent')) {
       year: $('editStudentYear').value.trim(),
       email: $('editStudentEmail').value.trim()
     };
-    if (!details.lastName || !details.firstName || !details.course || !details.section) {
-      $('editStudentOut').innerHTML = '<p class="err small">Last name, first name, course, and section are required.</p>';
+    if (!details.lastName && !details.firstName) {
+      $('editStudentOut').innerHTML = '<p class="err small">At least a first name or last name is required.</p>';
       return;
     }
     const btn = $('btnSaveEditStudent');
@@ -2960,14 +3607,17 @@ function populateAddStudentEdpOptions(exams) {
   if (codes.includes(previous)) sel.value = previous;
 }
 
-function populateResultsEdpPicker(rows) {
+function populateResultsEdpPicker(rows, examSubject) {
   const sel = $('resultsEdpPicker');
   if (!sel) return;
   const previous = sel.value;
   const codes = [...new Set((rows || []).map(r => String(r.edpCode || '').trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   sel.replaceChildren(new Option('All EDP codes', ''));
-  codes.forEach(code => sel.add(new Option('EDP ' + code, code)));
+  codes.forEach(code => {
+    const label = formatEdpOptionLabel(code, examSubject, rows);
+    sel.add(new Option(label, code));
+  });
   sel.disabled = !codes.length;
   if (codes.includes(previous)) sel.value = previous;
 }
@@ -3010,7 +3660,9 @@ $('resultsExamPicker').onchange = async function () {
     r.rows = resultRowsWithEdp(r.rows);
     const wrap = document.createElement('div');
     wrap.className = 'stack';
-    populateResultsEdpPicker(r.rows || []);
+    const examObj = (CACHE.exams || []).find(e => e.code === code);
+    const examSubject = examObj ? (examObj.subject || examObj.title || '') : '';
+    populateResultsEdpPicker(r.rows || [], examSubject);
     // Summary card
     const summary = document.createElement('div');
     summary.className = 'card';
@@ -3022,7 +3674,7 @@ $('resultsExamPicker').onchange = async function () {
     </div>`;
 
     if (r.rows?.length && r.total > 0) {
-      const valid = r.rows.filter(row => row.score != null);
+      const valid = r.rows.filter(row => row.score != null && row.status !== 'retaken');
       if (valid.length) {
         const hiCount = valid.filter(row => (row.score / r.total) >= 0.80).length;
         const midCount = valid.filter(row => (row.score / r.total) >= 0.50 && (row.score / r.total) < 0.80).length;
@@ -3064,17 +3716,14 @@ $('resultsExamPicker').onchange = async function () {
       const tableWrap = document.createElement('div');
       tableWrap.style.overflowX = 'auto';
 
-      // shownRows applies EDP filter → view-mode collapse → EDP-first sort.
+      // shownRows applies EDP filter → view-mode collapse → active sorting.
       const shownRows = () => {
         const edp = $('resultsEdpPicker')?.value || '';
         let rows = edp
           ? _resultsTabRows.filter(row => String(row.edpCode || '') === edp)
           : _resultsTabRows.slice();
         rows = applyViewMode_(rows);
-        return rows.sort((a, b) => {
-          const ec = String(a.edpCode || '').localeCompare(String(b.edpCode || ''), undefined, { numeric: true });
-          return ec !== 0 ? ec : String(a.name || '').localeCompare(String(b.name || ''));
-        });
+        return sortResultRows_(rows, _resultsSortKey);
       };
 
       renderResultsTable(tableWrap, shownRows(), _resultsTabTotal);
@@ -3122,15 +3771,55 @@ function renderResultsTable(wrap, rows, total) {
   const isAvgMode = (_currentResultsViewMode === 'average');
   const tbl = document.createElement('table');
   tbl.className = 'results-table';
+
+  const getSortClass = (col) => {
+    if (_resultsSortKey === col + '-asc') return 'sortable sort-asc';
+    if (_resultsSortKey === col + '-desc') return 'sortable sort-desc';
+    if (col === 'name' && _resultsSortKey === 'name-asc') return 'sortable sort-asc';
+    if (col === 'name' && _resultsSortKey === 'name-desc') return 'sortable sort-desc';
+    if (col === 'score' && _resultsSortKey === 'score-asc') return 'sortable sort-asc';
+    if (col === 'score' && _resultsSortKey === 'score-desc') return 'sortable sort-desc';
+    if (col === 'attempt' && _resultsSortKey === 'attempt-asc') return 'sortable sort-asc';
+    if (col === 'attempt' && _resultsSortKey === 'attempt-desc') return 'sortable sort-desc';
+    if (col === 'time' && _resultsSortKey === 'time-asc') return 'sortable sort-asc';
+    if (col === 'time' && _resultsSortKey === 'time-desc') return 'sortable sort-desc';
+    if (col === 'flagged' && _resultsSortKey === 'flagged-desc') return 'sortable sort-desc';
+    return 'sortable';
+  };
+
   tbl.innerHTML = `<caption>${rows.length} student${rows.length === 1 ? '' : 's'} · ${isAvgMode ? 'average' : (_currentResultsViewMode === 'highest' ? 'highest score' : 'all attempts')}</caption>
   <thead><tr>
-    <th scope="col">Student</th>
-    <th scope="col">Score</th>
-    <th scope="col">Attempt</th>
-    <th scope="col">Status</th>
-    <th scope="col">Time</th>
-    <th scope="col">Anti-Cheat / Proctor Notes</th>
+    <th scope="col" class="${getSortClass('name')}" data-sort-col="name" title="Click to sort by name">Student</th>
+    <th scope="col" class="${getSortClass('score')}" data-sort-col="score" title="Click to sort by score">Score</th>
+    <th scope="col" class="${getSortClass('attempt')}" data-sort-col="attempt" title="Click to sort by attempt">Attempt</th>
+    <th scope="col" class="${getSortClass('status')}" data-sort-col="status" title="Click to sort by status">Status</th>
+    <th scope="col" class="${getSortClass('time')}" data-sort-col="time" title="Click to sort by time">Time</th>
+    <th scope="col" class="${getSortClass('flagged')}" data-sort-col="flagged" title="Click to sort by anti-cheat flags">Anti-Cheat / Proctor Notes</th>
   </tr></thead>`;
+
+  tbl.querySelectorAll('th.sortable').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.onclick = () => {
+      const col = th.dataset.sortCol;
+      if (col === 'name') {
+        _resultsSortKey = (_resultsSortKey === 'name-asc') ? 'name-desc' : 'name-asc';
+      } else if (col === 'score') {
+        _resultsSortKey = (_resultsSortKey === 'score-desc') ? 'score-asc' : 'score-desc';
+      } else if (col === 'attempt') {
+        _resultsSortKey = (_resultsSortKey === 'attempt-desc') ? 'attempt-asc' : 'attempt-desc';
+      } else if (col === 'time') {
+        _resultsSortKey = (_resultsSortKey === 'time-desc') ? 'time-asc' : 'time-desc';
+      } else if (col === 'status' || col === 'flagged') {
+        _resultsSortKey = (_resultsSortKey === 'flagged-desc') ? 'default' : 'flagged-desc';
+      }
+      updateSortPillsUI(_resultsSortKey);
+      if ($('scTResults') && !$('scTResults').hidden) {
+        _resultsTabRefresh?.();
+      } else {
+        applyResultsFilterAndRender();
+      }
+    };
+  });
   const tbody = document.createElement('tbody');
   rows.forEach(row => {
     const tr = document.createElement('tr');
@@ -3139,11 +3828,13 @@ function renderResultsTable(wrap, rows, total) {
     const statusIcon = (row.flagged || row.status === 'flagged') ? '🚩'
       : row.status === 'in-progress' ? '🔄'
       : row.status === 'late' ? '⏰'
+      : row.status === 'retaken' ? '🔄'
       : row.done ? '✅' : '—';
 
     const statusWord = (row.flagged || row.status === 'flagged') ? 'Flagged'
       : row.status === 'in-progress' ? 'In progress'
       : row.status === 'late' ? 'Late'
+      : row.status === 'retaken' ? 'Retake granted'
       : row.done ? 'Done' : 'Not started';
 
     const metaParts = [];
@@ -3157,9 +3848,9 @@ function renderResultsTable(wrap, rows, total) {
     const scoreDisplay = row.score != null
       ? (row._isAggregate ? row.score.toFixed(2) : row.score) + ' / ' + total
       : '—';
-    // Grade-correction button: hidden for aggregate rows.
-    const corrBtn = (row.score != null && !row._isAggregate)
-      ? `<button type="button" class="btn-sm btn-ghost btn-correct-score" data-email="${esc(row.email)}" data-attempt="${esc(row.attempt || 1)}" data-score="${esc(row.score)}" title="Audit Grade Correction" style="padding:1px 4px;font-size:11px;">✏️</button>`
+    // Grade-correction / Retake button: available on any individual student row.
+    const corrBtn = (!row._isAggregate && row.email)
+      ? `<button type="button" class="btn-sm btn-ghost btn-correct-score" data-email="${esc(row.email)}" data-attempt="${esc(row.attempt || 1)}" data-score="${esc(row.score != null ? row.score : '')}" data-attempt-id="${esc(row.attemptId || '')}" title="Audit Grade Correction / Retake" aria-label="Audit Grade Correction or Retake for ${esc(row.name || row.email)}" style="padding:2px 6px; font-size:12px; border-radius:var(--r-sm); border:1px solid var(--edge);">✏️</button>`
       : '';
     // Attempt badge: 'Avg' for averages, try number otherwise.
     const attemptBadge = row._isAggregate
@@ -3211,7 +3902,7 @@ function renderResultsTable(wrap, rows, total) {
   tbl.querySelectorAll('.btn-correct-score').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
-      openGradeCorrectionModal(btn.dataset.email, btn.dataset.attempt, btn.dataset.score);
+      openGradeCorrectionModal(btn.dataset.email, btn.dataset.attempt, btn.dataset.score, btn.dataset.attemptId);
     };
   });
   wrap.append(tbl);
@@ -3247,7 +3938,7 @@ function exportCSV(rows, code) {
       r.notes
     ].map(csvCell).join(','));
   // A BOM, or Excel reads the accented names in a Filipino roster as mojibake.
-  const csv = '\ufeff' + [headers, ...lines].join('\r\r\n');
+  const csv = '\ufeff' + [headers, ...lines].join('\r\n');
 
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
@@ -3354,9 +4045,19 @@ function fallbackCopyResultText(text, done) {
     });
     btn.classList.add('on');
     btn.setAttribute('aria-pressed', 'true');
-    // Refresh whichever panel is currently active.
-    // Results tab (scTResults) uses _resultsTabRefresh;
-    // Exam detail (scTExamDetail) uses applyResultsFilterAndRender.
+    if ($('scTResults') && !$('scTResults').hidden) {
+      _resultsTabRefresh?.();
+    } else {
+      applyResultsFilterAndRender();
+    }
+  };
+});
+
+/* Results Quick-Sort Pill Listeners */
+document.querySelectorAll('.btn-sort-pill').forEach(btn => {
+  btn.onclick = () => {
+    _resultsSortKey = btn.dataset.sort;
+    updateSortPillsUI(_resultsSortKey);
     if ($('scTResults') && !$('scTResults').hidden) {
       _resultsTabRefresh?.();
     } else {
@@ -3375,13 +4076,13 @@ if ($('searchResultQuery')) {
 if ($('chkAutoRefreshResults')) {
   $('chkAutoRefreshResults').onchange = (e) => {
     if (e.target.checked) {
-      toast('Live monitoring active (refreshing every 15s)', 'ok');
+      toast('Auto-refresh active (refreshing every 60s)', 'ok');
       if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
       _autoRefreshTimer = setInterval(() => {
         if (_currentDetailExamCode && !$('scTExamDetail').hidden) {
           loadExamResults(_currentDetailExamCode);
         }
-      }, 15000);
+      }, 60000);
     } else {
       if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
       _autoRefreshTimer = null;
@@ -3775,6 +4476,9 @@ function renderActiveAttemptsList(attempts) {
           <button class="btn-sm btn-outline btn-reopen-attempt" data-attempt-id="${esc(att.attemptId)}" data-email="${esc(att.email)}" type="button" style="font-size:0.75rem;">
             🔄 Reopen (+Time)
           </button>
+          <button class="btn-sm btn-outline btn-delete-attempt" data-attempt-id="${esc(att.attemptId)}" data-email="${esc(att.email)}" type="button" style="font-size:0.75rem;color:var(--bad,#dc2626);border-color:var(--bad,#dc2626);" title="Force delete this student session">
+            ✕ Delete
+          </button>
         </div>
       </div>
     `;
@@ -3787,6 +4491,35 @@ function renderActiveAttemptsList(attempts) {
       const attemptId = btn.dataset.attemptId;
       const email = btn.dataset.email;
       openReopenModal(attemptId, email);
+    };
+  });
+
+  list.querySelectorAll('.btn-delete-attempt').forEach(btn => {
+    btn.onclick = async () => {
+      const attemptId = btn.dataset.attemptId;
+      const email = btn.dataset.email;
+      if (!confirm(`Force delete active session for ${email}?\n\nThis will remove the "EXAM IN PROGRESS" card from their screen immediately so they can start fresh.`)) return;
+      btn.disabled = true;
+      btn.textContent = 'Deleting…';
+      try {
+        const r = await api('teacherDeleteActiveAttempt', {
+          idToken: await idToken(),
+          attemptId: attemptId
+        });
+        if (!r.ok) {
+          toast(r.message || 'Could not delete session.', 'bad');
+          return;
+        }
+        toast(`Active session for ${email} deleted.`, 'ok');
+        if (_currentDetailExamCode) {
+          await loadActiveAttempts(_currentDetailExamCode);
+        }
+      } catch (e) {
+        toast('Error deleting session: ' + (e?.message || e), 'bad');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '✕ Delete';
+      }
     };
   });
 }
@@ -3840,6 +4573,35 @@ if ($('btnConfirmReopen')) {
 
 if ($('btnCloseReopenModal')) $('btnCloseReopenModal').onclick = () => closeModal($('reopenAttemptModal'));
 if ($('btnCancelReopenModal')) $('btnCancelReopenModal').onclick = () => closeModal($('reopenAttemptModal'));
+
+if ($('btnPurgeActiveSessions')) {
+  $('btnPurgeActiveSessions').onclick = async () => {
+    if (!_currentDetailExamCode) return;
+    if (!confirm(`Are you sure you want to FORCE PURGE all active/in-progress student sessions for ${_currentDetailExamCode}?\n\nThis will clear the "EXAM IN PROGRESS" banner and badges from students' devices so they can start fresh.`)) {
+      return;
+    }
+    const btn = $('btnPurgeActiveSessions');
+    btn.disabled = true;
+    btn.textContent = 'Purging…';
+    try {
+      const r = await api('teacherForcePurgeActiveAttempts', {
+        idToken: await idToken(),
+        code: _currentDetailExamCode
+      });
+      if (!r.ok) {
+        toast(r.message || 'Could not purge active sessions.', 'bad');
+        return;
+      }
+      toast(`Successfully purged ${r.purgedCount || 0} active session(s) for ${_currentDetailExamCode}.`, 'ok');
+      await loadActiveAttempts(_currentDetailExamCode);
+    } catch (e) {
+      toast('Error purging active sessions: ' + (e?.message || e), 'bad');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🚨 Clear In-Progress Sessions';
+    }
+  };
+}
 
 function updateRosterReconciliation(exam, results, activeAttempts) {
   const reconWrap = $('rosterReconciliationWrap');
@@ -4004,14 +4766,94 @@ if ($('menuExportBackup')) {
   };
 }
 
-function openGradeCorrectionModal(email, attemptNo, currentScore) {
+function openGradeCorrectionModal(email, attemptNo, currentScore, attemptId) {
   if ($('corrStudentEmail')) $('corrStudentEmail').value = email || '';
   if ($('corrAttemptNo')) $('corrAttemptNo').value = attemptNo || '1';
-  if ($('corrCurrentScore')) $('corrCurrentScore').value = currentScore != null ? currentScore : '—';
+  if ($('corrAttemptId')) $('corrAttemptId').value = attemptId || '';
+  if ($('corrCurrentScore')) $('corrCurrentScore').value = currentScore != null && currentScore !== '' ? currentScore : '—';
   if ($('corrNewScore')) $('corrNewScore').value = '';
   if ($('corrReason')) $('corrReason').value = '';
+  if ($('corrRetakeReason')) $('corrRetakeReason').value = '';
+  if ($('corrRetakeForm')) $('corrRetakeForm').hidden = true;
+  if ($('btnShowRetakeForm')) $('btnShowRetakeForm').hidden = false;
   if ($('corrModalErr')) $('corrModalErr').hidden = true;
   openModal($('gradeCorrectionModal'), $('corrNewScore'));
+}
+
+if ($('btnShowRetakeForm')) {
+  $('btnShowRetakeForm').onclick = () => {
+    if ($('corrRetakeForm')) $('corrRetakeForm').hidden = false;
+    if ($('btnShowRetakeForm')) $('btnShowRetakeForm').hidden = true;
+    if ($('corrRetakeReason')) $('corrRetakeReason').focus();
+  };
+}
+
+if ($('btnCancelRetakeForm')) {
+  $('btnCancelRetakeForm').onclick = () => {
+    if ($('corrRetakeForm')) $('corrRetakeForm').hidden = true;
+    if ($('btnShowRetakeForm')) $('btnShowRetakeForm').hidden = false;
+    if ($('corrRetakeReason')) $('corrRetakeReason').value = '';
+    if ($('corrModalErr')) $('corrModalErr').hidden = true;
+  };
+}
+
+if ($('btnConfirmRetake')) {
+  $('btnConfirmRetake').onclick = async () => {
+    const email = $('corrStudentEmail')?.value;
+    const tryNumber = $('corrAttemptNo')?.value || '1';
+    const attemptId = $('corrAttemptId')?.value || '';
+    const reason = ($('corrRetakeReason')?.value || '').trim();
+
+    if (!reason) {
+      if ($('corrModalErr')) {
+        $('corrModalErr').textContent = 'A written justification/reason is required to authorize an exam retake.';
+        $('corrModalErr').hidden = false;
+      }
+      $('corrRetakeReason')?.focus();
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to authorize a retake for ${email} (Attempt #${tryNumber})?\n\nThis will void the previous submission and enable the student to take the exam again from scratch.`)) {
+      return;
+    }
+
+    const btn = $('btnConfirmRetake');
+    btn.disabled = true;
+    btn.textContent = 'Granting Retake…';
+
+    try {
+      const r = await api('teacherGrantRetake', {
+        idToken: await idToken(),
+        code: _currentDetailExamCode,
+        email,
+        tryNumber,
+        attemptId,
+        reason
+      });
+
+      if (!r.ok) {
+        if ($('corrModalErr')) {
+          $('corrModalErr').textContent = r.message || 'Retake authorization failed.';
+          $('corrModalErr').hidden = false;
+        }
+        return;
+      }
+
+      toast('✓ Retake authorized successfully for ' + email + '.', 'ok');
+      closeModal($('gradeCorrectionModal'));
+      if (_currentDetailExamCode) {
+        await loadExamResults(_currentDetailExamCode);
+      }
+    } catch (err) {
+      if ($('corrModalErr')) {
+        $('corrModalErr').textContent = err?.message || String(err);
+        $('corrModalErr').hidden = false;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Confirm & Grant Retake';
+    }
+  };
 }
 
 if ($('btnCloseGradeCorrection')) $('btnCloseGradeCorrection').onclick = () => closeModal($('gradeCorrectionModal'));
@@ -4021,6 +4863,7 @@ if ($('btnSubmitCorrection')) {
   $('btnSubmitCorrection').onclick = async () => {
     const email = $('corrStudentEmail').value;
     const tryNumber = $('corrAttemptNo').value;
+    const attemptId = $('corrAttemptId')?.value || '';
     const newScore = parseFloat($('corrNewScore').value);
     const reason = ($('corrReason').value || '').trim();
 
@@ -4050,6 +4893,7 @@ if ($('btnSubmitCorrection')) {
         code: _currentDetailExamCode,
         email,
         tryNumber,
+        attemptId,
         newScore,
         reason
       });
@@ -4075,6 +4919,86 @@ if ($('btnSubmitCorrection')) {
     } finally {
       btn.disabled = false;
       btn.textContent = 'Apply & Audit Log';
+    }
+  };
+}
+
+/* ================================================================
+   Proctoring & Anti-Cheat Settings Modal
+   ================================================================ */
+
+const DEFAULT_PROCTORING_WARNING = 'Switching tabs, minimizing the browser, or navigating away during the exam is strictly prohibited. Your departures and time away are recorded in real-time. Exceeding allowable strikes will result in immediate automatic submission of your exam.';
+
+function openProctoringModal(ex) {
+  _currentDetailExamCode = ex.code;
+  _currentDetailExam = ex;
+  if ($('procExamCodeLabel')) $('procExamCodeLabel').textContent = ex.code;
+  if ($('procMaxStrikes')) $('procMaxStrikes').value = String(ex.maxStrikes != null ? ex.maxStrikes : 3);
+  if ($('procWarningNotes')) $('procWarningNotes').value = ex.proctoringNotes || DEFAULT_PROCTORING_WARNING;
+  if ($('procSaveOut')) $('procSaveOut').replaceChildren();
+  openModal($('proctoringModal'), $('procMaxStrikes'));
+}
+
+if ($('btnResetProcDefault')) {
+  $('btnResetProcDefault').onclick = () => {
+    if ($('procWarningNotes')) $('procWarningNotes').value = DEFAULT_PROCTORING_WARNING;
+  };
+}
+
+if ($('btnCloseProctoringModal')) $('btnCloseProctoringModal').onclick = () => closeModal($('proctoringModal'));
+if ($('btnCancelProctoringModal')) $('btnCancelProctoringModal').onclick = () => closeModal($('proctoringModal'));
+
+if ($('btnSaveProctoring')) {
+  $('btnSaveProctoring').onclick = async () => {
+    const code = _currentDetailExamCode;
+    if (!code) return;
+    const maxStrikes = parseInt($('procMaxStrikes')?.value || '3', 10);
+    const proctoringNotes = ($('procWarningNotes')?.value || '').trim();
+    const btn = $('btnSaveProctoring');
+    const out = $('procSaveOut');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    if (out) out.replaceChildren();
+
+    try {
+      const r = await api('teacherUpdateProctoring', {
+        idToken: await idToken(),
+        code,
+        maxStrikes,
+        proctoringNotes
+      });
+      if (!r.ok) {
+        if (out) {
+          const errP = document.createElement('p');
+          errP.className = 'err small';
+          errP.textContent = r.message || 'Failed to update proctoring settings.';
+          out.replaceChildren(errP);
+        }
+        return;
+      }
+      if (_currentDetailExam) {
+        _currentDetailExam.maxStrikes = maxStrikes;
+        _currentDetailExam.proctoringNotes = proctoringNotes;
+      }
+      if (CACHE.exams) {
+        const target = CACHE.exams.find(e => e.code === code);
+        if (target) {
+          target.maxStrikes = maxStrikes;
+          target.proctoringNotes = proctoringNotes;
+        }
+      }
+      toast('✓ Proctoring & anti-cheat settings updated.', 'ok');
+      closeModal($('proctoringModal'));
+    } catch (err) {
+      if (out) {
+        const errP = document.createElement('p');
+        errP.className = 'err small';
+        errP.textContent = err?.message || String(err);
+        out.replaceChildren(errP);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Proctoring Settings';
     }
   };
 }
