@@ -10,19 +10,87 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut,
   onAuthStateChanged, setPersistence, browserSessionPersistence, browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js';
-
-import { FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig, FEATURE_FLAGS, isDeltaAutosaveEnabled } from './config.js';
 import {
-  initFx, play, haptic, feedback, announce, confetti, revealIn,
+  getFirestore, doc, setDoc, updateDoc
+} from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
+
+import {
+  FIREBASE_CONFIG, API_URL, SCHOOL_NAME, HOSTED_DOMAIN, validateConfig,
+  FEATURE_FLAGS, isDeltaAutosaveEnabled, EMERGENCY_SERVER_HALT, EMERGENCY_HALT_MESSAGE
+} from './config.js';
+import {
+  initFx, play, haptic, feedback, announce, toast, confetti, revealIn,
   openModal, closeModal, mountSoundToggle, reducedMotion
 } from './fx.js';
 
 const $ = id => document.getElementById(id);
 
-// A module error used to leave the initial loading screen visible forever.
-// Keep the ordinary message student-safe, but expose the detail for a
-// deliberate ?diagnose=1 support check.
+export function triggerEmergencyHalt() {
+  console.warn('[EMERGENCY CIRCUIT BREAKER] Halting all student processes.');
+  if (typeof S !== 'undefined' && S) {
+    if (S.globalTick) { clearInterval(S.globalTick); S.globalTick = null; }
+    if (S.tick) { clearInterval(S.tick); S.tick = null; }
+    S.emergencyHalted = true;
+  }
+  if (typeof saveTimer !== 'undefined' && saveTimer) {
+    clearInterval(saveTimer);
+    saveTimer = null;
+  }
+  if (typeof warningCountdownInterval !== 'undefined' && warningCountdownInterval) {
+    clearInterval(warningCountdownInterval);
+    warningCountdownInterval = null;
+  }
+
+  try {
+    if (typeof S !== 'undefined' && S && (S.token || S.answers)) {
+      const backupKey = 'EMERGENCY_EXAM_BACKUP_' + (S.token || 'current');
+      localStorage.setItem(backupKey, JSON.stringify({
+        token: S.token,
+        attemptId: S.attemptId,
+        code: S.code,
+        answers: S.answers,
+        perQ: S.perQ,
+        idx: S.idx,
+        time: Date.now()
+      }));
+    }
+  } catch (e) {
+    console.warn('[EMERGENCY CIRCUIT BREAKER] backup failed:', e);
+  }
+
+  const title = $('fatalTitle');
+  const text = $('fatalText');
+  const btn = $('btnReload');
+  if (title) title.textContent = '⚠️ Exam Paused by Instructor';
+  if (text) {
+    text.innerHTML = `
+      <div style="background:rgba(239, 68, 68, 0.08); border:1px solid var(--bad,#ef4444); border-radius:10px; padding:18px; margin:16px 0; color:var(--fg,#111827); text-align:left;">
+        <p style="font-weight:700; margin-top:0; color:var(--bad,#ef4444); font-size:1.1rem;">
+          The server is temporarily unavailable and all exam processes have been safely paused.
+        </p>
+        <ul style="margin:10px 0 14px 20px; padding:0; font-size:0.95rem; line-height:1.6;">
+          <li><b>Your exam timer is STOPPED.</b> You will NOT lose exam time.</li>
+          <li><b>All your answers are SAFELY SAVED</b> locally on this computer.</li>
+          <li><b>DO NOT close or reload this browser tab.</b></li>
+        </ul>
+        <p style="margin-bottom:0; font-size:0.88rem; color:var(--ink2,#4b5563);">
+          Please wait quietly. When your instructor announces the server is restored, your exam will resume right where you left off.
+        </p>
+      </div>
+    `;
+  }
+  if (btn) btn.hidden = true;
+
+  document.querySelectorAll('[id^="sc"]').forEach(el => {
+    el.hidden = (el.id !== 'scFatal');
+  });
+}
+
 function reportStartupFailure(err) {
+  if (EMERGENCY_SERVER_HALT) {
+    triggerEmergencyHalt();
+    return;
+  }
   const detail = String(err?.message || err || 'unknown startup error');
   console.error('[student] startup failure:', err);
   const title = $('fatalTitle');
@@ -99,17 +167,24 @@ if ($('btnTheme')) mountSoundToggle($('btnTheme'));
 
 /* ---------------- screens ---------------- */
 
-const SCREENS = ['scLoading', 'scSignIn', 'scFatal', 'scRegister', 'scPick',
+const SCREENS = ['scLoading', 'scInAppBrowser', 'scSignIn', 'scFatal', 'scRegister', 'scPick',
                  'scNotListed', 'scStart', 'scHistory', 'scAccount',
-                 'scBrief', 'scResume', 'scExam', 'scSending', 'scDone'];
+                 'scQueue', 'scBrief', 'scResume', 'scExam', 'scSending', 'scDone'];
 
 /** What a screen is called, for the live region. */
 const SCREEN_NAME = {
-  scSignIn: 'Sign in', scStart: 'Choose your exam', scHistory: 'Exams you have taken',
+  scInAppBrowser: 'Open in your browser', scSignIn: 'Sign in',
+  scStart: 'Choose your exam', scHistory: 'Exams you have taken',
   scAccount: 'Account', scRegister: 'Find your name', scPick: 'Which one is you',
-  scNotListed: 'We could not find you', scBrief: 'Exam details', scResume: 'Exam in progress',
+  scNotListed: 'We could not find you', scQueue: 'Exam room admissions',
+  scBrief: 'Exam details', scResume: 'Exam in progress',
   scExam: 'Exam', scSending: 'Submitting', scDone: 'Exam submitted', scFatal: 'Something went wrong'
 };
+
+let awayAt = null;
+let behaviorWarnings = 0;
+let warningCountdownInterval = null;
+let blurCheck = null;
 
 function show(id) {
   const target = $(id);
@@ -126,6 +201,12 @@ function show(id) {
   if (!inExam) {
     if ($('pillSkipped')) $('pillSkipped').hidden = true;
     if ($('pillTimer')) $('pillTimer').hidden = true;
+    awayAt = null;
+    if (blurCheck) {
+      clearTimeout(blurCheck);
+      blurCheck = null;
+    }
+    dismissWarning();
   }
   syncBar(id);          // declared below; function declarations hoist
   scrollTo(0, 0);
@@ -137,38 +218,208 @@ function show(id) {
   if (id !== 'scExam' && target) revealIn(target);
 }
 
+/* ---------------- in-app browser gate ---------------- */
+
+const IAB_DISMISSED_KEY = 'iab_dismissed';
+let iabCopyResetTimer = null;
+
+/**
+ * Identifies embedded browsers that cannot reliably complete Google OAuth.
+ * Optional arguments keep the detector deterministic in unit tests while the
+ * defaults read the real browser environment in production.
+ */
+export function detectInAppBrowser(
+  userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  environment = {}
+) {
+  const ua = String(userAgent || '');
+  const nav = typeof navigator !== 'undefined' ? navigator : {};
+  const platformName = String(environment.platform ?? nav.platform ?? '');
+  const maxTouchPoints = Number(environment.maxTouchPoints ?? nav.maxTouchPoints ?? 0);
+  const standalone = environment.standalone ?? (nav.standalone === true);
+  const isIOS = /\b(?:iPhone|iPad|iPod)\b/i.test(ua) ||
+    (platformName === 'MacIntel' && maxTouchPoints > 1);
+  const isAndroid = /\bAndroid\b/i.test(ua);
+  const platform = isIOS ? 'ios' : (isAndroid ? 'android' : 'other');
+
+  // An installed PWA is a full browser context even when its iOS user-agent
+  // happens to resemble a WKWebView.
+  if (standalone === true) {
+    return { isInApp: false, platform, app: '', reason: 'standalone' };
+  }
+
+  const appSignatures = [
+    ['Messenger', /\b(?:FBAN\/MessengerForiOS|MessengerForiOS|FB_IAB\/(?:MESSENGER|ORCA)|FBAN\/(?:MESSENGER|EMA|MESSENGERLITE))\b/i],
+    ['Facebook', /\b(?:FBAN|FBAV|FB_IAB)\//i],
+    ['Instagram', /\bInstagram\b/i],
+    ['TikTok', /\b(?:TikTok|musical_ly|ByteDanceWebview)\b/i],
+    ['LINE', /\bLine\//i],
+    ['X / Twitter', /\b(?:Twitter for iPhone|TwitterAndroid|Twitter)\b/i],
+    ['Snapchat', /\bSnapchat\b/i],
+    ['WeChat', /\b(?:MicroMessenger|WeChat)\b/i],
+    ['LinkedIn', /\bLinkedInApp\b/i],
+    ['Pinterest', /\bPinterest\b/i]
+  ];
+
+  for (const [app, signature] of appSignatures) {
+    if (signature.test(ua)) {
+      return { isInApp: true, platform, app, reason: 'app-signature' };
+    }
+  }
+
+  if (isIOS && /AppleWebKit/i.test(ua) && /Mobile\//i.test(ua)) {
+    const isSafari = /Version\/[\d.]+[\s\S]*Safari\/[\d.]+/i.test(ua);
+    const isKnownIOSBrowser = /\b(?:CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|Brave|YaBrowser)\//i.test(ua);
+    if (!isSafari && !isKnownIOSBrowser) {
+      return { isInApp: true, platform, app: 'iOS app', reason: 'ios-webview' };
+    }
+  }
+
+  const isAndroidWebView = isAndroid && /\bwv\b/i.test(ua) && /\bVersion\/[\d.]+/i.test(ua);
+  if (isAndroidWebView) {
+    return { isInApp: true, platform, app: 'Android app', reason: 'android-webview' };
+  }
+
+  return { isInApp: false, platform, app: '', reason: '' };
+}
+
+function iabWasDismissed() {
+  try { return sessionStorage.getItem(IAB_DISMISSED_KEY) === '1'; }
+  catch { return false; }
+}
+
+function chromeIntentFor(href) {
+  try {
+    const original = new URL(href);
+    if (original.protocol !== 'https:' && original.protocol !== 'http:') return '';
+    const fallback = original.href;
+    original.hash = '';
+    const target = original.host + original.pathname + original.search;
+    return 'intent://' + target + '#Intent;scheme=' + original.protocol.slice(0, -1) +
+      ';package=com.android.chrome;S.browser_fallback_url=' + encodeURIComponent(fallback) + ';end';
+  } catch {
+    return '';
+  }
+}
+
+function configureIabScreen(info) {
+  const appName = info.app || 'In-app';
+  const isAndroid = info.platform === 'android';
+  const browserName = isAndroid ? 'Chrome or your default browser' :
+    (info.platform === 'ios' ? 'Safari' : 'your regular browser');
+
+  $('iabAppBadge').textContent = appName + ' browser detected';
+  $('iabHeading').textContent = 'Please open this page in ' + browserName;
+  $('iabExplanation').textContent = appName +
+    ' can block Google Sign-In and can mistake app notifications or gestures for leaving an exam.';
+  $('iabStepOne').innerHTML = 'In ' + appName +
+    ', tap <b>…</b> (three dots) or the Share/menu icon in the top or bottom corner.';
+  $('iabOpenLabel').textContent = isAndroid ? 'Open in Chrome or Open in browser' :
+    (info.platform === 'ios' ? 'Open in Safari' : 'Open in browser');
+
+  const chromeLink = $('btnOpenChrome');
+  const intent = isAndroid ? chromeIntentFor(location.href) : '';
+  chromeLink.hidden = !intent;
+  if (intent) chromeLink.href = intent;
+}
+
+function showSignedOutEntry() {
+  const info = detectInAppBrowser();
+  if (info.isInApp && !iabWasDismissed()) {
+    configureIabScreen(info);
+    show('scInAppBrowser');
+    return;
+  }
+  show('scSignIn');
+}
+
+function fallbackCopyText(text) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.readOnly = true;
+  area.setAttribute('aria-hidden', 'true');
+  area.style.position = 'absolute';
+  area.style.left = '-9999px';
+  document.body.append(area);
+  area.select();
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch {}
+  area.remove();
+  return copied;
+}
+
+async function copyIabLink() {
+  const button = $('btnCopyIabLink');
+  const status = $('iabCopyStatus');
+  const link = location.href;
+  let copied = false;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(link);
+      copied = true;
+    } else {
+      copied = fallbackCopyText(link);
+    }
+  } catch {
+    copied = fallbackCopyText(link);
+  }
+
+  clearTimeout(iabCopyResetTimer);
+  button.textContent = copied ? '✓ Exam Link Copied' : 'Copy was blocked';
+  status.textContent = copied
+    ? 'Paste the copied link into your regular browser.'
+    : 'Press and hold the address bar, copy this page address, then paste it into your regular browser.';
+  iabCopyResetTimer = setTimeout(() => {
+    button.textContent = '📋 Copy Exam Link';
+  }, 3500);
+}
+
+if ($('btnCopyIabLink')) $('btnCopyIabLink').onclick = copyIabLink;
+if ($('btnDismissIab')) {
+  $('btnDismissIab').onclick = () => {
+    try { sessionStorage.setItem(IAB_DISMISSED_KEY, '1'); } catch {}
+    show('scSignIn');
+  };
+}
+
 function fatal(title, msg) {
   $('fatalTitle').textContent = title;
   $('fatalText').textContent = msg;
   show('scFatal');
 }
 $('btnReload').onclick = () => location.reload();
+if ($('btnFatalBack')) {
+  $('btnFatalBack').onclick = () => {
+    S.active = null;
+    if ($('activeExamCard')) $('activeExamCard').hidden = true;
+    boot('scStart');
+  };
+}
 
-/* ---------------- configuration gate ----------------
-
-   A half-filled config.js is a teacher's mistake, not a student's, so the
-   student is told only that the site is not ready and who to ask. The code
-   naming the missing value goes to the developer console, where the teacher
-   can find it and nobody else will look. */
+/* ---------------- configuration gate ---------------- */
 
 const configError = validateConfig();
 if (configError) {
   fatal('The exam site is unavailable',
     'The exam site is missing an important setting. ' +
     'Please ask your teacher about this matter.');
-  throw new Error(configError);   // console only — never shown on screen
+  throw new Error(configError);
 }
 
-/* ---------------- api ----------------
+if (EMERGENCY_SERVER_HALT) {
+  triggerEmergencyHalt();
+}
 
-   Every call is a "simple" cross-origin POST: no custom headers and a
-   text/plain content type. Apps Script does not answer CORS preflight,
-   so an Authorization header or application/json would fail outright.
-   The ID token therefore rides in the body.                            */
+/* ---------------- api ---------------- */
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function api(action, payload = {}, { tries = 4, onRetry } = {}) {
+  if (EMERGENCY_SERVER_HALT && action !== 'ping') {
+    triggerEmergencyHalt();
+    throw new Error('Server is currently paused by instructor.');
+  }
   let lastErr;
   for (let attempt = 1; attempt <= tries; attempt++) {
     try {
@@ -216,9 +467,11 @@ async function idToken() {
 $('schoolName').textContent = SCHOOL_NAME || 'Online Exam';
 
 let auth;
+let db = null;
 try {
   const app = initializeApp(FIREBASE_CONFIG);
   auth = getAuth(app);
+  try { db = getFirestore(app); } catch (e) { console.warn('[student] Firestore init:', e); }
   // Session persistence is preferred for shared school lab devices so accounts do not linger.
   // Fall back to local persistence if browser session storage is restricted.
   setPersistence(auth, browserSessionPersistence)
@@ -275,7 +528,7 @@ $('btnSignOut').onclick = doSignOut;
 
 if (auth) {
   onAuthStateChanged(auth, user => {
-    if (!user) { _cachedIdToken = ''; show('scSignIn'); return; }
+    if (!user) { _cachedIdToken = ''; showSignedOutEntry(); return; }
     user.getIdToken().then(t => { _cachedIdToken = t; }).catch(() => {});
     $('loadingText').textContent = 'Loading your exams…';
     show('scLoading');
@@ -401,6 +654,7 @@ function clearSessionBackup(token) {
 const _dirtyKeys = new Set();
 let _deltaFlushTimer = null;
 let _isFlushingDelta = false;
+let _isFlushingFirestore = false;
 
 function setDirtyAnswer(qNo, val) {
   if (qNo == null) return;
@@ -409,7 +663,8 @@ function setDirtyAnswer(qNo, val) {
   recordJournalAnswer(S.token, qNo, val);
   _dirtyKeys.add(String(qNo));
 
-  if (isDeltaAutosaveEnabled(S.code) && S.token && !S.finished) {
+  // If delta HTTP autosave is explicitly enabled (legacy fallback)
+  if (isDeltaAutosaveEnabled(S.code) && S.token && !S.finished && !db) {
     if (_deltaFlushTimer) clearTimeout(_deltaFlushTimer);
     _deltaFlushTimer = setTimeout(() => {
       flushDeltaAnswers().catch(() => {});
@@ -417,8 +672,55 @@ function setDirtyAnswer(qNo, val) {
   }
 }
 
-async function flushDeltaAnswers() {
-  if (!isDeltaAutosaveEnabled(S.code) || !S.token || S.finished || _dirtyKeys.size === 0 || _isFlushingDelta) return;
+async function flushFirestoreCheckpoint(force = false) {
+  const attId = S.attemptId || S.token;
+  if (!db || !attId || !S.code || (S.finished && !force) || _dirtyKeys.size === 0) return false;
+
+  if (_isFlushingFirestore) {
+    if (!force) return false;
+    let waitMs = 0;
+    while (_isFlushingFirestore && waitMs < 2000) {
+      await sleep(100);
+      waitMs += 100;
+    }
+    if (_dirtyKeys.size === 0) return true;
+    if (_isFlushingFirestore) return false;
+  }
+
+  _isFlushingFirestore = true;
+  try {
+    const ref = doc(db, 'exams', S.code, 'attempts', attId);
+    await updateDoc(ref, {
+      answers: S.answers,
+      lastActiveAt: new Date().toISOString()
+    });
+    _dirtyKeys.clear();
+    return true;
+  } catch (err) {
+    if (err?.code !== 'permission-denied') {
+      console.warn('[student] Firestore checkpoint buffered locally:', err);
+    }
+    return false;
+  } finally {
+    _isFlushingFirestore = false;
+  }
+}
+
+async function flushDeltaAnswers(force = false) {
+  if (!S.token || (S.finished && !force) || _dirtyKeys.size === 0) return false;
+  if (!force && !isDeltaAutosaveEnabled(S.code)) return false;
+
+  if (_isFlushingDelta) {
+    if (!force) return false;
+    let waitMs = 0;
+    while (_isFlushingDelta && waitMs < 2000) {
+      await sleep(100);
+      waitMs += 100;
+    }
+    if (_dirtyKeys.size === 0) return true;
+    if (_isFlushingDelta) return false;
+  }
+
   _isFlushingDelta = true;
   const toSendKeys = Array.from(_dirtyKeys);
   const delta = {};
@@ -432,15 +734,17 @@ async function flushDeltaAnswers() {
       delta,
       perQ: S.perQ,
       idToken: userToken
-    }, { tries: 1 });
+    }, { tries: 2 });
 
     if (r && r.ok) {
       for (const k of toSendKeys) {
         _dirtyKeys.delete(k);
       }
+      return true;
     }
+    return false;
   } catch (e) {
-    // Keys remain dirty for retry
+    return false;
   } finally {
     _isFlushingDelta = false;
   }
@@ -450,6 +754,7 @@ async function flushDeltaAnswers() {
 
 const S = {
   email: '',
+  edpCode: '',
   code: '', token: '', timerMode: 'per-question', defaultTimer: 45,
   questions: [], answers: {}, perQ: {},
   queue: [], pos: 0, deferred: [], secondPass: false,
@@ -478,6 +783,7 @@ async function boot(destination = 'scStart') {
   }
 
   S.email = r.email || '';
+  S.edpCode = r.edpCode || '';
   $('whoEmail').textContent = r.email;
   if (r.lastName || r.firstName) {
     $('whoName').textContent = [r.lastName, r.firstName].filter(Boolean).join(', ');
@@ -539,11 +845,40 @@ async function boot(destination = 'scStart') {
   }
 
   if (r.active) {
-    $('resumeText').textContent =
-      `You started ${r.active.code} and answered ${r.active.answered} of ${r.active.total} questions.`;
-    $('btnResume').onclick = () => doResume(r.active.token);
-    show('scResume');
-    return;
+    S.active = r.active;
+    if ($('activeExamCard')) {
+      $('activeExamCard').hidden = false;
+      if ($('activeExamTitle')) {
+        $('activeExamTitle').textContent = r.active.title || r.active.code;
+      }
+      if ($('activeExamProgress')) {
+        const answered = r.active.answered || 0;
+        const total = r.active.total || '—';
+        $('activeExamProgress').textContent = `Answered ${answered} of ${total} questions`;
+      }
+      if ($('btnActiveResume')) {
+        $('btnActiveResume').onclick = () => doResume(r.active.token);
+      }
+      if ($('btnActiveDiscard')) {
+        $('btnActiveDiscard').onclick = async () => {
+          const tok = r.active?.token;
+          S.active = null;
+          if ($('activeExamCard')) $('activeExamCard').hidden = true;
+          if (tok) {
+            clearSessionBackup(tok);
+            clearJournalAnswers(tok).catch(() => {});
+          }
+          renderExams(S.availableExams || r.exams || []);
+          try {
+            const userToken = await idToken().catch(() => '');
+            if (tok) await api('discardAttempt', { token: tok, idToken: userToken });
+          } catch (e) {}
+        };
+      }
+    }
+  } else {
+    S.active = null;
+    if ($('activeExamCard')) $('activeExamCard').hidden = true;
   }
 
   renderExams(r.exams);
@@ -671,20 +1006,39 @@ if ($('btnRegOut')) $('btnRegOut').onclick = doSignOut;
 
 if ($('btnRegister')) {
   $('btnRegister').onclick = async () => {
+    let lastName = $('regLast')?.value?.trim() || '';
+    let firstName = $('regFirst')?.value?.trim() || '';
+    // Auto-split if student pasted "Lastname, Firstname" into the Last Name field
+    if (lastName.includes(',') && !firstName) {
+      const parts = lastName.split(',');
+      lastName = parts[0].trim();
+      firstName = parts.slice(1).join(' ').trim();
+      if ($('regLast')) $('regLast').value = lastName;
+      if ($('regFirst')) $('regFirst').value = firstName;
+    }
+
+    const edpRaw = ($('regEdp')?.value || '').trim();
+    const edpCode = edpRaw.replace(/^EDP\s*[-:#]?\s*/i, '').trim();
+
     const profile = {
-      lastName:  $('regLast')?.value?.trim() || '',
-      firstName: $('regFirst')?.value?.trim() || '',
+      lastName,
+      firstName,
       studentId: $('regStudentId')?.value?.trim() || '',
-      edpCode:   $('regEdp')?.value?.trim() || '',
+      edpCode,
       year:      $('regYear')?.value || '',
       course:    $('regCourse')?.value || '',
       section:   $('regSection')?.value || ''
     };
 
     const err = $('regErr');
-    if (!profile.lastName || !profile.firstName || !profile.year || !profile.course || (!profile.edpCode && !profile.section)) {
+    const isEdp = Boolean(profile.edpCode);
+    const missingEdp = !profile.lastName || !profile.firstName;
+    const missingSec = missingEdp || !profile.year || !profile.course || !profile.section;
+    if (isEdp ? missingEdp : missingSec) {
       if (err) {
-        err.textContent = 'Please fill in Name, Year, Course, and either your Class EDP Code or Section before continuing.';
+        err.textContent = isEdp
+          ? 'Please enter your Last Name and First Name before continuing.'
+          : 'Please fill in Name, Year, Course, and either Class EDP Code or Section before continuing.';
         err.hidden = false;
       }
       return;
@@ -798,7 +1152,7 @@ if ($('btnAddEdp')) {
     if (errEl) errEl.hidden = true;
 
     if (!edpCode) {
-      if (errEl) { errEl.textContent = 'Please enter a valid EDP code.'; errEl.hidden = false; }
+      if (errEl) { errEl.textContent = 'No EDP code was found in the input. Please enter a valid EDP code.'; errEl.hidden = false; }
       return;
     }
 
@@ -807,7 +1161,7 @@ if ($('btnAddEdp')) {
     try {
       const res = await api('enrollEdp', { idToken: await idToken(), edpCode });
       if (!res.ok) {
-        if (errEl) { errEl.textContent = res.message || 'Could not add this EDP code.'; errEl.hidden = false; }
+        if (errEl) { errEl.textContent = res.message || 'No EDP code was found in the input. Please check your code or ask your instructor.'; errEl.hidden = false; }
         return;
       }
       if (okEl) { okEl.textContent = res.message || 'Class added successfully!'; okEl.hidden = false; }
@@ -878,7 +1232,36 @@ function showNotListed(profile) {
 if ($('btnNotListedBack')) $('btnNotListedBack').onclick = () => show('scRegister');
 if ($('btnNotListedOut')) $('btnNotListedOut').onclick = doSignOut;
 
+function splitEdpCodes(value) {
+  return String(value || '')
+    .replace(/^EDP\s+/i, '')
+    .split(/[,;/]+/)
+    .map(code => code.trim())
+    .filter(Boolean);
+}
+
+/**
+ * The server already narrows multi-EDP exams to the caller's own classes.
+ * Keep this client-side guard as well: a stale Apps Script deployment must
+ * never make a student portal disclose every other EDP assigned to an exam.
+ */
+function examAudienceLabel(exam) {
+  const isEdp = exam.category === 'edp' || Boolean(exam.edpCode);
+  if (isEdp) {
+    const studentEdps = new Set(splitEdpCodes(S.edpCode));
+    const advertised = [
+      ...splitEdpCodes(exam.edpCode),
+      ...splitEdpCodes(exam.categoryLabel)
+    ];
+    const matching = [...new Set(advertised.filter(code => studentEdps.has(code)))];
+    return matching.length ? `EDP ${matching.join(', ')}` : 'EDP exam';
+  }
+  return exam.categoryLabel ||
+    (exam.sections?.length ? `Section ${exam.sections.join(',')}` : 'General');
+}
+
 function renderExams(exams) {
+  S.availableExams = exams || [];
   const wrap = $('examList');
   wrap.replaceChildren();
   if (!exams?.length) {
@@ -893,9 +1276,10 @@ function renderExams(exams) {
   const secExams = exams.filter(e => !edpExams.includes(e));
 
   const buildCard = (e) => {
+    const exhausted = e.triesLeft != null && Number(e.triesLeft) <= 0;
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'pick';
+    b.className = 'pick' + (exhausted ? ' exhausted' : '');
     b.setAttribute('aria-pressed', 'false');
 
     const header = document.createElement('div');
@@ -905,8 +1289,18 @@ function renderExams(exams) {
     c.textContent = e.code;
     const badge = document.createElement('span');
     badge.className = 'pick-tag';
-    badge.style.color = 'var(--ok)';
-    badge.textContent = '● Open';
+    if (S.active && S.active.code === e.code) {
+      badge.style.color = 'var(--warn, #FBBF24)';
+      badge.style.borderColor = 'var(--warn, #FBBF24)';
+      badge.textContent = '🔄 In Progress';
+    } else if (exhausted) {
+      badge.style.color = 'var(--status-completed, #4E4338)';
+      badge.style.borderColor = 'var(--status-completed, #4E4338)';
+      badge.textContent = '● Completed';
+    } else {
+      badge.style.color = 'var(--ok)';
+      badge.textContent = '● Open';
+    }
     header.append(c, badge);
 
     const n = document.createElement('span');
@@ -920,7 +1314,7 @@ function renderExams(exams) {
     catBadge.className = 'pick-tag';
     catBadge.style.borderColor = 'var(--accent)';
     catBadge.style.color = 'var(--accent)';
-    catBadge.textContent = e.categoryLabel || (e.category === 'edp' ? `EDP ${e.edpCode}` : (e.sections?.length ? `Section ${e.sections.join(',')}` : 'General'));
+    catBadge.textContent = examAudienceLabel(e);
     meta.append(catBadge);
 
     if (e.questions) {
@@ -931,20 +1325,32 @@ function renderExams(exams) {
     }
     if (e.triesLeft != null) {
       const tTag = document.createElement('span');
-      tTag.className = 'pick-tag';
-      tTag.textContent = `${e.triesLeft} attempt${e.triesLeft === 1 ? '' : 's'} left`;
+      const triesNum = Number(e.triesLeft);
+      tTag.className = 'pick-tag pick-attempts-tag' + (exhausted ? ' exhausted' : (triesNum === 1 ? ' last-try' : ''));
+      if (exhausted) {
+        tTag.textContent = '⛔ 0 attempts left';
+      } else if (triesNum === 1) {
+        tTag.textContent = '⚠️ 1 attempt left';
+      } else {
+        tTag.textContent = `🎯 ${e.triesLeft} attempts left`;
+      }
       meta.append(tTag);
     }
     if (e.closesAt) {
       const cTag = document.createElement('span');
-      cTag.className = 'pick-tag';
-      cTag.textContent = `Closes ${e.closesAt}`;
+      cTag.className = 'pick-tag pick-deadline-tag';
+      cTag.textContent = `⏰ Deadline: ${e.closesAt}`;
       meta.append(cTag);
     }
 
     b.append(header, n, meta);
     b.onclick = () => {
       feedback('select', 10);
+      if (exhausted) {
+        err(`You have already used all attempts for this exam (${e.title || e.code}).`);
+        return;
+      }
+      err('');
       S.picked = e.code;
       $('codeInput').value = '';
       for (const k of wrap.querySelectorAll('.pick')) k.setAttribute?.('aria-pressed', 'false');
@@ -1002,41 +1408,221 @@ function flagError(el, msg) {
 
 function err(msg) { flagError($('startErr'), msg); }
 
+const ADMISSION_INITIAL_SPREAD_MS = 400;
+// A large class can take several minutes to pass through the small server
+// admission window. Keep one idempotent request alive instead of asking a
+// student to restart it manually.
+const ADMISSION_MAX_RETRIES = 36;
+
+let _admissionCurrentPct = 0;
+let _admissionTargetPct = 0;
+let _admissionAnimTimer = null;
+
+function updateAdmissionGauge_(pct) {
+  const rounded = Math.round(pct);
+  if ($('admissionPercent')) $('admissionPercent').textContent = `${rounded}%`;
+  if ($('admissionProgressBar')) $('admissionProgressBar').style.width = `${Math.min(100, Math.max(0, pct))}%`;
+  const gaugeBar = $('admissionGaugeBar');
+  if (gaugeBar) {
+    const circumference = 314.16;
+    const offset = circumference - (pct / 100) * circumference;
+    gaugeBar.style.strokeDashoffset = offset;
+  }
+}
+
+function setAdmissionProgress(targetPct, { title, text, sub, label } = {}) {
+  _admissionTargetPct = Math.min(100, Math.max(0, targetPct));
+  if (title && $('queueTitle')) $('queueTitle').textContent = title;
+  if (text && $('queueText')) $('queueText').textContent = text;
+  if (sub && $('queueSub')) $('queueSub').textContent = sub;
+  if (label && $('admissionPercentLabel')) $('admissionPercentLabel').textContent = label;
+
+  if (_admissionAnimTimer) clearInterval(_admissionAnimTimer);
+  _admissionAnimTimer = setInterval(() => {
+    if (Math.abs(_admissionCurrentPct - _admissionTargetPct) < 0.5) {
+      _admissionCurrentPct = _admissionTargetPct;
+      updateAdmissionGauge_(_admissionCurrentPct);
+      clearInterval(_admissionAnimTimer);
+      _admissionAnimTimer = null;
+    } else {
+      _admissionCurrentPct += (_admissionTargetPct - _admissionCurrentPct) * 0.22;
+      updateAdmissionGauge_(_admissionCurrentPct);
+    }
+  }, 25);
+}
+
+function resetAdmissionProgress() {
+  if (_admissionAnimTimer) clearInterval(_admissionAnimTimer);
+  _admissionAnimTimer = null;
+  _admissionCurrentPct = 0;
+  _admissionTargetPct = 0;
+  updateAdmissionGauge_(0);
+}
+
+function admissionKeyFor_(code) {
+  const storageKey = 'exam_admission_key_v1_' + String(code || '').toUpperCase();
+  try {
+    let key = sessionStorage.getItem(storageKey);
+    if (!key) {
+      const nonce = globalThis.crypto?.randomUUID?.() ||
+        (Date.now().toString(36) + '_' + Math.random().toString(36).slice(2));
+      key = String(code || '').toUpperCase() + '_' + nonce;
+      sessionStorage.setItem(storageKey, key);
+    }
+    return key;
+  } catch {
+    return String(code || '').toUpperCase() + '_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  }
+}
+
+function clearAdmissionKey_(code) {
+  try { sessionStorage.removeItem('exam_admission_key_v1_' + String(code || '').toUpperCase()); } catch {}
+}
+
+function setAdmissionStatus_(title, text, sub) {
+  if ($('queueTitle')) $('queueTitle').textContent = title;
+  if ($('queueText')) $('queueText').textContent = text;
+  if ($('queueSub')) $('queueSub').textContent = sub;
+}
+
+async function requestExamAdmission_(code, idempotencyKey, privacyAck) {
+  const initialDelay = Math.floor(Math.random() * ADMISSION_INITIAL_SPREAD_MS);
+  if (initialDelay) await sleep(initialDelay);
+
+  setAdmissionProgress(25, {
+    title: 'Checking admission…',
+    text: 'Connecting to exam server and checking admission slots. Keep this page open.',
+    sub: 'Verifying your admission with the server…',
+    label: 'Connecting'
+  });
+
+  let lastResponse = null;
+  for (let attempt = 1; attempt <= ADMISSION_MAX_RETRIES; attempt++) {
+    if (attempt > 1) {
+      setAdmissionProgress(Math.min(65, 25 + attempt * 4), {
+        title: 'Checking admission…',
+        text: 'The exam room is processing admissions. Please keep this page open.',
+        sub: `Admission check ${attempt} of ${ADMISSION_MAX_RETRIES}.`,
+        label: 'Retrying'
+      });
+    }
+    let r;
+    try {
+      r = await api('start', {
+        idToken: await idToken(),
+        code,
+        idempotencyKey,
+        privacyAckVersion: privacyAck,
+        engine: isDeltaAutosaveEnabled(code) ? 'delta+ledger' : 'legacy'
+      }, {
+        tries: 2,
+        onRetry: () => setAdmissionProgress(35, {
+          title: 'Reconnecting…',
+          text: 'The exam room did not answer yet. Retrying your admission request.',
+          sub: 'Trying the same admission request again.',
+          label: 'Reconnecting'
+        })
+      });
+    } catch (error) {
+      if (attempt === ADMISSION_MAX_RETRIES) throw error;
+      const waitMs = Math.min(12000, 1400 * 2 ** (attempt - 1)) + Math.floor(Math.random() * 700);
+      setAdmissionProgress(20, {
+        title: 'Reconnecting…',
+        text: 'The exam room did not answer yet. Retrying your admission request.',
+        sub: `Retrying automatically in about ${Math.ceil(waitMs / 1000)} seconds.`,
+        label: 'Waiting'
+      });
+      await sleep(waitMs);
+      continue;
+    }
+    lastResponse = r;
+    if (!r?.busy) {
+      if (r?.ok) {
+        setAdmissionProgress(85, {
+          title: 'Admission granted!',
+          text: 'Setting up randomized questions and security tokens…',
+          sub: 'Almost ready to begin…',
+          label: 'Preparing'
+        });
+      }
+      return r;
+    }
+
+    const fallback = Math.min(12000, 1400 * 2 ** (attempt - 1));
+    const waitMs = Math.max(800, Number(r.retryAfterMs) || 0, fallback) + Math.floor(Math.random() * 700);
+    setAdmissionProgress(30, {
+      title: 'The exam room is busy…',
+      text: 'Do not reload or click Continue again. Retrying automatically when an opening is available.',
+      sub: `Retrying automatically in about ${Math.ceil(waitMs / 1000)} seconds.`,
+      label: 'In Queue'
+    });
+    await sleep(waitMs);
+  }
+  return lastResponse || { ok: false, message: 'The exam room is still busy. Please ask your instructor to admit the next group.' };
+}
+
 $('btnContinue').onclick = async () => {
   const code = (S.picked || $('codeInput').value || '').trim().toUpperCase();
   if (!code) { err('Choose an exam, or type its code.'); return; }
+  const pickedExam = (S.availableExams || []).find(x => String(x.code || '').toUpperCase() === code);
+  if (pickedExam && pickedExam.triesLeft != null && Number(pickedExam.triesLeft) <= 0) {
+    err(`You have already used all attempts for this exam (${pickedExam.title || pickedExam.code}).`);
+    return;
+  }
   err('');
 
   const b = $('btnContinue');
+  resetAdmissionProgress();
+  show('scQueue');
+  setAdmissionProgress(15, {
+    title: 'Waiting for an opening…',
+    text: 'The exam server is admitting students in small groups. Keep this page open.',
+    sub: 'Your exam has not started yet.',
+    label: 'Admitting'
+  });
   b.disabled = true; b.textContent = 'Checking…';
   try {
+    // Generate stable idempotency key for this start click
+    const idempotencyKey = admissionKeyFor_(code);
+
     const privAck = FEATURE_FLAGS?.privacyAckVersion || 'privacy_ack_2026_1';
-    let r = await api('start', {
-      idToken: await idToken(),
-      code,
-      privacyAckVersion: privAck,
-      engine: isDeltaAutosaveEnabled(code) ? 'delta+ledger' : 'legacy'
-    });
-    if (!r.ok && /^\d{3,8}$/.test(code)) {
+    let r = await requestExamAdmission_(code, idempotencyKey, privAck);
+
+    if ((!r || (!r.ok && !r.busy)) && /^\d{3,8}$/.test(code)) {
       try {
         const enr = await api('enrollEdp', { idToken: await idToken(), edpCode: code });
         if (enr.ok && enr.exams?.length) {
           renderExams(enr.exams);
           const found = enr.exams.find(e => String(e.edpCode) === code || e.category === 'edp') || enr.exams[0];
           if (found) {
-            r = await api('start', {
-              idToken: await idToken(),
-              code: found.code,
-              privacyAckVersion: privAck,
-              engine: isDeltaAutosaveEnabled(found.code) ? 'delta+ledger' : 'legacy'
-            });
+            r = await requestExamAdmission_(found.code, admissionKeyFor_(found.code), privAck);
           }
+        } else if (!enr.ok && enr.notFound) {
+          show('scStart');
+          err(enr.message || 'No EDP code was found in the input. Please check your code or ask your instructor.');
+          return;
         }
       } catch {}
     }
-    if (!r.ok) { err(r.message || 'Could not start this exam.'); return; }
+    if (!r || !r.ok) {
+      clearAdmissionKey_(code);
+      if (r?.code) clearAdmissionKey_(r.code);
+      show('scStart');
+      err((r && r.message) || 'Could not start this exam.');
+      return;
+    }
+    setAdmissionProgress(100, {
+      title: 'Exam ready!',
+      text: 'Opening exam briefing…',
+      sub: 'Ready.',
+      label: 'Ready'
+    });
+    await sleep(350);
+    clearAdmissionKey_(code);
+    clearAdmissionKey_(r.code || code);
     await prepare(r); brief(r);
   } catch {
+    show('scStart');
     err('Could not reach the server. Check your connection and try again.');
   } finally {
     b.disabled = false; b.textContent = 'Continue';
@@ -1052,19 +1638,39 @@ $('edpInput')?.addEventListener('keydown', e => {
 
 /* ---------------- brief ---------------- */
 
+let _firstFlagReported = false;
+
+async function initFirestoreAttempt(r) {
+  // Attempt document is server-created during startAttempt.
+  // We only flush dirty answers if any were restored from local storage.
+  if (_dirtyKeys && _dirtyKeys.size > 0) {
+    flushFirestoreCheckpoint().catch(() => {});
+  }
+}
+
 async function prepare(r) {
   S.code = r.code;
   S.token = r.token;
-  S.timerMode = r.timerMode;
-  S.defaultTimer = r.defaultTimer;
+  S.attemptId = r.attemptId || r.token;
+  S.examType = r.examType || 'test';
+  S.isReviewer = !!r.isReviewer || (r.examType === 'reviewer');
+  S.timerMode = S.isReviewer ? 'untimed' : r.timerMode;
+  S.defaultTimer = S.isReviewer ? null : r.defaultTimer;
+  S.proctoringStrikes = S.isReviewer ? 0 : (r.proctoringStrikes != null ? Number(r.proctoringStrikes) : (STRICT_AUTO_SUBMIT ? 3 : 0));
+  S.proctoringWarningNotes = S.isReviewer ? '' : (r.proctoringWarningNotes || '');
   S.questions = r.questions || [];
   const localBackup = loadSessionBackup(r.token);
   const journalBackup = await loadJournalAnswers(r.token);
   S.answers = Object.assign({}, r.answers || {}, localBackup || {}, journalBackup || {});
-  S.deadline = r.msRemaining != null ? Date.now() + r.msRemaining : null;
+  S.deadline = (S.isReviewer || r.msRemaining == null) ? null : Date.now() + r.msRemaining;
   S.queue = S.questions.slice();
   S.pos = 0; S.deferred = []; S.secondPass = false; S.finished = false;
   _dirtyKeys.clear();
+  _firstFlagReported = false;
+  behaviorWarnings = 0;
+  awayAt = null;
+  if (blurCheck) { clearTimeout(blurCheck); blurCheck = null; }
+  initFirestoreAttempt(r).catch(() => {});
 }
 
 function brief(r) {
@@ -1077,22 +1683,78 @@ function brief(r) {
     f.append(dt, dd);
   };
   fact('Questions', String(S.questions.length));
-  // Three delivery modes, three different promises about the clock. Saying
-  // "each question is timed" ahead of a section-timed exam is a promise the
-  // next screen breaks.
-  fact('Time', S.timerMode === 'whole-exam'
-    ? Math.round((r.msRemaining || 0) / 60000) + ' minutes total'
-    : S.timerMode === 'per-section'
-      ? 'Each section is timed'
-      : 'Each question is timed');
-  fact('Attempt', r.attemptNo + (r.maxAttempts > 1 ? ' of ' + r.maxAttempts : ''));
+  if (S.isReviewer) {
+    fact('Mode', 'Practice Reviewer');
+    fact('Time', 'Untimed — self-paced');
+    fact('Attempt', 'Unlimited practice');
+  } else {
+    // Three delivery modes, three different promises about the clock. Saying
+    // "each question is timed" ahead of a section-timed exam is a promise the
+    // next screen breaks.
+    fact('Time', S.timerMode === 'whole-exam'
+      ? Math.round((r.msRemaining || 0) / 60000) + ' minutes total'
+      : S.timerMode === 'per-section'
+        ? 'Each section is timed'
+        : 'Each question is timed');
+    fact('Attempt', r.attemptNo + (r.maxAttempts > 1 ? ' of ' + r.maxAttempts : ''));
+  }
+  const matchedExam = S.availableExams?.find(e => e.code === (r.code || S.code));
+  const deadlineStr = r.closesAt || matchedExam?.closesAt;
+  if (deadlineStr) {
+    fact('Deadline', deadlineStr);
+  }
   if (r.student?.lastName || r.student?.firstName) {
     fact('Name', [r.student.lastName, r.student.firstName].filter(Boolean).join(', '));
   }
   if (r.student?.section) fact('Section', r.student.section);
 
+  const attemptsStatusEl = $('briefAttemptsStatus');
+  const attemptsSummaryEl = $('briefAttemptsSummary');
+  if (attemptsStatusEl) {
+    if (r.maxAttempts > 1) {
+      const remainingAfter = Math.max(0, r.maxAttempts - r.attemptNo);
+      attemptsStatusEl.innerHTML = `<strong>Current Attempt:</strong> Attempt ${r.attemptNo} of ${r.maxAttempts} &bull; <strong>${remainingAfter} retake${remainingAfter === 1 ? '' : 's'} remaining</strong> after this.`;
+      if (attemptsSummaryEl) {
+        attemptsSummaryEl.textContent = 'This exam allows multiple attempts. Retakes let you improve your score or recover if you experienced technical issues. Your highest score is typically credited by your instructor.';
+      }
+    } else {
+      attemptsStatusEl.innerHTML = '<strong>Single Attempt Only:</strong> You only have 1 attempt for this exam. No retakes are permitted.';
+      if (attemptsSummaryEl) {
+        attemptsSummaryEl.textContent = 'Take your time and ensure a reliable internet connection. Once submitted or timed out, this exam cannot be retaken.';
+      }
+    }
+  }
+
+  const strikes = S.proctoringStrikes != null ? S.proctoringStrikes : 3;
+  const procRuleEl = $('briefProctoringRule');
+  if (procRuleEl) {
+    if (strikes === 0) {
+      procRuleEl.innerHTML = '<b>Proctoring Active:</b> Tab switching and leaving the exam page are monitored and recorded for your instructor. No automatic cutoff is enforced.';
+    } else if (strikes === 1) {
+      procRuleEl.innerHTML = '<b>Strict Proctoring Active (1 Strike):</b> Leaving or switching away from the exam tab is strictly prohibited. Leaving the page even once will automatically submit your exam immediately.';
+    } else {
+      const warnCount = strikes - 1;
+      procRuleEl.innerHTML = `<b>Strict Proctoring Active (${strikes} Strikes):</b> Leaving or switching away from the exam tab is strictly prohibited. You are allowed ${warnCount === 1 ? 'only 1 warning' : warnCount + ' warnings'} — leaving ${strikes === 2 ? 'a 2nd time' : 'on strike ' + strikes} will automatically submit your exam immediately.`;
+    }
+  }
+  const customNotesEl = $('briefCustomNotes');
+  if (customNotesEl) {
+    if (S.proctoringWarningNotes) {
+      customNotesEl.textContent = 'Instructor Warning: ' + S.proctoringWarningNotes;
+      customNotesEl.hidden = false;
+    } else {
+      customNotesEl.hidden = true;
+    }
+  }
+
   $('btnBegin').onclick = () => ensurePrivacyConsent(begin);
-  $('btnBriefBack').onclick = () => show('scStart');
+  $('btnBriefBack').onclick = () => {
+    S.token = '';
+    behaviorWarnings = 0;
+    awayAt = null;
+    if (blurCheck) { clearTimeout(blurCheck); blurCheck = null; }
+    show('scStart');
+  };
   show('scBrief');
 }
 
@@ -1148,33 +1810,69 @@ function ensurePrivacyConsent(onProceed) {
 
 async function doResume(token) {
   const b = $('btnResume');
-  b.disabled = true; b.textContent = 'Loading…';
+  if (b) { b.disabled = true; b.textContent = 'Loading…'; }
+  const activeBtn = $('btnActiveResume');
+  if (activeBtn) { activeBtn.disabled = true; activeBtn.textContent = 'Loading…'; }
   try {
     const userToken = await idToken().catch(() => '');
     const r = await api('resume', { token, idToken: userToken });
-    if (!r.ok) { fatal('Could not resume', r.message); return; }
+    if (!r.ok) {
+      S.active = null;
+      if ($('activeExamCard')) $('activeExamCard').hidden = true;
+      clearSessionBackup(token);
+      clearJournalAnswers(token).catch(() => {});
+      err(r.message || 'This exam is no longer available or was removed by your instructor.');
+      show('scStart');
+      return;
+    }
     await prepare(r);
     S.queue = S.questions.filter(q => S.answers[q.no] == null);
     if (!S.queue.length) { finish(); return; }
     ensurePrivacyConsent(begin);
   } catch {
-    fatal('Could not resume', 'Check your connection and reload.');
+    S.active = null;
+    if ($('activeExamCard')) $('activeExamCard').hidden = true;
+    clearSessionBackup(token);
+    err('Could not resume this exam. It may have been closed or removed by your instructor.');
+    show('scStart');
   } finally {
-    b.disabled = false; b.textContent = 'Continue where I left off';
+    if (b) { b.disabled = false; b.textContent = 'Continue where I left off'; }
+    if (activeBtn) { activeBtn.disabled = false; activeBtn.textContent = '▶ Continue Exam'; }
   }
+}
+if ($('btnResumeBack')) {
+  $('btnResumeBack').onclick = () => {
+    show('scStart');
+  };
 }
 
 /* ---------------- exam ---------------- */
 
 function begin() {
+  behaviorWarnings = 0;
+  awayAt = null;
+  if (blurCheck) { clearTimeout(blurCheck); blurCheck = null; }
   show('scExam');
-  if (S.timerMode === 'whole-exam') {
+  if (S.isReviewer) {
+    if ($('singleExamView')) $('singleExamView').hidden = false;
+    if ($('wholeExamView')) $('wholeExamView').hidden = true;
+    if ($('sectionExamView')) $('sectionExamView').hidden = true;
+    if ($('reviewerWatermark')) $('reviewerWatermark').hidden = false;
+    if ($('pillReviewer')) $('pillReviewer').hidden = false;
+    if ($('pillTimer')) $('pillTimer').hidden = true;
+    if ($('timerBar')) $('timerBar').hidden = true;
+    step();
+  } else if (S.timerMode === 'whole-exam') {
+    if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
+    if ($('pillReviewer')) $('pillReviewer').hidden = true;
     if ($('singleExamView')) $('singleExamView').hidden = true;
     if ($('sectionExamView')) $('sectionExamView').hidden = true;
     if ($('wholeExamView')) $('wholeExamView').hidden = false;
     renderWholeExam();
     startGlobal();
   } else if (S.timerMode === 'per-section') {
+    if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
+    if ($('pillReviewer')) $('pillReviewer').hidden = true;
     if ($('singleExamView')) $('singleExamView').hidden = true;
     if ($('wholeExamView')) $('wholeExamView').hidden = true;
     if ($('sectionExamView')) $('sectionExamView').hidden = false;
@@ -1182,6 +1880,8 @@ function begin() {
     S.currentSecIndex = 0;
     renderSection(0);
   } else {
+    if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
+    if ($('pillReviewer')) $('pillReviewer').hidden = true;
     if ($('singleExamView')) $('singleExamView').hidden = false;
     if ($('wholeExamView')) $('wholeExamView').hidden = true;
     if ($('sectionExamView')) $('sectionExamView').hidden = true;
@@ -1205,6 +1905,10 @@ if ($('btnPauseExit')) {
     stopQuestion();
     if (saveTimer) { clearInterval(saveTimer); saveTimer = null; }
     saveSessionBackup(S.token, S.answers);
+    S.token = '';
+    behaviorWarnings = 0;
+    awayAt = null;
+    if (blurCheck) { clearTimeout(blurCheck); blurCheck = null; }
     show('scStart');
     boot();
   };
@@ -1237,7 +1941,11 @@ function renderStepperDots() {
     dot.setAttribute('aria-hidden', 'true');
     if (cur && q.no === cur.no) dot.classList.add('active');
     else if (S.answers[q.no] != null && S.answers[q.no] !== '') { dot.classList.add('done'); done++; }
-    else if (S.deferred.some(d => d.no === q.no)) { dot.classList.add('skipped'); skipped++; }
+    else if (S.deferred.some(d => (d && d.no != null ? d.no : d) === q.no) ||
+             (S.secondPass && S.queue.some(d => (d && d.no != null ? d.no : d) === q.no))) {
+      dot.classList.add('skipped');
+      skipped++;
+    }
     host.append(dot);
   });
 
@@ -1478,34 +2186,63 @@ function renderWholeExam() {
 /* ---- Per-Section Mode Grouping & Rendering ---- */
 function buildSections() {
   const sections = [];
-  let currentGroup = null;
+  const groupByType = {};
 
   S.questions.forEach(q => {
     const type = q.type || 'MC';
-    if (!currentGroup || currentGroup.type !== type) {
-      currentGroup = {
+    if (!groupByType[type]) {
+      const parsedSecs = parseInt(q.seconds, 10);
+      const initialDuration = (parsedSecs > 0) ? parsedSecs : (parseInt(S.defaultTimer, 10) || 600);
+      groupByType[type] = {
         type: type,
         title: TYPE_NAME[type] || type,
-        questions: [q],
-        duration: 0
+        questions: [],
+        duration: initialDuration,
+        remaining: initialDuration,
+        expired: false,
+        visited: false,
+        _hasExplicitSecs: parsedSecs > 0
       };
-      sections.push(currentGroup);
-    } else {
-      currentGroup.questions.push(q);
+      sections.push(groupByType[type]);
     }
-    currentGroup.duration += (q.seconds || S.defaultTimer || 45);
+    groupByType[type].questions.push(q);
+    const qSec = parseInt(q.seconds, 10);
+    if (qSec > 0 && !groupByType[type]._hasExplicitSecs) {
+      groupByType[type].duration = qSec;
+      groupByType[type].remaining = qSec;
+      groupByType[type]._hasExplicitSecs = true;
+    }
   });
 
   return sections;
 }
 
-function renderSection(idx) {
-  const sec = S.sections[idx];
-  if (!sec) { finish(); return; }
+function renderSection(idx, isReview = false) {
+  const sec = S.sections && S.sections[idx];
+  if (!sec) {
+    if (S.isReviewMode) renderSectionReviewOverview();
+    else finish();
+    return;
+  }
 
-  $('sectionMeta').textContent = `Section ${idx + 1} of ${S.sections.length}`;
+  S.currentSecIndex = idx;
+  S.isReviewMode = !!isReview;
+  sec.visited = true;
+
+  if (sec.expired || sec.remaining <= 0) {
+    toast(`Time for ${sec.title} has already expired.`, 'neutral');
+    renderSectionReviewOverview();
+    return;
+  }
+
+  if ($('sectionReviewView')) $('sectionReviewView').hidden = true;
+  if ($('sectionExamView')) $('sectionExamView').hidden = false;
+
+  $('sectionMeta').textContent = isReview
+    ? `Reviewing Section ${idx + 1} of ${S.sections.length}`
+    : `Section ${idx + 1} of ${S.sections.length}`;
   $('sectionTitle').textContent = sec.title;
-  $('sectionDesc').textContent = `Answer all ${sec.questions.length} question(s) in this section.`;
+  $('sectionDesc').textContent = `Answer or review the ${sec.questions.length} question(s) in this section.`;
 
   const host = $('sectionQuestionList');
   if (host) {
@@ -1515,21 +2252,151 @@ function renderSection(idx) {
     });
   }
 
-  startSectionTimer(sec.duration || 60);
+  startSectionTimer(sec);
 
   const isLast = idx + 1 >= S.sections.length;
-  if ($('btnNextSection')) {
-    $('btnNextSection').textContent = isLast ? 'Submit Final Section & Finish Exam ✓' : 'Complete Section & Proceed ›';
-    $('btnNextSection').onclick = () => {
-      stopQuestion();
-      if (isLast) {
-        finish();
-      } else {
-        showSectionTransition(idx + 1, () => {
-          S.currentSecIndex = idx + 1;
-          renderSection(S.currentSecIndex);
-        });
-      }
+  const btn = $('btnNextSection');
+  if (btn) {
+    if (isReview) {
+      btn.textContent = '✓ Done Reviewing Section (Back to Review)';
+      btn.onclick = () => {
+        stopQuestion();
+        if (_dirtyKeys.size > 0) flushFirestoreCheckpoint().catch(() => {});
+        renderSectionReviewOverview();
+      };
+    } else {
+      btn.textContent = isLast ? 'Complete Final Section & Review Exam ›' : 'Complete Section & Proceed ›';
+      btn.onclick = () => {
+        stopQuestion();
+        if (_dirtyKeys.size > 0) flushFirestoreCheckpoint().catch(() => {});
+        if (isLast) {
+          renderSectionReviewOverview();
+        } else {
+          showSectionTransition(idx + 1, () => {
+            S.currentSecIndex = idx + 1;
+            renderSection(S.currentSecIndex);
+          });
+        }
+      };
+    }
+  }
+}
+
+function renderSectionReviewOverview() {
+  stopQuestion();
+  S.isReviewMode = true;
+
+  if ($('sectionExamView')) $('sectionExamView').hidden = true;
+  if ($('sectionReviewView')) $('sectionReviewView').hidden = false;
+  if ($('pillTimer')) $('pillTimer').hidden = true;
+  if ($('timerBar')) $('timerBar').hidden = true;
+
+  const host = $('sectionReviewCardsList');
+  if (!host) return;
+  host.replaceChildren();
+
+  (S.sections || []).forEach((sec, idx) => {
+    const totalQ = sec.questions.length;
+    const answeredCount = sec.questions.filter(q => S.answers[q.no] != null && S.answers[q.no] !== '').length;
+    const unansweredCount = totalQ - answeredCount;
+    const isExpired = sec.expired || sec.remaining <= 0;
+
+    const card = document.createElement('div');
+    card.className = 'card solo' + (!isExpired ? ' liftable' : '');
+    card.style.cssText = `display:flex; flex-direction:row; justify-content:space-between; align-items:center; gap:16px; padding:20px 24px; border-radius:var(--r-lg); border:1px solid ${isExpired ? 'var(--edge)' : 'var(--accent-line)'}; background:${isExpired ? 'var(--glass-2)' : 'var(--glass-hi)'}; ${isExpired ? 'opacity:0.8; cursor:not-allowed;' : 'cursor:pointer;'} transition:transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;`;
+
+    const m = Math.max(0, Math.floor(sec.remaining / 60));
+    const s = Math.max(0, sec.remaining % 60);
+    const timeFormatted = `${m}:${String(s).padStart(2, '0')}`;
+
+    const infoLeft = document.createElement('div');
+    infoLeft.style.cssText = 'display:flex; flex-direction:column; gap:6px; flex:1; min-width:0;';
+
+    const topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex; align-items:center; gap:8px; flex-wrap:wrap;';
+
+    const secBadge = document.createElement('span');
+    secBadge.className = 'eyebrow';
+    secBadge.style.margin = '0';
+    secBadge.textContent = `Section ${idx + 1} of ${S.sections.length}`;
+
+    const titleEl = document.createElement('h3');
+    titleEl.style.cssText = 'margin:0; font-size:1.125rem; font-weight:700; color:var(--fg-hero); line-height:1.3;';
+    titleEl.textContent = sec.title;
+
+    topRow.append(secBadge, titleEl);
+
+    const statsRow = document.createElement('div');
+    statsRow.style.cssText = 'display:flex; align-items:center; gap:10px; font-size:0.8125rem; margin-top:2px; flex-wrap:wrap;';
+
+    const answeredBadge = document.createElement('span');
+    answeredBadge.className = 'pill';
+    answeredBadge.style.cssText = 'font-size:0.75rem; font-weight:600; padding:3px 10px; background:var(--glass-2); border:1px solid var(--edge); color:var(--fg);';
+    answeredBadge.innerHTML = `<b style="color:var(--fg-hero);">${answeredCount}</b> of <b>${totalQ}</b> answered`;
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'pill';
+    statusBadge.style.cssText = 'font-size:0.75rem; font-weight:700; padding:3px 10px;';
+    if (unansweredCount > 0) {
+      statusBadge.style.color = 'var(--bad)';
+      statusBadge.style.background = 'var(--bad-soft)';
+      statusBadge.style.borderColor = 'var(--bad-soft)';
+      statusBadge.textContent = `⚠️ ${unansweredCount} unanswered`;
+    } else {
+      statusBadge.style.color = 'var(--ok)';
+      statusBadge.style.background = 'var(--ok-soft)';
+      statusBadge.style.borderColor = 'var(--ok-soft)';
+      statusBadge.textContent = `✓ All answered`;
+    }
+
+    statsRow.append(answeredBadge, statusBadge);
+    infoLeft.append(topRow, statsRow);
+
+    const rightAction = document.createElement('div');
+    rightAction.style.cssText = 'display:flex; align-items:center; gap:10px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end;';
+
+    const timerBadge = document.createElement('span');
+    timerBadge.className = 'pill';
+    if (isExpired) {
+      timerBadge.style.cssText = 'font-weight:700; background:var(--sunk); color:var(--fg-3); border-color:var(--edge); font-size:0.8125rem;';
+      timerBadge.textContent = '⏱ 0:00 (Expired)';
+    } else {
+      timerBadge.style.cssText = 'font-weight:700; background:var(--accent-soft); color:var(--accent); border-color:var(--accent-line); font-size:0.8125rem;';
+      timerBadge.textContent = `⏱ ${timeFormatted} left`;
+    }
+
+    const reviewBtn = document.createElement('button');
+    reviewBtn.type = 'button';
+    reviewBtn.className = isExpired ? 'btn-sm btn-ghost' : 'btn-sm btn-outline';
+    reviewBtn.disabled = isExpired;
+    reviewBtn.style.cssText = 'border-radius:var(--r-sm); font-weight:600; padding:6px 14px;';
+    reviewBtn.textContent = isExpired ? 'Locked' : 'Review Section ›';
+
+    rightAction.append(timerBadge, reviewBtn);
+    card.append(infoLeft, rightAction);
+
+    if (!isExpired) {
+      const openReview = () => renderSection(idx, true);
+      card.onclick = (e) => {
+        if (e.target.tagName !== 'BUTTON') openReview();
+      };
+      reviewBtn.onclick = (e) => {
+        e.stopPropagation();
+        openReview();
+      };
+    } else {
+      card.onclick = () => {
+        toast(`Section ${idx + 1} (${sec.title}) timer has expired and can no longer be edited.`, 'neutral');
+      };
+    }
+
+    host.append(card);
+  });
+
+  const submitBtn = $('btnSubmitFromReview');
+  if (submitBtn) {
+    submitBtn.onclick = () => {
+      finish();
     };
   }
 }
@@ -1588,6 +2455,11 @@ function startGlobal() {
 }
 
 function paint(sec) {
+  if (S.isReviewer || S.timerMode === 'untimed') {
+    if ($('pillTimer')) $('pillTimer').hidden = true;
+    if ($('timerBar')) $('timerBar').hidden = true;
+    return;
+  }
   sec = Math.max(0, Math.round(sec));
   const m = Math.floor(sec / 60), s = sec % 60;
   const pill = $('pillTimer');
@@ -1609,13 +2481,16 @@ function paint(sec) {
   }
 }
 
-function startSectionTimer(totalSecs) {
+function startSectionTimer(sec) {
   stopQuestion();
-  _lastPainted = -1;
-  S.remaining = totalSecs;
-  S.span = totalSecs;
-  $('pillTimer').hidden = false;
-  $('timerBar').hidden = false;
+  if (!sec || sec.remaining <= 0 || sec.expired) {
+    if (sec) { sec.remaining = 0; sec.expired = true; }
+    return;
+  }
+  S.remaining = sec.remaining;
+  S.span = sec.duration || sec.remaining || 60;
+  if ($('pillTimer')) $('pillTimer').hidden = false;
+  if ($('timerBar')) $('timerBar').hidden = false;
   paint(S.remaining);
   if ($('sectionTimerPill')) {
     const m = Math.floor(S.remaining / 60), s = S.remaining % 60;
@@ -1623,7 +2498,8 @@ function startSectionTimer(totalSecs) {
   }
 
   S.tick = setInterval(() => {
-    S.remaining--;
+    sec.remaining--;
+    S.remaining = sec.remaining;
     paint(S.remaining);
     if ($('sectionTimerPill')) {
       const m = Math.max(0, Math.floor(S.remaining / 60)), s = Math.max(0, S.remaining % 60);
@@ -1633,16 +2509,23 @@ function startSectionTimer(totalSecs) {
     else if (S.remaining === 60) announce('1 minute remaining', true);
     else if (S.remaining === 30) announce('30 seconds remaining', true);
 
-    if (S.remaining <= 0) {
+    if (sec.remaining <= 0) {
+      sec.remaining = 0;
+      sec.expired = true;
       stopQuestion();
       play('timeup');
-      if (S.currentSecIndex + 1 < S.sections.length) {
+      announce(`Time is up for section: ${sec.title}`, true);
+
+      if (S.isReviewMode) {
+        toast(`Time is up for ${sec.title}.`, 'neutral');
+        renderSectionReviewOverview();
+      } else if (S.currentSecIndex + 1 < S.sections.length) {
         showSectionTransition(S.currentSecIndex + 1, () => {
           S.currentSecIndex++;
           renderSection(S.currentSecIndex);
         });
       } else {
-        finish();
+        renderSectionReviewOverview();
       }
     }
   }, 1000);
@@ -1656,7 +2539,9 @@ function render() {
   renderStepperDots();
 
   const done = Object.keys(S.answers).length;
-  $('pillProgress').textContent = `Question ${Math.min(done + 1, S.questions.length)} of ${S.questions.length}`;
+  $('pillProgress').textContent = S.secondPass
+    ? `Reviewing ${S.pos + 1} of ${S.queue.length}`
+    : `Question ${Math.min(done + 1, S.questions.length)} of ${S.questions.length}`;
 
   const sk = $('pillSkipped');
   sk.hidden = !S.deferred.length && !S.secondPass;
@@ -1826,13 +2711,38 @@ function render() {
 
   // Next/Skip button labels and click bindings
   const isLast = S.pos === S.queue.length - 1 && !S.deferred.length;
-  if ($('btnAnswer')) {
-    $('btnAnswer').textContent = isLast ? 'Submit exam' : 'Next';
-    $('btnAnswer').onclick = () => answer();
-  }
-  if ($('btnSkip')) {
-    $('btnSkip').hidden = S.secondPass || isLast;
-    $('btnSkip').onclick = () => skip();
+  if (S.isReviewer) {
+    if ($('standardActions')) $('standardActions').hidden = true;
+    if ($('reviewerActions')) $('reviewerActions').hidden = false;
+    if ($('qReviewerFeedback')) {
+      $('qReviewerFeedback').hidden = true;
+      $('qReviewerFeedback').replaceChildren();
+    }
+    if ($('btnNextQuestion')) {
+      $('btnNextQuestion').textContent = isLast ? 'Finish & Review All ✓' : 'Next Question ›';
+      $('btnNextQuestion').onclick = () => {
+        const qCur = current();
+        if (qCur) {
+          const val = readAnswer();
+          setDirtyAnswer(qCur.no, val || '');
+        }
+        advance();
+      };
+    }
+    if ($('btnShowAnswer')) {
+      $('btnShowAnswer').onclick = () => showReviewerAnswer();
+    }
+  } else {
+    if ($('standardActions')) $('standardActions').hidden = false;
+    if ($('reviewerActions')) $('reviewerActions').hidden = true;
+    if ($('btnAnswer')) {
+      $('btnAnswer').textContent = isLast ? 'Submit exam' : 'Next';
+      $('btnAnswer').onclick = () => answer();
+    }
+    if ($('btnSkip')) {
+      $('btnSkip').hidden = S.secondPass || isLast;
+      $('btnSkip').onclick = () => skip();
+    }
   }
 
   setTimeout(() => {
@@ -1927,7 +2837,7 @@ function skip() {
   const q = current();
   if (!q) return;
   stopQuestion();
-  if (!S.deferred.includes(q.no)) S.deferred.push(q.no);
+  if (!S.deferred.some(d => (d && d.no != null ? d.no : d) === q.no)) S.deferred.push(q);
   feedback('skip', 8);
   advance();
 }
@@ -1943,6 +2853,11 @@ function startQuestion(q) {
   stopQuestion();
   S.qStarted = Date.now();
   render();
+
+  if (S.isReviewer || S.timerMode === 'untimed') {
+    paint(null);
+    return;
+  }
 
   const sec = q.seconds || S.defaultTimer || 45;
   S.remaining = sec;
@@ -1961,22 +2876,130 @@ function startQuestion(q) {
   }, 1000);
 }
 
+const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replaceAll('"', '&quot;');
+function normText(s, keepCase) {
+  const out = String(s == null ? '' : s)
+    .normalize('NFD')
+    .replace(new RegExp('[\\u0300-\\u036f]', 'g'), '')
+    .replace(new RegExp('[^\\w\\s]', 'g'), ' ')
+    .replace(new RegExp('\\s+', 'g'), ' ')
+    .trim();
+  return keepCase ? out : out.toLowerCase();
+}
+
+function showReviewerAnswer() {
+  const q = current();
+  if (!q || !q.answerKey) return;
+  const key = q.answerKey;
+  const given = readAnswer();
+  const feedbackBox = $('qReviewerFeedback');
+
+  if (q.type === 'MC' || q.type === 'TF') {
+    const opts = document.querySelectorAll('#qInput .opt');
+    let isCorrect = false;
+    opts.forEach(b => {
+      b.classList.remove('correct-answer', 'wrong-answer');
+      const val = b.dataset.value;
+      const isTarget = (q.type === 'MC' && val === key.correctLetter) ||
+                       (q.type === 'TF' && (val === key.correctValue || val === key.correctLetter));
+      if (isTarget) {
+        b.classList.add('correct-answer');
+      }
+      if (val === given) {
+        if (isTarget) {
+          isCorrect = true;
+        } else {
+          b.classList.add('wrong-answer');
+        }
+      }
+    });
+
+    if (feedbackBox) {
+      feedbackBox.hidden = false;
+      feedbackBox.innerHTML = `
+        <div class="rf-badge ${isCorrect ? 'ok' : 'bad'}">${isCorrect ? '✓ Correct!' : '✗ Incorrect'}</div>
+        <div class="rf-exp">Correct Answer: <b>${esc(key.expected)}</b></div>
+      `;
+    }
+
+    if (isCorrect) {
+      play('chime');
+      haptic(30);
+    } else {
+      play('wrong');
+      haptic(15);
+    }
+  } else if (q.type === 'ID' || q.type === 'WB') {
+    const keepCase = !!key.caseSensitive;
+    const g = normText(given, keepCase);
+    let ok = false;
+    const mode = key.match || '';
+
+    const numMatch = mode.match(/^#\s*(?:±|\+\/-)?\s*([0-9.]+)$/);
+    if (numMatch) {
+      const tol = parseFloat(numMatch[1]) || 0;
+      const gn = parseFloat(String(given || '').replace(/[^0-9.\-]/g, ''));
+      ok = !isNaN(gn) && (key.alts || []).some(a => {
+        const an = parseFloat(String(a).replace(/[^0-9.\-]/g, ''));
+        return !isNaN(an) && Math.abs(gn - an) <= tol;
+      });
+    } else if (mode === '~') {
+      ok = (key.alts || []).some(a => {
+        const an = normText(a, keepCase);
+        return an && (g.indexOf(an) !== -1 || an.indexOf(g) !== -1);
+      });
+    } else {
+      ok = (key.alts || []).some(a => normText(a, keepCase) === g);
+    }
+
+    if (feedbackBox) {
+      feedbackBox.hidden = false;
+      feedbackBox.innerHTML = `
+        <div class="rf-badge ${ok ? 'ok' : 'bad'}">${ok ? '✓ Correct!' : '✗ Incorrect'}</div>
+        <div class="rf-exp">Correct Answer: <b>${esc(key.expected)}</b></div>
+      `;
+    }
+    if (ok) { play('chime'); haptic(30); } else { play('wrong'); haptic(15); }
+  } else if (q.type === 'EN') {
+    if (feedbackBox) {
+      feedbackBox.hidden = false;
+      feedbackBox.innerHTML = `
+        <div class="rf-badge ok">✓ Answers</div>
+        <div class="rf-exp">Expected Items: <b>${esc(key.expected)}</b></div>
+      `;
+    }
+    play('click');
+  } else if (q.type === 'MA') {
+    if (feedbackBox) {
+      feedbackBox.hidden = false;
+      feedbackBox.innerHTML = `
+        <div class="rf-badge ok">✓ Pairings</div>
+        <div class="rf-exp">Correct Matches: <b>${esc(key.expected)}</b></div>
+      `;
+    }
+    play('click');
+  }
+}
+
 let saveTimer = null;
 
 function autosave() {
   if (saveTimer) clearInterval(saveTimer);
+  // Adaptive checkpointing: 10-minute fallback interval, zero writes if no dirty answers
   saveTimer = setInterval(async () => {
     if (!S.token || S.finished) return;
+    if (db) {
+      if (_dirtyKeys.size > 0) await flushFirestoreCheckpoint().catch(() => {});
+      return;
+    }
     if (isDeltaAutosaveEnabled(S.code)) {
-      if (_dirtyKeys.size > 0) {
-        await flushDeltaAnswers().catch(() => {});
-      }
+      if (_dirtyKeys.size > 0) await flushDeltaAnswers().catch(() => {});
       return;
     }
     const userToken = await idToken().catch(() => '');
     api('save', { token: S.token, answers: S.answers, perQ: S.perQ, idToken: userToken }, { tries: 1 })
       .catch(() => {});
-  }, 20000);
+  }, 10 * 60 * 1000);
 }
 
 function finish() {
@@ -1990,14 +3013,50 @@ function finish() {
   send();
 }
 
-async function send() {
+async function send(isAutoTimeout = false) {
   $('sendText').textContent = 'Submitting your answers…';
   $('sendSub').textContent = 'Keep this page open.';
   $('btnRetry').hidden = true;
 
   try {
-    if (isDeltaAutosaveEnabled(S.code) && _dirtyKeys.size > 0) {
-      await flushDeltaAnswers().catch(() => {});
+    if (isAutoTimeout) {
+      // Spread simultaneous automatic timer submissions smoothly
+      await sleep(Math.floor(Math.random() * 1500));
+    }
+    if (_dirtyKeys.size > 0) {
+      let flushed = false;
+      if (db) {
+        flushed = await flushFirestoreCheckpoint(true).catch(err => {
+          if (err?.code !== 'permission-denied') {
+            console.warn('[student] Final Firestore checkpoint failed, trying fallbacks:', err);
+          }
+          return false;
+        });
+      }
+      // If Firestore failed, was busy, or unavailable, fall back to delta HTTP autosave via Apps Script
+      if (!flushed && _dirtyKeys.size > 0) {
+        const deltaOk = await flushDeltaAnswers(true).catch(err => {
+          console.warn('[student] Final delta autosave fallback failed:', err);
+          return false;
+        });
+        // If delta autosave also failed or was unable to flush, fall back to full state save
+        if (!deltaOk && _dirtyKeys.size > 0) {
+          try {
+            const userToken = await idToken().catch(() => '');
+            const saveRes = await api('save', {
+              token: S.token,
+              answers: S.answers,
+              perQ: S.perQ,
+              idToken: userToken
+            }, { tries: 2 });
+            if (saveRes && saveRes.ok) {
+              _dirtyKeys.clear();
+            }
+          } catch (e) {
+            console.warn('[student] Final full-save fallback failed:', e);
+          }
+        }
+      }
     }
     const userToken = await idToken().catch(() => '');
     const privAck = FEATURE_FLAGS?.privacyAckVersion || 'privacy_ack_2026_1';
@@ -2008,7 +3067,7 @@ async function send() {
         flags: S.flags,
         idToken: userToken,
         privacyAckVersion: privAck,
-        engine: isDeltaAutosaveEnabled(S.code) ? 'delta+ledger' : 'legacy'
+        engine: db ? 'firestore+hybrid' : (isDeltaAutosaveEnabled(S.code) ? 'delta+ledger' : 'legacy')
       },
       { tries: 6, onRetry: (n, of) => { $('sendText').textContent = `Connection is slow — retrying (${n} of ${of})…`; } });
 
@@ -2016,6 +3075,7 @@ async function send() {
       $('sendText').textContent = r.message || 'The server could not record your answers.';
       $('sendSub').textContent = 'Show this screen to your instructor.';
       $('btnRetry').hidden = false;
+      if ($('btnSendBack')) $('btnSendBack').hidden = false;
       return;
     }
     done(r);
@@ -2023,9 +3083,17 @@ async function send() {
     $('sendText').textContent = 'We could not reach the server.';
     $('sendSub').textContent = 'Your answers are still here. Reconnect and tap Try again.';
     $('btnRetry').hidden = false;
+    if ($('btnSendBack')) $('btnSendBack').hidden = false;
   }
 }
 $('btnRetry').onclick = send;
+if ($('btnSendBack')) {
+  $('btnSendBack').onclick = () => {
+    S.active = null;
+    if ($('activeExamCard')) $('activeExamCard').hidden = true;
+    boot('scStart');
+  };
+}
 
 let _lastDoneResult = null;
 let _activeFilter = 'all';
@@ -2115,9 +3183,49 @@ function done(r) {
   if ($('cntBlank')) $('cntBlank').textContent = blankCount;
 
   renderReviewList('all');
-  $('btnDoneExams').onclick = () => leaveFinishedExam('scStart');
-  $('btnDoneHistory').onclick = () => leaveFinishedExam('scHistory');
+  if (S.isReviewer) {
+    if ($('standardDoneActions')) $('standardDoneActions').hidden = true;
+    if ($('reviewerDoneActions')) $('reviewerDoneActions').hidden = false;
+    if ($('btnRetryReviewer')) $('btnRetryReviewer').onclick = () => retryReviewer();
+    if ($('btnEndReviewer')) $('btnEndReviewer').onclick = () => leaveFinishedExam('scStart');
+  } else {
+    if ($('standardDoneActions')) $('standardDoneActions').hidden = false;
+    if ($('reviewerDoneActions')) $('reviewerDoneActions').hidden = true;
+    $('btnDoneExams').onclick = () => leaveFinishedExam('scStart');
+    $('btnDoneHistory').onclick = () => leaveFinishedExam('scHistory');
+  }
   show('scDone');
+}
+
+async function retryReviewer() {
+  const code = S.code;
+  if (!code) { leaveFinishedExam('scStart'); return; }
+  clearSessionBackup(S.token);
+  clearJournalAnswers(S.token).catch(() => {});
+  _dirtyKeys.clear();
+
+  show('scSending');
+  $('sendText').textContent = 'Starting fresh reviewer session…';
+  $('sendSub').textContent = 'Please wait a moment.';
+
+  try {
+    const userToken = await idToken().catch(() => '');
+    const r = await api('startAttempt', {
+      code: code,
+      idToken: userToken,
+      forceNew: true
+    });
+    if (!r.ok) {
+      toast(r.message || 'Could not restart reviewer.', 'bad');
+      show('scDone');
+      return;
+    }
+    await prepare(r);
+    begin();
+  } catch (err) {
+    toast(err.message || 'Could not restart reviewer.', 'bad');
+    show('scDone');
+  }
 }
 
 function renderReviewList(filter) {
@@ -2234,13 +3342,14 @@ $('reviewFilterTabs')?.addEventListener('keydown', e => {
    whole behaviour hangs off this one constant. Change the Begin-exam rules
    list in index.html to match if you do.                                  */
 
-const STRICT_AUTO_SUBMIT = false;
-const WARN_LIMIT = 3;            // warnings shown before the strict cutoff
+const STRICT_AUTO_SUBMIT = true;
+const WARN_LIMIT = 2;            // warnings shown before the strict cutoff
 
-let awayAt = null;
-let behaviorWarnings = 0;
-let warningCountdownInterval = null;
-let blurCheck = null;
+function isExamActive() {
+  if (S.isReviewer) return false;
+  const el = $('scExam');
+  return !!(el && !el.hidden && S.token && !S.finished);
+}
 
 /** Format a timestamp as a short local time string, e.g. "10:14:32 AM" */
 function fmtTime(ms) {
@@ -2248,7 +3357,7 @@ function fmtTime(ms) {
 }
 
 function leftPage() {
-  if (awayAt || !S.token || S.finished) return;
+  if (awayAt || !isExamActive()) return;
   awayAt = Date.now();
 }
 
@@ -2260,6 +3369,7 @@ function closeAway() {
   const gapLabel = gapSec >= 60
     ? Math.floor(gapSec / 60) + 'm ' + (gapSec % 60) + 's'
     : gapSec + 's';
+  if (!Array.isArray(S.flags)) S.flags = [];
   S.flags.push({
     type: 'focus-loss',
     leftAt:      new Date(awayAt).toISOString(),
@@ -2279,16 +3389,45 @@ function closeAway() {
  * is wrong as well as unseen.
  */
 function showWarning() {
+  if (S.isReviewer) return;
   const wModal = $('warningModal');
   const wText  = $('warningModalText');
+  const wNotes = $('warningModalNotes');
   const wCount = $('warningModalCountdown');
   if (!wModal) return;
 
-  const strictEnd = STRICT_AUTO_SUBMIT && behaviorWarnings >= WARN_LIMIT;
+  const strikes = S.proctoringStrikes != null ? Number(S.proctoringStrikes) : (STRICT_AUTO_SUBMIT ? WARN_LIMIT + 1 : 0);
+
+  if (strikes <= 0) {
+    wText.textContent = 'Warning ' + behaviorWarnings + ': you left the exam page. Your instructor can see when you left and for how long. Your exam has not been ended — carry on and finish it.';
+    if (wNotes) {
+      if (S.proctoringWarningNotes) {
+        wNotes.textContent = S.proctoringWarningNotes;
+        wNotes.hidden = false;
+      } else {
+        wNotes.hidden = true;
+      }
+    }
+    let left = 10;
+    wCount.textContent = 'Resuming in ' + left + 's…';
+    openModal(wModal, $('btnResumeExam'), { onDismiss: dismissWarning });
+    play('alert');
+    clearInterval(warningCountdownInterval);
+    warningCountdownInterval = setInterval(() => {
+      left--;
+      wCount.textContent = 'Resuming in ' + left + 's…';
+      if (left <= 0) dismissWarning();
+    }, 1000);
+    $('btnResumeExam').onclick = dismissWarning;
+    return;
+  }
+
+  const strictEnd = STRICT_AUTO_SUBMIT && behaviorWarnings >= strikes;
 
   if (strictEnd) {
     wText.textContent =
-      'You have left this page ' + behaviorWarnings + ' times. Your exam is being submitted now.';
+      '🚨 FINAL NOTICE: You have left the exam page ' + behaviorWarnings + ' times. As warned, your exam has been terminated and is being submitted now.';
+    if (wNotes) wNotes.hidden = true;
     wCount.textContent = 'Submitting…';
     openModal(wModal, null, { dismissible: false });
     play('alert');
@@ -2296,11 +3435,24 @@ function showWarning() {
     return;
   }
 
+  const remaining = strikes - behaviorWarnings;
   wText.textContent = STRICT_AUTO_SUBMIT
-    ? 'Warning ' + behaviorWarnings + ' of ' + WARN_LIMIT + ': you left the exam page. ' +
-      'Your instructor can see when, and for how long. Leaving ' + WARN_LIMIT + ' times submits your exam.'
+    ? '⚠️ Strike ' + behaviorWarnings + ' of ' + strikes + ': You left or switched away from the exam page! ' +
+      'Switching tabs, minimizing, or navigating away is strictly prohibited. Your instructor has been notified. ' +
+      (remaining === 1
+        ? 'CONSEQUENCE: If you leave this page 1 more time, your exam will be AUTOMATICALLY SUBMITTED IMMEDIATELY.'
+        : 'CONSEQUENCE: ' + remaining + ' strikes remaining before your exam is automatically submitted.')
     : 'Warning ' + behaviorWarnings + ': you left the exam page. Your instructor can see ' +
       'when you left and for how long. Your exam has not been ended — carry on and finish it.';
+
+  if (wNotes) {
+    if (S.proctoringWarningNotes) {
+      wNotes.textContent = S.proctoringWarningNotes;
+      wNotes.hidden = false;
+    } else {
+      wNotes.hidden = true;
+    }
+  }
 
   let left = 15;
   wCount.textContent = 'Resuming in ' + left + 's…';
@@ -2318,24 +3470,65 @@ function showWarning() {
 }
 
 function dismissWarning() {
-  clearInterval(warningCountdownInterval);
-  warningCountdownInterval = null;
-  closeModal($('warningModal'));
+  if (warningCountdownInterval) {
+    clearInterval(warningCountdownInterval);
+    warningCountdownInterval = null;
+  }
+  const modal = $('warningModal');
+  if (modal) closeModal(modal);
+}
+
+async function checkAndReportSeriousFlag(gapSec) {
+  if (_firstFlagReported || !isExamActive()) return;
+  // Serious threshold: 3 warnings OR single departure >= 15 seconds
+  if (behaviorWarnings >= 3 || gapSec >= 15) {
+    _firstFlagReported = true;
+    const lastFlag = S.flags[S.flags.length - 1];
+    const reason = lastFlag ? lastFlag.label : `Left page for ${gapSec}s`;
+    try {
+      const userToken = await idToken().catch(() => '');
+      api('reportFirstFlag', {
+        token: S.token,
+        attemptId: S.attemptId || S.token,
+        code: S.code,
+        reason: reason,
+        flagCount: behaviorWarnings,
+        idToken: userToken
+      }, { tries: 3 }).catch(() => {});
+    } catch {}
+  }
 }
 
 /** The student is back. Close the event, count it, and tell them. */
 function cameBack() {
-  if (!awayAt) return;
+  if (!awayAt || !isExamActive()) {
+    awayAt = null;
+    return;
+  }
+  const back = Date.now();
+  const gapSec = Math.round((back - awayAt) / 1000);
   closeAway();
-  if (!S.token || S.finished) return;
+  if (!isExamActive()) return;
   behaviorWarnings++;
   showWarning();
+  checkAndReportSeriousFlag(gapSec);
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (!S.token || S.finished) return;
-  if (document.hidden) leftPage();
-  else cameBack();
+  if (!isExamActive()) {
+    awayAt = null;
+    if (blurCheck) {
+      clearTimeout(blurCheck);
+      blurCheck = null;
+    }
+    return;
+  }
+  if (document.hidden) {
+    if (_dirtyKeys.size > 0) flushFirestoreCheckpoint().catch(() => {});
+    leftPage();
+  } else {
+    cameBack();
+  }
 });
 
 /*
@@ -2347,9 +3540,10 @@ document.addEventListener('visibilitychange', () => {
    controls.
 */
 addEventListener('blur', () => {
-  if (!S.token || S.finished || awayAt) return;
+  if (!isExamActive() || awayAt) return;
   clearTimeout(blurCheck);
   blurCheck = setTimeout(() => {
+    if (!isExamActive()) return;
     if (document.hidden) return;              // visibilitychange owns this one
     if (document.hasFocus?.()) return;        // never actually left
     const el = document.activeElement;
@@ -2360,13 +3554,17 @@ addEventListener('blur', () => {
 
 addEventListener('focus', () => {
   clearTimeout(blurCheck);
+  if (!isExamActive()) {
+    awayAt = null;
+    return;
+  }
   cameBack();
 });
 
 // Right-click is disabled mid-exam, but never over a field the student is
 // typing in — cut, paste and the spelling menu all live on that menu.
 document.addEventListener('contextmenu', e => {
-  if (S.token && !S.finished) {
+  if (isExamActive()) {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     e.preventDefault();
@@ -2404,7 +3602,7 @@ for (const [tab, screens] of Object.entries(TAB_SCREENS)) {
 }
 
 const BAR_HIDDEN_SCREENS = new Set([
-  'scLoading', 'scSignIn', 'scFatal',      // machine and error states
+  'scLoading', 'scInAppBrowser', 'scSignIn', 'scFatal', // machine and error states
   'scExam', 'scSending',                   // walking away costs the attempt
   'scRegister', 'scPick', 'scNotListed'    // finish signing up first
 ]);
@@ -2440,6 +3638,12 @@ function tabTarget(tab) {
 function leaveFinishedExam(destination) {
   S.token = '';
   S.finished = false;
+  behaviorWarnings = 0;
+  S.isReviewer = false;
+  if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
+  if ($('pillReviewer')) $('pillReviewer').hidden = true;
+  awayAt = null;
+  if (blurCheck) { clearTimeout(blurCheck); blurCheck = null; }
   boot(destination);
 }
 

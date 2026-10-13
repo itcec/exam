@@ -220,7 +220,7 @@ const CACHE = {
   timestamp: 0
 };
 
-// Try to restore from sessionStorage on load
+// Try to restore from sessionStorage and localStorage on load
 try {
   const saved = sessionStorage.getItem('teacher_cache_v2');
   if (saved) {
@@ -229,6 +229,56 @@ try {
   }
 } catch (e) {}
 
+try {
+  const localCatalog = localStorage.getItem('teacher_edp_catalog_v1');
+  if (localCatalog) {
+    const parsedCatalog = JSON.parse(localCatalog);
+    if (Array.isArray(parsedCatalog) && parsedCatalog.length) {
+      CACHE.edpCatalog = parsedCatalog;
+    }
+  }
+} catch (e) {}
+
+function syncAndPreserveEdpCatalog(incomingList, incomingExams, incomingStudents) {
+  const mergedMap = new Map();
+  (CACHE.edpCatalog || []).forEach(item => {
+    if (item && item.edpCode) mergedMap.set(String(item.edpCode).trim().toLowerCase(), item);
+  });
+  (Array.isArray(incomingList) ? incomingList : []).forEach(item => {
+    if (item && item.edpCode) mergedMap.set(String(item.edpCode).trim().toLowerCase(), item);
+  });
+  (Array.isArray(incomingExams) ? incomingExams : []).forEach(ex => {
+    const codes = [ex.edpCode, ...(ex.edpCodes || [])];
+    codes.forEach(c => {
+      const cStr = String(c || '').trim();
+      if (cStr && !mergedMap.has(cStr.toLowerCase())) {
+        mergedMap.set(cStr.toLowerCase(), {
+          edpCode: cStr,
+          subject: ex.subject || ex.title || '',
+          addedBy: CACHE.email || '',
+          updatedAt: Date.now()
+        });
+      }
+    });
+  });
+  (Array.isArray(incomingStudents) ? incomingStudents : []).forEach(st => {
+    const stEdps = String(st.edpCode || '').split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+    stEdps.forEach(cStr => {
+      if (cStr && !mergedMap.has(cStr.toLowerCase())) {
+        mergedMap.set(cStr.toLowerCase(), {
+          edpCode: cStr,
+          subject: st.course || '',
+          addedBy: CACHE.email || '',
+          updatedAt: Date.now()
+        });
+      }
+    });
+  });
+  CACHE.edpCatalog = Array.from(mergedMap.values());
+  saveCache();
+  return CACHE.edpCatalog;
+}
+
 function saveCache() {
   try {
     sessionStorage.setItem('teacher_cache_v2', JSON.stringify({
@@ -236,8 +286,15 @@ function saveCache() {
       exams: CACHE.exams,
       students: CACHE.students,
       options: CACHE.options,
+      edpCatalog: CACHE.edpCatalog,
       timestamp: CACHE.timestamp
     }));
+  } catch (e) {}
+
+  try {
+    if (CACHE.edpCatalog && Array.isArray(CACHE.edpCatalog) && CACHE.edpCatalog.length) {
+      localStorage.setItem('teacher_edp_catalog_v1', JSON.stringify(CACHE.edpCatalog));
+    }
   } catch (e) {}
 }
 
@@ -278,8 +335,13 @@ function show(id) {
   const bar = $('tAppBar');
   if (!bar) return;
 
-  if (BAR_HIDDEN.has(id)) { bar.hidden = true; return; }
+  if (BAR_HIDDEN.has(id)) {
+    bar.hidden = true;
+    bar.style.setProperty('display', 'none', 'important');
+    return;
+  }
   bar.hidden = false;
+  bar.style.removeProperty('display');
 
   const tab = SCREEN_TAB[id] || null;
   document.querySelectorAll('.appbar-tab').forEach(btn => {
@@ -381,7 +443,7 @@ onAuthStateChanged(auth, async user => {
     CACHE.exams     = r.exams || [];
     CACHE.students  = r.students || [];
     CACHE.options   = r.options || {};
-    CACHE.edpCatalog = r.edpCatalog || [];
+    syncAndPreserveEdpCatalog(r.edpCatalog, r.exams, r.students);
     CACHE.timestamp = r.serverTimestamp || Date.now();
     CACHE.emergencyStopActive = !!r.emergencyStopActive;
     updateEmergencyStopUI(CACHE.emergencyStopActive);
@@ -404,6 +466,7 @@ onAuthStateChanged(auth, async user => {
       try {
         await loadDashboard();
         await loadStudents();
+        await loadEdpCatalogFromServer();
       } finally {
         setDashboardSkeleton(false);
       }
@@ -425,6 +488,18 @@ function deny(title, text) {
   if ($('tDeniedTitle')) $('tDeniedTitle').textContent = title;
   if ($('tDeniedText'))  $('tDeniedText').textContent  = text;
   show('scTDenied');
+}
+
+async function loadEdpCatalogFromServer() {
+  try {
+    const r = await api('teacherListEdpCatalog', { idToken: await idToken() });
+    if (r && r.ok && Array.isArray(r.catalog)) {
+      syncAndPreserveEdpCatalog(r.catalog, CACHE.exams, CACHE.students);
+      renderEdpCatalogQuickSelect();
+    }
+  } catch (e) {
+    console.warn('[teacher] loadEdpCatalogFromServer:', e);
+  }
 }
 
 /* Sign in */
@@ -478,7 +553,7 @@ async function syncAllData() {
       CACHE.exams     = r.exams || [];
       CACHE.students  = r.students || [];
       CACHE.options   = r.options || {};
-      CACHE.edpCatalog = r.edpCatalog || [];
+      syncAndPreserveEdpCatalog(r.edpCatalog, r.exams, r.students);
       CACHE.timestamp = r.serverTimestamp || Date.now();
       saveCache();
 
@@ -593,6 +668,7 @@ async function loadExams() {
     const r = await api('teacherListExams', { idToken: await idToken() });
     if (!r.ok) { return; }
     CACHE.exams = r.exams || [];
+    syncAndPreserveEdpCatalog(r.edpCatalog, r.exams, CACHE.students);
     saveCache();
     renderExamCards(CACHE.exams);
     populateResultsPicker(CACHE.exams);
@@ -737,24 +813,34 @@ function renderExamCards(exams) {
     const primaryActions = document.createElement('div');
     primaryActions.className = 'exam-primary-actions';
     detailBtn.className = 'btn-sm btn-primary';
-    primaryActions.append(toggleBtn, detailBtn);
 
-    const manageActions = document.createElement('details');
-    manageActions.className = 'exam-actions-more';
-    const manageSummary = document.createElement('summary');
-    manageSummary.className = 'exam-actions-summary';
-    manageSummary.textContent = '⚙ Manage exam';
-    const manageMenu = document.createElement('div');
-    manageMenu.className = 'exam-actions-menu';
-    Array.from(actionRow.children).forEach(btn => manageMenu.append(btn));
-    manageActions.append(manageSummary, manageMenu);
-    actionRow.replaceChildren(primaryActions, manageActions);
+    const manageBtn = document.createElement('button');
+    manageBtn.className = 'btn-sm btn-outline exam-actions-summary';
+    manageBtn.type = 'button';
+    manageBtn.textContent = '⚙ Manage exam';
+
+    const drawer = document.createElement('div');
+    drawer.className = 'exam-manage-drawer';
+    drawer.hidden = true;
+    Array.from(actionRow.children).forEach(btn => drawer.append(btn));
+
+    manageBtn.onclick = (e) => {
+      e.stopPropagation();
+      feedback('tap', 8);
+      drawer.hidden = !drawer.hidden;
+      manageBtn.classList.toggle('on', !drawer.hidden);
+      manageBtn.textContent = drawer.hidden ? '⚙ Manage exam' : '▲ Close menu';
+    };
+
+    primaryActions.append(toggleBtn, detailBtn, manageBtn);
+    actionRow.replaceChildren(primaryActions);
 
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.exam-card-actions')) return;
+      if (e.target.closest('.exam-card-actions') || e.target.closest('.exam-manage-drawer')) return;
       feedback('nav', 8);
       openExamDetail(ex);
     });
+    card.append(drawer);
     wrap.append(card);
   });
   revealIn(wrap);
@@ -1306,6 +1392,21 @@ if ($('btnSaveEdpCodes')) {
       toast('EDP codes updated for ' + _currentDetailExamCode + '!', 'ok');
       play('pop');
 
+      if (r.edpCatalog && Array.isArray(r.edpCatalog) && r.edpCatalog.length) {
+        CACHE.edpCatalog = r.edpCatalog;
+        saveCache();
+      } else if (_currentEditingEdpCodes && _currentEditingEdpCodes.length) {
+        const cat = CACHE.edpCatalog || [];
+        _currentEditingEdpCodes.forEach(code => {
+          const s = String(code || '').trim();
+          if (s && !cat.some(c => String(c.edpCode || '').trim().toLowerCase() === s.toLowerCase())) {
+            cat.push({ edpCode: s, subject: (_currentDetailExam && (_currentDetailExam.subject || _currentDetailExam.title)) || '' });
+          }
+        });
+        CACHE.edpCatalog = cat;
+        saveCache();
+      }
+
       if (CACHE.exams) {
         const ex = CACHE.exams.find(e => e.code === _currentDetailExamCode);
         if (ex) {
@@ -1607,17 +1708,21 @@ function populateDetailEdpFilter(ex, rows) {
   if (!sel) return;
   const previous = sel.value;
 
+  const catalogCodes = new Set((CACHE.edpCatalog || []).map(c => String(c.edpCode || '').trim().toLowerCase()).filter(Boolean));
   const codeSet = new Set();
   if (ex) {
     (ex.edpCodes || (ex.edpCode ? [ex.edpCode] : [])).forEach(c => {
       const s = String(c || '').trim();
-      if (s) codeSet.add(s);
+      if (s) {
+        codeSet.add(s);
+        catalogCodes.add(s.toLowerCase());
+      }
     });
   }
   if (rows && Array.isArray(rows)) {
     rows.forEach(r => {
       const s = String(r.edpCode || '').trim();
-      if (s) codeSet.add(s);
+      if (s && catalogCodes.has(s.toLowerCase())) codeSet.add(s);
     });
   }
 
@@ -1818,6 +1923,7 @@ function updateSortPillsUI(sortKey) {
   document.querySelectorAll('.btn-sort-pill').forEach(btn => {
     btn.classList.toggle('on', btn.dataset.sort === sortKey);
   });
+  if ($('resultsSortSelect')) $('resultsSortSelect').value = sortKey || 'default';
 }
 
 /* ================================================================
@@ -1881,6 +1987,8 @@ function activeBuilderTypes() {
 }
 
 function currentBuilderTimerMode() {
+  const typeSel = $('tAssessmentTypeSelect');
+  if (typeSel && typeSel.value === 'reviewer') return 'untimed';
   const sel = $('tExamTimerModeSelect');
   return sel ? sel.value : 'whole-exam';
 }
@@ -1931,6 +2039,15 @@ function updateBuilderOrderOptions(mode) {
       <option value="logical">Logical — same order as below</option>
     `;
     if (cur && ['shuffle-within-type', 'shuffled', 'logical'].includes(cur)) sel.value = cur;
+  } else if (mode === 'untimed') {
+    timerRow.hidden = true;
+    row.hidden = false;
+    sel.innerHTML = `
+      <option value="shuffled">Shuffled all</option>
+      <option value="shuffle-within-type">Shuffled within each type</option>
+      <option value="logical">Logical — same order as below</option>
+    `;
+    if (cur && ['shuffle-within-type', 'shuffled', 'logical'].includes(cur)) sel.value = cur;
   }
 }
 
@@ -1945,10 +2062,10 @@ function buildBuilderStep1() {
     const p = builderPlan[t.key];
     const wrap = document.createElement('div');
     wrap.className = 'type' + (p.on ? ' on' : '');
-    const timerSum = mode === 'whole-exam' ? '' : (mode === 'per-section' ? ' · Sec: ' + builderClock(t.key) : ' · ' + builderClock(t.key) + '/q');
+    const timerSum = (mode === 'whole-exam' || mode === 'untimed') ? '' : (mode === 'per-section' ? ' · Sec: ' + builderClock(t.key) : ' · ' + builderClock(t.key) + '/q');
 
     let bodyHtml = '';
-    if (mode === 'whole-exam') {
+    if (mode === 'whole-exam' || mode === 'untimed') {
       bodyHtml = `
         <div class="two">
           <div class="fld"><span class="lbl-s">How many questions</span>
@@ -2071,13 +2188,42 @@ if ($('tTypeList')) {
   $('tTypeList').addEventListener('input', onBuilderPlanChange);
 }
 
+if ($('tAssessmentTypeSelect')) {
+  $('tAssessmentTypeSelect').addEventListener('change', () => {
+    const isRev = $('tAssessmentTypeSelect').value === 'reviewer';
+    const timerRow = $('tWholeExamTimerRow');
+    const timerSel = $('tExamTimerModeSelect');
+    if (isRev) {
+      if (timerSel) {
+        timerSel.value = 'untimed';
+        timerSel.disabled = true;
+      }
+      if (timerRow) timerRow.hidden = true;
+      if ($('tAssessmentTypeHint')) {
+        $('tAssessmentTypeHint').textContent = 'Practice Reviewer mode: Untimed, unlimited takes, self-paced step-by-step with immediate answer reveals.';
+      }
+    } else {
+      if (timerSel) {
+        timerSel.disabled = false;
+        if (timerSel.value === 'untimed') timerSel.value = 'whole-exam';
+      }
+      if ($('tAssessmentTypeHint')) {
+        $('tAssessmentTypeHint').textContent = 'Formal exam mode applies timers and proctoring.';
+      }
+    }
+    updateBuilderOrderOptions(currentBuilderTimerMode());
+    buildBuilderStep1();
+  });
+}
+
 if ($('tExamTimerModeSelect')) {
   $('tExamTimerModeSelect').addEventListener('change', () => {
     const mode = currentBuilderTimerMode();
     const hints = {
       'whole-exam': 'Questions will be delivered continuously on one page. Total exam duration is set above.',
       'per-section': 'Questions are delivered section by section. Each section gets its own timer.',
-      'per-question': 'Questions are delivered 1 by 1 with an individual countdown timer per question.'
+      'per-question': 'Questions are delivered 1 by 1 with an individual countdown timer per question.',
+      'untimed': 'Questions are untimed and self-paced.'
     };
     if ($('tTimerModeHint')) $('tTimerModeHint').textContent = hints[mode] || '';
     // When switching TO per-section, seed each type to 5 min only if the teacher
@@ -2573,6 +2719,16 @@ function openQuestionBuilder(context = 'add') {
   $('tStep2').hidden = true;
   if ($('tCr1')) { $('tCr1').classList.remove('done'); $('tCr1').classList.add('on'); }
   if ($('tCr2')) $('tCr2').classList.remove('on');
+
+  const currentExam = (_currentDetailExam && _currentDetailExam.code === _currentDetailExamCode)
+    ? _currentDetailExam
+    : (CACHE.exams || []).find(e => e.code === _currentDetailExamCode);
+  const existingExamType = (currentExam && (currentExam.examType || (currentExam.isReviewer ? 'reviewer' : 'test'))) || 'test';
+  if ($('tAssessmentTypeSelect')) {
+    $('tAssessmentTypeSelect').value = existingExamType;
+    $('tAssessmentTypeSelect').dispatchEvent(new Event('change'));
+  }
+
   buildBuilderStep1();
   openModal($('addQuestionsModal'), $('tExamTimerModeSelect'));
 }
@@ -2589,8 +2745,12 @@ if ($('btnTAddAll')) {
     const specs = collectBuilderSpecs();
     if (!specs.length) { toast('Paste some questions first.', 'bad'); return; }
 
-    const mode = $('tAddQMode') ? $('tAddQMode').value : 'append';
-    const timerMode = currentBuilderTimerMode();
+    const currentExam = (_currentDetailExam && _currentDetailExam.code === _currentDetailExamCode)
+      ? _currentDetailExam
+      : (CACHE.exams || []).find(e => e.code === _currentDetailExamCode);
+    const existingExamType = (currentExam && (currentExam.examType || (currentExam.isReviewer ? 'reviewer' : 'test'))) || 'test';
+    const examType = $('tAssessmentTypeSelect') ? $('tAssessmentTypeSelect').value : existingExamType;
+    const timerMode = examType === 'reviewer' ? 'untimed' : currentBuilderTimerMode();
     const wholeMins = ($('tWholeExamMins') && parseInt($('tWholeExamMins').value, 10)) || 30;
     const orderVal = $('tExamOrderSelect') ? $('tExamOrderSelect').value : 'shuffled';
 
@@ -2604,6 +2764,7 @@ if ($('btnTAddAll')) {
         // the parser to guess its way through.
         specs,
         mode,
+        examType,
         timerMode,
         wholeExamMins: wholeMins,
         order: orderVal
@@ -2648,6 +2809,98 @@ const MANAGED_TYPE_LABELS = {
   MC: 'Multiple choice', TF: 'True or false', ID: 'Identification',
   EN: 'Enumeration', MA: 'Matching', WB: 'Word bank'
 };
+
+function getActiveExamTimerMode() {
+  const ex = (CACHE && CACHE.exams) ? CACHE.exams.find(e => e.code === _currentDetailExamCode) : null;
+  if (ex && ex.timerMode) return ex.timerMode;
+  if (typeof _currentDetailExam !== 'undefined' && _currentDetailExam && _currentDetailExam.timerMode) {
+    return _currentDetailExam.timerMode;
+  }
+  return 'per-question';
+}
+
+function renderSectionTimersBar() {
+  const wrap = $('wrapSectionTimers');
+  const grid = $('manageSectionTimersGrid');
+  const globalWrap = $('wrapGlobalTimer');
+  const mode = getActiveExamTimerMode();
+
+  if (mode !== 'per-section') {
+    if (wrap) wrap.hidden = true;
+    if (globalWrap) globalWrap.style.display = 'flex';
+    return;
+  }
+
+  if (globalWrap) globalWrap.style.display = 'none';
+  if (wrap) wrap.hidden = false;
+  if (!grid) return;
+  grid.replaceChildren();
+
+  const typesInExam = [];
+  _managedQuestions.forEach(q => {
+    const t = q.type || 'MC';
+    if (!typesInExam.includes(t)) typesInExam.push(t);
+  });
+
+  if (!typesInExam.length) {
+    grid.innerHTML = '<span class="muted small">No questions loaded yet.</span>';
+    return;
+  }
+
+  typesInExam.forEach(t => {
+    const card = document.createElement('div');
+    card.style.cssText = 'display:flex; align-items:center; gap:8px; background:var(--surface); padding:6px 12px; border-radius:var(--r-sm); border:1px solid var(--edge);';
+
+    const qWithTimer = _managedQuestions.find(q => (q.type || 'MC') === t && parseInt(q.timer, 10) > 0);
+    const mins = qWithTimer ? Math.max(1, Math.round(parseInt(qWithTimer.timer, 10) / 60)) : 10;
+
+    card.innerHTML = `
+      <span style="font-weight:700; font-size:0.75rem; color:var(--text-bright);">Question Type : <strong style="color:var(--brand);">${esc(MANAGED_TYPE_LABELS[t] || t)}</strong></span>
+      <span style="font-weight:600; font-size:0.75rem; margin-left:4px;">Time :</span>
+      <input type="number" class="field-compact sec-timer-input" data-type="${esc(t)}" value="${mins}" min="1" max="180" style="width:52px; text-align:center; font-weight:700;">
+      <span class="muted small" style="font-size:0.72rem;">mins</span>
+      <button type="button" class="btn-sm btn-outline btn-apply-sec-timer" data-type="${esc(t)}" style="font-size:0.7rem; padding:2px 8px;">Apply</button>
+    `;
+
+    const input = card.querySelector('.sec-timer-input');
+    const applyBtn = card.querySelector('.btn-apply-sec-timer');
+
+    const applyTime = () => {
+      const val = parseInt(input.value, 10);
+      if (!val || val < 1 || val > 180) {
+        toast('Please enter a duration between 1 and 180 minutes.', 'bad');
+        return;
+      }
+      const secs = val * 60;
+      let count = 0;
+      _managedQuestions.forEach(q => {
+        if ((q.type || 'MC') === t) {
+          q.timer = String(secs);
+          count++;
+        }
+      });
+      const host = $('manageQuestionsList');
+      if (host) {
+        host.querySelectorAll('.q-direct-card').forEach(c => {
+          const typeSel = c.querySelector('.q-edit-type');
+          if (typeSel && typeSel.value === t) {
+            const timerInp = c.querySelector('.q-edit-timer');
+            if (timerInp) timerInp.value = secs;
+            c.classList.add('is-dirty');
+          }
+        });
+      }
+      markQuestionsDirty();
+      toast(`Applied ${val} mins to all ${count} ${MANAGED_TYPE_LABELS[t] || t} question(s). Click "Save All Questions" to commit.`, 'ok');
+    };
+
+    if (applyBtn) applyBtn.onclick = applyTime;
+    if (input) input.onkeydown = (e) => { if (e.key === 'Enter') applyTime(); };
+
+    grid.append(card);
+  });
+}
+
 
 function managedLines(value) {
   return String(value || '').replace(/\r\r\n/g, '\r\n').split('\r\n').map(s => s.trim()).filter(Boolean);
@@ -2705,280 +2958,262 @@ function renderManagedQuestionList() {
 
   filtered.forEach(q => {
     const card = document.createElement('div');
-    const isExpanded = String(q.row) === String(_managedExpandedRow);
-    card.className = 'q-manage-card' + (isExpanded ? ' is-expanded' : '');
+    card.className = 'q-direct-card';
     card.id = `qCardRow_${q.row}`;
-    card.style.flexShrink = '0';
-    card.style.minHeight = '52px';
-    card.style.boxSizing = 'border-box';
+    card.dataset.row = q.row;
 
-    // Card Header Trigger
-    const header = document.createElement('div');
-    header.className = 'q-card-header';
-    header.setAttribute('role', 'button');
-    header.setAttribute('tabindex', '0');
-    header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-    header.setAttribute('aria-controls', `qDropdown_${q.row}`);
+    // Top control bar: Q#, Type Select, Points, Timer, Delete, Duplicate
+    const topBar = document.createElement('div');
+    topBar.className = 'q-direct-top';
 
-    const typeChipClass = 'q-chip q-chip-' + String(q.type || 'mc').toLowerCase();
-    header.innerHTML = `
-      <div class="q-header-left">
-        <span class="q-card-num">Q${esc(q.no)}</span>
-        <span class="${typeChipClass}">${esc(q.type)}</span>
-        <span class="q-card-prompt-preview">${esc(q.question || 'Untitled question')}</span>
-      </div>
-      <div class="q-header-right">
-        <span class="q-card-meta">${esc(q.points || 1)} pt${q.points == 1 ? '' : 's'}${q.timer ? ' · ⏱ ' + esc(q.timer) + 's' : ''}</span>
-        <span class="btn-sm btn-outline q-dropdown-btn">
-          Manage
-          <svg class="q-chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-        </span>
-      </div>
-    `;
+    const topLeft = document.createElement('div');
+    topLeft.className = 'q-direct-top-left';
 
-    const toggle = () => {
-      if (_managedExpandedRow === q.row) {
-        _managedExpandedRow = null;
-        _managedEditingRow = null;
-      } else {
-        _managedExpandedRow = q.row;
-        _managedEditingRow = null;
-      }
-      renderManagedQuestionList();
-    };
+    const numBadge = document.createElement('span');
+    numBadge.className = 'q-num-badge';
+    numBadge.textContent = `Q${q.no}`;
 
-    header.onclick = toggle;
-    header.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        toggle();
-      }
-    };
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'field-compact q-edit-type';
+    typeSelect.style.fontWeight = '700';
+    [
+      { val: 'MC', label: 'MC' },
+      { val: 'TF', label: 'True/False' },
+      { val: 'ID', label: 'Identification' },
+      { val: 'EN', label: 'Enumeration' },
+      { val: 'MA', label: 'Matching' },
+      { val: 'WB', label: 'Word Bank' }
+    ].forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt.val;
+      o.textContent = opt.label;
+      if (q.type === opt.val) o.selected = true;
+      typeSelect.append(o);
+    });
 
-    card.append(header);
+    const ptsLabel = document.createElement('label');
+    ptsLabel.style.fontSize = '0.72rem';
+    ptsLabel.style.display = 'flex';
+    ptsLabel.style.alignItems = 'center';
+    ptsLabel.style.gap = '3px';
+    ptsLabel.innerHTML = `Pts: <input type="number" class="field-compact q-edit-points" value="${esc(q.points || 1)}" min="0.1" step="0.5" style="width:48px; text-align:center;">`;
 
-    // If expanded, render the management dropdown body
-    if (isExpanded) {
-      const dropdown = document.createElement('div');
-      dropdown.className = 'q-manage-dropdown';
-      dropdown.id = `qDropdown_${q.row}`;
-
-      if (_managedEditingRow === q.row) {
-        // INLINE EDIT MODE
-        dropdown.innerHTML = `
-          <div class="q-inline-editor">
-            <div class="two" style="margin-bottom:10px;">
-              <div>
-                <label class="lbl">Question Type</label>
-                <select class="field edit-q-type">
-                  <option value="MC" ${q.type === 'MC' ? 'selected' : ''}>Multiple choice</option>
-                  <option value="TF" ${q.type === 'TF' ? 'selected' : ''}>True or false</option>
-                  <option value="ID" ${q.type === 'ID' ? 'selected' : ''}>Identification</option>
-                  <option value="EN" ${q.type === 'EN' ? 'selected' : ''}>Enumeration</option>
-                  <option value="MA" ${q.type === 'MA' ? 'selected' : ''}>Matching</option>
-                  <option value="WB" ${q.type === 'WB' ? 'selected' : ''}>Word bank</option>
-                </select>
-              </div>
-              <div class="two">
-                <div>
-                  <label class="lbl">Timer (seconds)</label>
-                  <input class="field edit-q-timer" type="number" min="5" max="3600" placeholder="Default" value="${esc(q.timer || '')}">
-                </div>
-                <div>
-                  <label class="lbl">Points</label>
-                  <input class="field edit-q-points" type="number" min="0.01" step="0.01" value="${esc(q.points || 1)}">
-                </div>
-              </div>
-            </div>
-
-            <div style="margin-bottom:10px;">
-              <label class="lbl">Question Prompt</label>
-              <textarea class="field edit-q-text" rows="3" placeholder="Enter question prompt…">${esc(q.question || '')}</textarea>
-            </div>
-
-            <div class="edit-wrap-choices" style="margin-bottom:10px; display:${(q.type === 'MC' || q.type === 'MA' || q.type === 'WB') ? 'block' : 'none'};">
-              <label class="lbl edit-lbl-choices">${q.type === 'MA' ? 'Premises / Left Items (one per line)' : (q.type === 'WB' ? 'Word Bank Pool (one per line)' : 'Choices / Options (one per line)')}</label>
-              <textarea class="field mono edit-q-choices" rows="4">${esc((q.choices || []).join('\r\n'))}</textarea>
-            </div>
-
-            <div class="edit-wrap-answers" style="margin-bottom:10px;">
-              <label class="lbl edit-lbl-answers">${q.type === 'MA' ? 'Matching Right Items (line-by-line match)' : (q.type === 'EN' ? 'Required Items (one per line)' : 'Answer Key (one per line)')}</label>
-              <div class="edit-tf-toggle" style="display:${q.type === 'TF' ? 'flex' : 'none'}; gap:8px; margin-bottom:6px;">
-                <button type="button" class="btn btn-sm btn-outline edit-tf-btn ${String((q.answers || [])[0] || '').toLowerCase().startsWith('t') ? 'selected' : ''}" data-val="True" style="flex:1;">✓ True</button>
-                <button type="button" class="btn btn-sm btn-outline edit-tf-btn ${String((q.answers || [])[0] || '').toLowerCase().startsWith('f') ? 'selected' : ''}" data-val="False" style="flex:1;">✕ False</button>
-              </div>
-              <textarea class="field mono edit-q-answers" rows="3">${esc((q.answers || []).join('\r\n'))}</textarea>
-            </div>
-
-            <div class="actions" style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
-              <button type="button" class="btn-sm btn-danger btn-edit-delete">🗑️ Delete</button>
-              <div style="display:flex; gap:8px;">
-                <button type="button" class="btn-sm btn-ghost btn-edit-cancel">Cancel</button>
-                <button type="button" class="btn-sm btn-primary btn-edit-save">Save Changes</button>
-              </div>
-            </div>
-            <div class="edit-q-msg" role="status" aria-live="polite" style="margin-top:6px;"></div>
-          </div>
-        `;
-
-        // Attach listeners for inline edit mode
-        const selType = dropdown.querySelector('.edit-q-type');
-        const wrapChoices = dropdown.querySelector('.edit-wrap-choices');
-        const lblChoices = dropdown.querySelector('.edit-lbl-choices');
-        const tfToggle = dropdown.querySelector('.edit-tf-toggle');
-        const txtAnswers = dropdown.querySelector('.edit-q-answers');
-
-        selType.onchange = () => {
-          const t = selType.value;
-          wrapChoices.style.display = (t === 'MC' || t === 'MA' || t === 'WB') ? 'block' : 'none';
-          tfToggle.style.display = (t === 'TF') ? 'flex' : 'none';
-          if (t === 'MA') {
-            lblChoices.textContent = 'Premises / Left Items (one per line)';
-          } else if (t === 'WB') {
-            lblChoices.textContent = 'Word Bank Pool (one per line)';
-          } else {
-            lblChoices.textContent = 'Choices / Options (one per line)';
-          }
-        };
-
-        dropdown.querySelectorAll('.edit-tf-btn').forEach(btn => {
-          btn.onclick = () => {
-            dropdown.querySelectorAll('.edit-tf-btn').forEach(b => b.classList.remove('selected'));
-            btn.classList.add('selected');
-            txtAnswers.value = btn.getAttribute('data-val');
-          };
-        });
-
-        dropdown.querySelector('.btn-edit-cancel').onclick = () => {
-          _managedEditingRow = null;
-          renderManagedQuestionList();
-        };
-
-        dropdown.querySelector('.btn-edit-delete').onclick = () => deleteManagedQuestion(q);
-
-        dropdown.querySelector('.btn-edit-save').onclick = async () => {
-          const prompt = dropdown.querySelector('.edit-q-text').value.trim();
-          const out = dropdown.querySelector('.edit-q-msg');
-          if (!prompt) {
-            out.innerHTML = '<div class="msg bad">Question prompt is required.</div>';
-            return;
-          }
-          const updatedQ = {
-            question: prompt,
-            type: selType.value,
-            choices: managedLines(dropdown.querySelector('.edit-q-choices').value),
-            answers: managedLines(txtAnswers.value),
-            timer: dropdown.querySelector('.edit-q-timer').value.trim(),
-            points: dropdown.querySelector('.edit-q-points').value.trim() || '1'
-          };
-
-          const btnSave = dropdown.querySelector('.btn-edit-save');
-          btnSave.disabled = true;
-          btnSave.textContent = 'Saving…';
-          try {
-            const r = await api('teacherUpdateQuestion', {
-              idToken: await idToken(),
-              code: _currentDetailExamCode,
-              row: q.row,
-              question: updatedQ
-            });
-            if (!r.ok) throw new Error(r.message || 'Question could not be updated.');
-            toast(`Question Q${q.no} updated.`, 'ok');
-            play('pop');
-            _managedEditingRow = null;
-            await refreshManagedQuestions(q.row);
-          } catch (err) {
-            out.innerHTML = `<div class="msg bad">${esc(err.message)}</div>`;
-            btnSave.disabled = false;
-            btnSave.textContent = 'Save Changes';
-          }
-        };
-      } else {
-        // VIEW & QUICK ACTIONS MODE
-        let detailsHtml = '';
-        if (q.type === 'MC') {
-          detailsHtml = `
-            <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px;">
-              ${(q.choices || []).map((c, i) => {
-                const letter = String.fromCharCode(65 + i);
-                const isKey = (q.answers || []).map(a => a.toLowerCase()).includes(letter.toLowerCase()) ||
-                              (q.answers || []).map(a => a.toLowerCase()).includes(c.toLowerCase());
-                return `
-                  <div style="display:flex; align-items:center; gap:6px; font-size:0.8rem; color:${isKey ? 'var(--ok)' : 'var(--fg)'}; font-weight:${isKey ? '600' : 'normal'};">
-                    <span style="inline-size:20px; font-weight:700;">${letter}.</span>
-                    <span>${esc(c)}</span>
-                    ${isKey ? '<span class="q-answer-badge">✓ Key</span>' : ''}
-                  </div>`;
-              }).join('')}
-            </div>
-          `;
-        } else if (q.type === 'TF') {
-          detailsHtml = `
-            <div style="margin-bottom:8px;">
-              Answer Key: <span class="q-answer-badge">✓ ${esc((q.answers || [])[0] || '—')}</span>
-            </div>`;
-        } else if (q.type === 'ID') {
-          detailsHtml = `
-            <div style="margin-bottom:8px;">
-              Accepted Answer(s): <span class="q-answer-badge">✓ ${escList(q.answers, ' | ') || '—'}</span>
-            </div>`;
-        } else if (q.type === 'EN') {
-          detailsHtml = `
-            <div style="margin-bottom:8px;">
-              <div class="muted small" style="margin-bottom:4px;">Required Items (${(q.answers || []).length}):</div>
-              <ol style="margin:0; padding-left:18px; font-size:0.8rem;">
-                ${(q.answers || []).map(a => `<li>${esc(a)}</li>`).join('')}
-              </ol>
-            </div>`;
-        } else if (q.type === 'MA') {
-          detailsHtml = `
-            <div style="margin-bottom:8px;">
-              <div class="muted small" style="margin-bottom:4px;">Matching Pairs:</div>
-              <table style="inline-size:100%; font-size:0.8rem; border-collapse:collapse;">
-                ${(q.choices || []).map((c, i) => `
-                  <tr style="border-bottom:1px dashed var(--edge);">
-                    <td style="padding:2px 6px;">${esc(c)}</td>
-                    <td style="padding:2px 6px; font-weight:600; color:var(--accent);">➔ ${esc((q.answers || [])[i] || '—')}</td>
-                  </tr>`).join('')}
-              </table>
-            </div>`;
-        } else if (q.type === 'WB') {
-          detailsHtml = `
-            <div style="margin-bottom:8px;">
-              <div class="muted small" style="margin-bottom:4px;">Word Pool:</div>
-              <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px;">
-                ${(q.choices || []).map(c => `<span class="pill" style="font-size:0.75rem;">${esc(c)}</span>`).join('')}
-              </div>
-              <div class="muted small">Key: <span class="q-answer-badge">✓ ${escList(q.answers, ', ') || '—'}</span></div>
-            </div>`;
-        }
-
-        dropdown.innerHTML = `
-          <div class="q-full-prompt">${esc(q.question || 'Untitled question')}</div>
-          <div class="q-details-box">
-            ${detailsHtml}
-          </div>
-          <div class="q-dropdown-actions">
-            <button type="button" class="btn-sm btn-outline btn-q-edit">✏️ Edit Question</button>
-            <button type="button" class="btn-sm btn-outline btn-q-duplicate">📋 Duplicate</button>
-            <button type="button" class="btn-sm btn-danger btn-q-delete">🗑️ Delete</button>
-          </div>
-        `;
-
-        dropdown.querySelector('.btn-q-edit').onclick = () => {
-          _managedEditingRow = q.row;
-          renderManagedQuestionList();
-        };
-
-        dropdown.querySelector('.btn-q-duplicate').onclick = () => duplicateManagedQuestion(q);
-        dropdown.querySelector('.btn-q-delete').onclick = () => deleteManagedQuestion(q);
-      }
-
-      card.append(dropdown);
+    const timerLabel = document.createElement('label');
+    timerLabel.style.fontSize = '0.72rem';
+    timerLabel.style.display = 'flex';
+    timerLabel.style.alignItems = 'center';
+    timerLabel.style.gap = '3px';
+    timerLabel.innerHTML = `⏱ <input type="number" class="field-compact q-edit-timer" value="${esc(q.timer || '')}" min="5" max="3600" placeholder="Default" style="width:58px; text-align:center;">s`;
+    if (getActiveExamTimerMode() === 'per-section') {
+      timerLabel.style.display = 'none';
     }
 
+    topLeft.append(numBadge, typeSelect, ptsLabel, timerLabel);
+
+    const topRight = document.createElement('div');
+    topRight.style.display = 'flex';
+    topRight.style.alignItems = 'center';
+    topRight.style.gap = '4px';
+
+    const dupBtn = document.createElement('button');
+    dupBtn.type = 'button';
+    dupBtn.className = 'btn-sm btn-ghost';
+    dupBtn.style.padding = '2px 6px';
+    dupBtn.style.fontSize = '0.75rem';
+    dupBtn.title = 'Duplicate this question';
+    dupBtn.textContent = '📋';
+    dupBtn.onclick = () => duplicateManagedQuestion(q);
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'btn-sm btn-ghost';
+    delBtn.style.padding = '2px 6px';
+    delBtn.style.fontSize = '0.75rem';
+    delBtn.style.color = 'var(--bad)';
+    delBtn.title = 'Delete this question';
+    delBtn.textContent = '🗑️';
+    delBtn.onclick = () => deleteManagedQuestion(q);
+
+    topRight.append(dupBtn, delBtn);
+    topBar.append(topLeft, topRight);
+
+    // Prompt row
+    const promptInput = document.createElement('textarea');
+    promptInput.className = 'q-direct-prompt';
+    promptInput.rows = 1;
+    promptInput.placeholder = 'Question prompt…';
+    promptInput.value = q.question || '';
+    promptInput.oninput = () => {
+      card.classList.add('is-dirty');
+      markQuestionsDirty();
+    };
+
+    // Choices & Answers container
+    const bottomGrid = document.createElement('div');
+    bottomGrid.className = 'q-direct-bottom';
+
+    const choicesCol = document.createElement('div');
+    choicesCol.className = 'q-col-choices';
+    const choicesLbl = document.createElement('div');
+    choicesLbl.className = 'q-direct-label';
+    choicesLbl.textContent = (q.type === 'MA') ? 'Premises (one per line)' : (q.type === 'WB' ? 'Word Pool (one per line)' : 'Choices (one per line)');
+    const choicesInput = document.createElement('textarea');
+    choicesInput.className = 'q-direct-textarea q-edit-choices';
+    choicesInput.rows = 2;
+    choicesInput.value = (q.choices || []).join('\n');
+    choicesInput.oninput = () => { card.classList.add('is-dirty'); markQuestionsDirty(); };
+    choicesCol.append(choicesLbl, choicesInput);
+
+    const answersCol = document.createElement('div');
+    answersCol.className = 'q-col-answers';
+    const answersLbl = document.createElement('div');
+    answersLbl.className = 'q-direct-label';
+    answersLbl.textContent = (q.type === 'MA') ? 'Matches (one per line)' : (q.type === 'EN' ? 'Items (one per line)' : 'Answer Key');
+    const answersInput = document.createElement('textarea');
+    answersInput.className = 'q-direct-textarea q-edit-answers';
+    answersInput.rows = 2;
+    answersInput.value = (q.answers || []).join('\n');
+    answersInput.oninput = () => { card.classList.add('is-dirty'); markQuestionsDirty(); };
+    answersCol.append(answersLbl, answersInput);
+
+    const updateVisibility = (t) => {
+      const needsChoices = (t === 'MC' || t === 'MA' || t === 'WB');
+      choicesCol.style.display = needsChoices ? 'block' : 'none';
+      if (t === 'MA') {
+        choicesLbl.textContent = 'Premises (one per line)';
+        answersLbl.textContent = 'Matches (one per line)';
+      } else if (t === 'WB') {
+        choicesLbl.textContent = 'Word Pool (one per line)';
+        answersLbl.textContent = 'Answer Key';
+      } else {
+        choicesLbl.textContent = 'Choices (one per line)';
+        answersLbl.textContent = (t === 'EN') ? 'Items (one per line)' : 'Answer Key';
+      }
+      bottomGrid.style.gridTemplateColumns = needsChoices ? '1fr 1fr' : '1fr';
+    };
+
+    updateVisibility(q.type);
+
+    typeSelect.onchange = () => {
+      updateVisibility(typeSelect.value);
+      card.classList.add('is-dirty');
+      markQuestionsDirty();
+    };
+
+    ptsLabel.querySelector('input').oninput = () => { card.classList.add('is-dirty'); markQuestionsDirty(); };
+    timerLabel.querySelector('input').oninput = () => { card.classList.add('is-dirty'); markQuestionsDirty(); };
+
+    bottomGrid.append(choicesCol, answersCol);
+    card.append(topBar, promptInput, bottomGrid);
     host.append(card);
   });
+}
+
+function markQuestionsDirty() {
+  const btn = $('btnSaveAllManagedQuestions');
+  if (btn && !btn.textContent.includes('*')) {
+    btn.textContent = '💾 Save All Questions *';
+  }
+}
+
+function applyGlobalTimer() {
+  const input = $('manageGlobalTimerInput');
+  const rawVal = parseInt(input?.value, 10);
+  if (!rawVal || rawVal < 5 || rawVal > 3600) {
+    toast('Please enter a duration between 5 and 3600 seconds.', 'bad');
+    return;
+  }
+
+  const host = $('manageQuestionsList');
+  if (!host) return;
+  const timerInputs = host.querySelectorAll('.q-edit-timer');
+  timerInputs.forEach(inp => {
+    inp.value = rawVal;
+    inp.closest('.q-direct-card')?.classList.add('is-dirty');
+  });
+
+  markQuestionsDirty();
+  toast(`Applied ${rawVal}s timer to all questions. Click "Save All Questions" to commit.`, 'ok');
+}
+
+async function saveAllManagedQuestions() {
+  const host = $('manageQuestionsList');
+  if (!host) return;
+  const cards = host.querySelectorAll('.q-direct-card');
+  if (!cards.length) return;
+
+  const btn = $('btnSaveAllManagedQuestions');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving questions…';
+  }
+
+  const updatedList = [];
+  cards.forEach(card => {
+    const row = parseInt(card.dataset.row, 10);
+    const prompt = (card.querySelector('.q-direct-prompt')?.value || '').trim();
+    const type = card.querySelector('.q-edit-type')?.value || 'ID';
+    const points = card.querySelector('.q-edit-points')?.value || '1';
+    const timer = card.querySelector('.q-edit-timer')?.value || '';
+    const choices = (card.querySelector('.q-edit-choices')?.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const answers = (card.querySelector('.q-edit-answers')?.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+    if (row && prompt) {
+      updatedList.push({
+        row,
+        question: prompt,
+        type,
+        points,
+        timer: timer.trim(),
+        choices,
+        answers
+      });
+    }
+  });
+
+  try {
+    toast(`Saving ${updatedList.length} questions…`, 'info', 2000);
+    const r = await api('teacherBatchUpdateQuestions', {
+      idToken: await idToken(),
+      code: _currentDetailExamCode,
+      questions: updatedList
+    });
+
+    if (r.ok) {
+      toast(`All ${r.updatedCount || updatedList.length} questions saved successfully!`, 'ok');
+      play('pop');
+      await refreshManagedQuestions();
+      return;
+    }
+
+    // Fallback: If teacherBatchUpdateQuestions is not supported in deployed Apps Script, update sequentially
+    if (r.message && r.message.includes('Unknown action')) {
+      toast('Saving questions…', 'info', 2000);
+      let successCount = 0;
+      for (const qItem of updatedList) {
+        const singleRes = await api('teacherUpdateQuestion', {
+          idToken: await idToken(),
+          code: _currentDetailExamCode,
+          row: qItem.row,
+          question: qItem
+        });
+        if (singleRes.ok) successCount++;
+      }
+      toast(`Saved ${successCount} questions!`, 'ok');
+      play('pop');
+      await refreshManagedQuestions();
+      return;
+    }
+
+    throw new Error(r.message || 'Failed to save questions');
+  } catch (err) {
+    toast('Error saving questions: ' + err.message, 'bad');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '💾 Save All Questions';
+    }
+  }
 }
 
 async function duplicateManagedQuestion(q) {
@@ -3037,6 +3272,7 @@ async function refreshManagedQuestions(expandRow) {
     _managedExpandedRow = expandRow;
   }
   renderManagedQuestionList();
+  renderSectionTimersBar();
   if ($('detailQCount')) $('detailQCount').textContent = _managedQuestions.length;
 }
 
@@ -3054,6 +3290,11 @@ async function openQuestionManager() {
     b.classList.toggle('on', b.getAttribute('data-type') === 'ALL');
   });
 
+  if ($('btnSaveAllManagedQuestions')) {
+    $('btnSaveAllManagedQuestions').textContent = '💾 Save All Questions';
+    $('btnSaveAllManagedQuestions').disabled = false;
+  }
+
   openModal($('manageQuestionsModal'), $('manageQSearch'));
   try { await refreshManagedQuestions(); }
   catch (err) { $('manageQuestionsList').innerHTML = `<p class="msg bad" style="padding:12px;">${esc(err.message)}</p>`; }
@@ -3061,6 +3302,8 @@ async function openQuestionManager() {
 
 if ($('btnCloseManageQuestions')) $('btnCloseManageQuestions').onclick = () => closeModal($('manageQuestionsModal'));
 if ($('btnManageQuestions')) $('btnManageQuestions').onclick = openQuestionManager;
+if ($('btnApplyGlobalTimer')) $('btnApplyGlobalTimer').onclick = applyGlobalTimer;
+if ($('btnSaveAllManagedQuestions')) $('btnSaveAllManagedQuestions').onclick = saveAllManagedQuestions;
 
 // Toolbar Search and Filter Listeners
 if ($('manageQSearch')) {
@@ -3179,6 +3422,7 @@ async function loadStudents() {
     const r = await api('teacherListStudents', { idToken: await idToken() });
     if (!r.ok) { return; }
     CACHE.students = r.students || [];
+    syncAndPreserveEdpCatalog(CACHE.edpCatalog, CACHE.exams, CACHE.students);
     saveCache();
     populateStudentFilters(CACHE.students);
     renderStudentTable(CACHE.students);
@@ -3611,8 +3855,21 @@ function populateResultsEdpPicker(rows, examSubject) {
   const sel = $('resultsEdpPicker');
   if (!sel) return;
   const previous = sel.value;
-  const codes = [...new Set((rows || []).map(r => String(r.edpCode || '').trim()).filter(Boolean))]
+
+  const selectedCode = $('resultsExamPicker')?.value;
+  const currentExam = (CACHE.exams || []).find(e => e.code === selectedCode);
+  const examCodes = currentExam ? examEdpCodes([currentExam]) : [];
+  const catalogCodes = (CACHE.edpCatalog || []).map(c => String(c.edpCode || '').trim().toLowerCase()).filter(Boolean);
+  const allowedTeacherCodes = new Set([
+    ...examCodes.map(c => c.toLowerCase()),
+    ...catalogCodes
+  ]);
+
+  const rawCodes = [...new Set((rows || []).map(r => String(r.edpCode || '').trim()).filter(Boolean))];
+  const codes = rawCodes
+    .filter(code => allowedTeacherCodes.size === 0 || allowedTeacherCodes.has(code.toLowerCase()))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
   sel.replaceChildren(new Option('All EDP codes', ''));
   codes.forEach(code => {
     const label = formatEdpOptionLabel(code, examSubject, rows);
@@ -3645,6 +3902,9 @@ function resetResults() {
 $('resultsExamPicker').onchange = async function () {
   const code = this.value;
   if (!code) { resetResults(); return; }
+  _currentDetailExamCode = code;
+  const foundExam = (CACHE.exams || []).find(e => e.code === code);
+  if (foundExam) _currentDetailExam = foundExam;
   // Reset view mode to 'All' on each new exam selection.
   _currentResultsViewMode = 'all';
   ['btnViewAll', 'btnViewHighest', 'btnViewAverage'].forEach((id, i) => {
@@ -3766,8 +4026,9 @@ if ($('btnRefreshResults')) {
   };
 }
 
-function renderResultsTable(wrap, rows, total) {
+function renderResultsTable(wrap, rows, total, optCode) {
   wrap.replaceChildren();
+  const currentExamCode = optCode || _currentDetailExamCode || $('resultsExamPicker')?.value || '';
   const isAvgMode = (_currentResultsViewMode === 'average');
   const tbl = document.createElement('table');
   tbl.className = 'results-table';
@@ -3850,7 +4111,7 @@ function renderResultsTable(wrap, rows, total) {
       : '—';
     // Grade-correction / Retake button: available on any individual student row.
     const corrBtn = (!row._isAggregate && row.email)
-      ? `<button type="button" class="btn-sm btn-ghost btn-correct-score" data-email="${esc(row.email)}" data-attempt="${esc(row.attempt || 1)}" data-score="${esc(row.score != null ? row.score : '')}" data-attempt-id="${esc(row.attemptId || '')}" title="Audit Grade Correction / Retake" aria-label="Audit Grade Correction or Retake for ${esc(row.name || row.email)}" style="padding:2px 6px; font-size:12px; border-radius:var(--r-sm); border:1px solid var(--edge);">✏️</button>`
+      ? `<button type="button" class="btn-sm btn-ghost btn-correct-score" data-email="${esc(row.email)}" data-attempt="${esc(row.attempt || 1)}" data-score="${esc(row.score != null ? row.score : '')}" data-attempt-id="${esc(row.attemptId || '')}" data-exam-code="${esc(row.examCode || currentExamCode)}" title="Audit Grade Correction / Retake" aria-label="Audit Grade Correction or Retake for ${esc(row.name || row.email)}" style="padding:2px 6px; font-size:12px; border-radius:var(--r-sm); border:1px solid var(--edge);">✏️</button>`
       : '';
     // Attempt badge: 'Avg' for averages, try number otherwise.
     const attemptBadge = row._isAggregate
@@ -3902,7 +4163,7 @@ function renderResultsTable(wrap, rows, total) {
   tbl.querySelectorAll('.btn-correct-score').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
-      openGradeCorrectionModal(btn.dataset.email, btn.dataset.attempt, btn.dataset.score, btn.dataset.attemptId);
+      openGradeCorrectionModal(btn.dataset.email, btn.dataset.attempt, btn.dataset.score, btn.dataset.attemptId, btn.dataset.examCode);
     };
   });
   wrap.append(tbl);
@@ -4053,7 +4314,19 @@ function fallbackCopyResultText(text, done) {
   };
 });
 
-/* Results Quick-Sort Pill Listeners */
+/* Results Quick-Sort Dropdown & Pill Listeners */
+if ($('resultsSortSelect')) {
+  $('resultsSortSelect').onchange = (e) => {
+    _resultsSortKey = e.target.value;
+    updateSortPillsUI(_resultsSortKey);
+    if ($('scTResults') && !$('scTResults').hidden) {
+      _resultsTabRefresh?.();
+    } else {
+      applyResultsFilterAndRender();
+    }
+  };
+}
+
 document.querySelectorAll('.btn-sort-pill').forEach(btn => {
   btn.onclick = () => {
     _resultsSortKey = btn.dataset.sort;
@@ -4113,6 +4386,13 @@ if ($('btnExportIncidentTelemetry')) {
 /* ================================================================
    Utilities
    ================================================================ */
+
+function formatQuestionPreviewHtml(q) {
+  if (!q) return '';
+  const ans = escList(q.answers || []);
+  const choices = (q.choices || []).map(c => `<span class="chip">${esc(c)}</span>`).join('');
+  return `<div class="q-prev">${choices} ${ans}</div>`;
+}
 
 function escList(list, sep = ', ') {
   return (list || []).map(x => esc(x)).join(sep);
@@ -4766,7 +5046,9 @@ if ($('menuExportBackup')) {
   };
 }
 
-function openGradeCorrectionModal(email, attemptNo, currentScore, attemptId) {
+function openGradeCorrectionModal(email, attemptNo, currentScore, attemptId, examCode) {
+  const activeCode = examCode || _currentDetailExamCode || $('resultsExamPicker')?.value || '';
+  if ($('corrExamCode')) $('corrExamCode').value = activeCode;
   if ($('corrStudentEmail')) $('corrStudentEmail').value = email || '';
   if ($('corrAttemptNo')) $('corrAttemptNo').value = attemptNo || '1';
   if ($('corrAttemptId')) $('corrAttemptId').value = attemptId || '';
@@ -4799,10 +5081,19 @@ if ($('btnCancelRetakeForm')) {
 
 if ($('btnConfirmRetake')) {
   $('btnConfirmRetake').onclick = async () => {
+    const code = $('corrExamCode')?.value || _currentDetailExamCode || $('resultsExamPicker')?.value || '';
     const email = $('corrStudentEmail')?.value;
     const tryNumber = $('corrAttemptNo')?.value || '1';
     const attemptId = $('corrAttemptId')?.value || '';
     const reason = ($('corrRetakeReason')?.value || '').trim();
+
+    if (!code) {
+      if ($('corrModalErr')) {
+        $('corrModalErr').textContent = 'Exam code is missing. Please select an exam before granting a retake.';
+        $('corrModalErr').hidden = false;
+      }
+      return;
+    }
 
     if (!reason) {
       if ($('corrModalErr')) {
@@ -4824,7 +5115,7 @@ if ($('btnConfirmRetake')) {
     try {
       const r = await api('teacherGrantRetake', {
         idToken: await idToken(),
-        code: _currentDetailExamCode,
+        code: code,
         email,
         tryNumber,
         attemptId,
@@ -4841,8 +5132,13 @@ if ($('btnConfirmRetake')) {
 
       toast('✓ Retake authorized successfully for ' + email + '.', 'ok');
       closeModal($('gradeCorrectionModal'));
-      if (_currentDetailExamCode) {
-        await loadExamResults(_currentDetailExamCode);
+      if (code) {
+        if (_currentDetailExamCode === code) {
+          await loadExamResults(code);
+        }
+        if ($('scTResults') && !$('scTResults').hidden) {
+          _resultsTabRefresh?.();
+        }
       }
     } catch (err) {
       if ($('corrModalErr')) {
@@ -4861,11 +5157,20 @@ if ($('btnCancelCorrection')) $('btnCancelCorrection').onclick = () => closeModa
 
 if ($('btnSubmitCorrection')) {
   $('btnSubmitCorrection').onclick = async () => {
+    const code = $('corrExamCode')?.value || _currentDetailExamCode || $('resultsExamPicker')?.value || '';
     const email = $('corrStudentEmail').value;
     const tryNumber = $('corrAttemptNo').value;
     const attemptId = $('corrAttemptId')?.value || '';
     const newScore = parseFloat($('corrNewScore').value);
     const reason = ($('corrReason').value || '').trim();
+
+    if (!code) {
+      if ($('corrModalErr')) {
+        $('corrModalErr').textContent = 'Exam code is missing. Please select an exam before applying a correction.';
+        $('corrModalErr').hidden = false;
+      }
+      return;
+    }
 
     if (isNaN(newScore) || newScore < 0) {
       if ($('corrModalErr')) {
@@ -4890,7 +5195,7 @@ if ($('btnSubmitCorrection')) {
     try {
       const r = await api('teacherCorrectGrade', {
         idToken: await idToken(),
-        code: _currentDetailExamCode,
+        code: code,
         email,
         tryNumber,
         attemptId,
@@ -4908,8 +5213,13 @@ if ($('btnSubmitCorrection')) {
 
       toast('✓ Score corrected and recorded in _AuditLog.', 'ok');
       closeModal($('gradeCorrectionModal'));
-      if (_currentDetailExamCode) {
-        await loadExamResults(_currentDetailExamCode);
+      if (code) {
+        if (_currentDetailExamCode === code) {
+          await loadExamResults(code);
+        }
+        if ($('scTResults') && !$('scTResults').hidden) {
+          _resultsTabRefresh?.();
+        }
       }
     } catch (err) {
       if ($('corrModalErr')) {
@@ -4918,7 +5228,7 @@ if ($('btnSubmitCorrection')) {
       }
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Apply & Audit Log';
+      btn.textContent = 'Apply Correction';
     }
   };
 }

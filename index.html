@@ -6,9 +6,11 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
-<title>Exam</title>
+<meta name="description" content="Online examination portal for students to take proctored tests, track progress, and review answers.">
+<title>Exam Portal | Student Examination System</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="fx.css">
 <script>
@@ -31,6 +33,7 @@
   <span class="brand" id="brand">Exam</span>
   <span class="pill" id="pillProgress" aria-live="polite" hidden>—</span>
   <span class="pill" id="pillSkipped" hidden>Skipped 0</span>
+  <span class="pill pill-reviewer" id="pillReviewer" hidden>📖 REVIEWER</span>
   <span class="grow"></span>
   <span class="pill" id="pillTimer" role="timer" aria-live="off" hidden>—</span>
   <button class="btn-sm btn-outline exit-btn" id="btnExit" type="button" hidden style="margin-right:8px; border-radius:var(--r-full); padding:4px 12px; font-weight:600; display:inline-flex; align-items:center; gap:4px;"><span aria-hidden="true" style="font-size:1.1rem;line-height:1;">‹</span> Exit</button>
@@ -53,6 +56,70 @@
     <div class="card center solo">
       <div class="spinner" aria-hidden="true"></div>
       <p class="muted" id="loadingText">Starting up…</p>
+    </div>
+  </section>
+
+  <section id="scQueue" hidden aria-labelledby="queueTitle">
+    <div class="card center solo admission-card">
+      <div class="admission-loader-wrap">
+        <div class="admission-gauge">
+          <svg class="admission-gauge-svg" viewBox="0 0 120 120">
+            <circle class="admission-gauge-track" cx="60" cy="60" r="50"></circle>
+            <circle class="admission-gauge-bar" id="admissionGaugeBar" cx="60" cy="60" r="50"></circle>
+          </svg>
+          <div class="admission-gauge-content">
+            <span class="admission-percent" id="admissionPercent">0%</span>
+            <span class="admission-percent-label" id="admissionPercentLabel">Admitting</span>
+          </div>
+        </div>
+        <div class="admission-linear-track">
+          <div class="admission-linear-bar" id="admissionProgressBar" style="width: 0%;"></div>
+        </div>
+      </div>
+      <p class="eyebrow" id="admissionEyebrow" style="margin-top: 14px;">Exam room admissions</p>
+      <h1 class="h1" id="queueTitle">Waiting for an opening…</h1>
+      <p class="muted" id="queueText" role="status" aria-live="polite">
+        The exam server is admitting students in small groups. Keep this page open.
+      </p>
+      <p class="muted small" id="queueSub">Your exam has not started yet.</p>
+    </div>
+  </section>
+
+  <section id="scInAppBrowser" hidden aria-labelledby="iabHeading">
+    <div class="card solo iab-card">
+      <div class="iab-hero" aria-hidden="true">🧭</div>
+      <p class="iab-app-badge" id="iabAppBadge">In-app browser detected</p>
+      <h1 class="h1" id="iabHeading">Please open this page in Safari</h1>
+      <p class="muted" id="iabExplanation">
+        Google Sign-In is blocked inside this app's browser, and app notifications can be mistaken for leaving an exam.
+      </p>
+
+      <div class="iab-notice" role="note">
+        <b>Your exam has not started.</b> Open this same link in your regular browser before signing in.
+      </div>
+
+      <ol class="iab-steps" aria-label="How to open the exam in your browser">
+        <li class="iab-step">
+          <span class="iab-step-number" aria-hidden="true">1</span>
+          <span id="iabStepOne">Tap <b>…</b> (three dots) or the Share icon in the app's top or bottom corner.</span>
+        </li>
+        <li class="iab-step">
+          <span class="iab-step-number" aria-hidden="true">2</span>
+          <span>Choose <b id="iabOpenLabel">Open in Safari</b>.</span>
+        </li>
+        <li class="iab-step">
+          <span class="iab-step-number" aria-hidden="true">3</span>
+          <span>Sign in with your school Google account and take the exam there.</span>
+        </li>
+      </ol>
+
+      <div class="iab-actions">
+        <button class="btn btn-primary" id="btnCopyIabLink" type="button">📋 Copy Exam Link</button>
+        <a class="btn btn-google" id="btnOpenChrome" href="#" hidden>🌐 Open in Chrome</a>
+      </div>
+      <p class="iab-copy-status small" id="iabCopyStatus" role="status" aria-live="polite"></p>
+      <button class="btn btn-ghost iab-continue" id="btnDismissIab" type="button">Continue anyway</button>
+      <p class="muted small iab-caution">Only continue here if you are certain this is your normal browser.</p>
     </div>
   </section>
 
@@ -83,34 +150,75 @@
     <div class="card solo">
       <h1 class="h1" id="fatalTitle">Something went wrong</h1>
       <p id="fatalText" class="muted"></p>
-      <button class="btn btn-ghost" id="btnReload" type="button">Reload</button>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="btnFatalBack" type="button">Back to exam list</button>
+        <button class="btn btn-ghost" id="btnReload" type="button">Reload</button>
+      </div>
     </div>
   </section>
 
   <section id="scStart" hidden>
     <div class="card solo">
+      <!-- Active In-Progress Exam Banner -->
+      <div id="activeExamCard" class="active-exam-card" hidden>
+        <div class="active-exam-body">
+          <div class="active-exam-header">
+            <span class="active-exam-badge"><span class="pulsing-dot">●</span> Exam in progress</span>
+            <span class="muted small" id="activeExamProgress"></span>
+          </div>
+          <h2 class="active-exam-title" id="activeExamTitle"></h2>
+        </div>
+        <div class="active-exam-actions">
+          <button class="btn btn-primary" id="btnActiveResume" type="button">▶ Continue Exam</button>
+          <button class="btn btn-ghost" id="btnActiveDiscard" type="button" title="Discard this in-progress session and start fresh">✕ Discard</button>
+        </div>
+      </div>
+
       <div class="stack-s">
         <p class="eyebrow">Available now</p>
         <h1 class="h1">Choose your exam</h1>
       </div>
+
+      <!-- Instructions above displayed exam cards -->
+      <div class="exam-picker-guide" id="examPickerGuide">
+        <div class="exam-picker-guide-badge">👉 Click any test and continue</div>
+        <p class="exam-picker-guide-sub">Select your test card below, then tap the Continue button to start.</p>
+      </div>
+
       <div class="stack" id="examList"></div>
 
-      <!-- Add EDP Class control if exam is not listed -->
-      <div class="stack-s" style="margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line2, #ccc);">
-        <label class="lbl" for="edpInput">Don't see your exam? Enter Class EDP Code</label>
-        <div style="display:flex; gap:8px;">
-          <input class="field mono" id="edpInput" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 10234">
-          <button class="btn btn-ghost" id="btnAddEdp" type="button" style="white-space:nowrap;">Add Class</button>
-        </div>
-        <p class="msg ok small" id="edpOk" role="status" aria-live="polite" hidden></p>
-        <p class="err small" id="edpErr" role="alert" hidden></p>
-      </div>
+      <!-- Collapsing Drawer: Cannot see your tests? -->
+      <details class="collapse-drawer" id="drawerCannotSeeTests">
+        <summary class="collapse-summary">
+          <span class="collapse-summary-title">🔍 Cannot see your tests?</span>
+          <span class="collapse-summary-hint">Tap here to enter EDP code or Student ID info</span>
+        </summary>
+        <div class="collapse-body">
+          <p class="muted small" style="margin:0 0 10px 0; line-height: 1.4;">
+            If your class exam isn't appearing above, enter your Class EDP Code below to add it to your dashboard.
+          </p>
+          <div class="stack-s">
+            <label class="lbl" for="edpInput">Class EDP Code</label>
+            <div style="display:flex; gap:8px;">
+              <input class="field mono" id="edpInput" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 10234">
+              <button class="btn btn-ghost" id="btnAddEdp" type="button" style="white-space:nowrap;">Add Class</button>
+            </div>
+            <p class="msg ok small" id="edpOk" role="status" aria-live="polite" hidden></p>
+            <p class="err small" id="edpErr" role="alert" hidden></p>
+          </div>
 
-      <div class="stack-s" style="margin-top: 14px;">
-        <label class="lbl" for="codeInput">Or type the exam / EDP code</label>
-        <input class="field" id="codeInput" type="text" autocomplete="off"
-               autocapitalize="characters" spellcheck="false" placeholder="e.g. PRELIM1 or 10234">
-      </div>
+          <div class="stack-s" style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line2, #ccc);">
+            <label class="lbl" for="codeInput">Or type the exam / EDP code directly</label>
+            <input class="field" id="codeInput" type="text" autocomplete="off"
+                   autocapitalize="characters" spellcheck="false" placeholder="e.g. PRELIM1 or 10234">
+          </div>
+
+          <p class="muted small" style="margin-top:10px; margin-bottom:0; font-size:0.75rem;">
+            💡 Need to update your Student ID Number or Section? You can review or edit them anytime in the <b>Account</b> tab.
+          </p>
+        </div>
+      </details>
+
       <p class="err" id="startErr" role="alert" hidden></p>
       <button class="btn btn-primary" id="btnContinue" type="button">Continue</button>
     </div>
@@ -265,9 +373,27 @@
       <ul class="rules">
         <li>Answer each question, or tap <b>Skip</b> to come back to it.</li>
         <li>Skipped questions return at the end. You cannot skip twice.</li>
-        <li>Leaving the page is recorded, but it will not end your exam.</li>
+        <li id="briefProctoringRule"><b>Strict Proctoring Active:</b> Leaving or switching away from the exam tab is strictly prohibited. You are allowed only 1 warning — leaving a 2nd time will automatically submit your exam immediately.</li>
         <li>Your answers save as you go. If you lose signal, keep going.</li>
       </ul>
+
+      <!-- Retakes & Attempts Orientation Callout -->
+      <div class="brief-attempts-box" id="briefAttemptsBox">
+        <div class="brief-attempts-header">
+          <span class="brief-attempts-icon">ℹ️</span>
+          <strong>Understanding Attempts &amp; Retakes</strong>
+        </div>
+        <p class="brief-attempts-summary" id="briefAttemptsSummary">
+          Attempts give you an opportunity to retake the exam in case of technical issues or to improve your score if permitted by your instructor.
+        </p>
+        <ul class="brief-attempts-list">
+          <li id="briefAttemptsStatus"><strong>Remaining:</strong> Checking attempts…</li>
+          <li>Each completed submission uses 1 attempt. Once your allowed attempts reach zero, the exam is locked.</li>
+          <li>Do not abandon or close the browser tab during a test — uninterrupted focus prevents automatic submission.</li>
+        </ul>
+      </div>
+
+      <div id="briefCustomNotes" class="muted small" style="margin: 10px 0; padding: 10px; background: var(--sunk); border-radius: 6px; border-left: 3px solid var(--brand); line-height: 1.4;" hidden></div>
       <button class="btn btn-primary" id="btnBegin" type="button">Begin exam</button>
       <button class="btn btn-ghost" id="btnBriefBack" type="button">Back</button>
     </div>
@@ -277,11 +403,15 @@
     <div class="card solo">
       <h1 class="h1">You have an exam in progress</h1>
       <p class="muted" id="resumeText"></p>
-      <button class="btn btn-primary" id="btnResume" type="button">Continue where I left off</button>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="btnResume" type="button">Continue where I left off</button>
+        <button class="btn btn-ghost" id="btnResumeBack" type="button">Back to exam list</button>
+      </div>
     </div>
   </section>
 
   <section id="scExam" hidden>
+    <div id="reviewerWatermark" class="reviewer-watermark" aria-hidden="true" hidden>PRACTICE REVIEWER • UNTIMED</div>
     <!-- Per-Question Mode View -->
     <div id="singleExamView">
       <div id="stepperDots" class="stepper-dots"></div>
@@ -289,9 +419,14 @@
         <p class="eyebrow" id="qMeta">Question</p>
         <div class="qtext" id="qText"></div>
         <div id="qInput"></div>
-        <div class="actions">
+        <div id="qReviewerFeedback" class="reviewer-feedback" hidden></div>
+        <div class="actions" id="standardActions">
           <button class="btn btn-primary" id="btnAnswer" type="button">Submit answer</button>
           <button class="btn btn-ghost" id="btnSkip" type="button">Skip</button>
+        </div>
+        <div class="actions" id="reviewerActions" hidden>
+          <button class="btn btn-outline" id="btnShowAnswer" type="button">👁️ Show Answer</button>
+          <button class="btn btn-primary" id="btnNextQuestion" type="button">Next Question ›</button>
         </div>
       </div>
     </div>
@@ -324,6 +459,19 @@
         <button class="btn btn-primary" id="btnNextSection" type="button" style="width:100%;">Complete Section &amp; Proceed ›</button>
       </div>
     </div>
+
+    <!-- Per-Section Review Overview View -->
+    <div id="sectionReviewView" hidden>
+      <div class="card solo" style="margin-bottom:14px;">
+        <p class="eyebrow" id="sectionReviewMeta">Exam Review</p>
+        <h1 class="h1" id="sectionReviewTitle" style="font-size:1.3rem; margin-top:2px;">Review Sections Before Submitting</h1>
+        <p class="muted small">Select any section to review or revise your answers before submitting. Sections whose timers have expired cannot be reopened.</p>
+      </div>
+      <div id="sectionReviewCardsList" class="stack solo" style="gap:12px;"></div>
+      <div class="card solo" style="margin-top:16px;">
+        <button class="btn btn-primary" id="btnSubmitFromReview" type="button" style="width:100%; font-size:1rem; padding:12px; font-weight:700;">Submit Exam Fully ✓</button>
+      </div>
+    </div>
   </section>
 
   <!-- Cinematic Dramatic Section Transition Overlay -->
@@ -341,7 +489,10 @@
       <div class="spinner" aria-hidden="true"></div>
       <p id="sendText">Submitting your answers…</p>
       <p class="muted small" id="sendSub">Keep this page open.</p>
-      <button class="btn btn-ghost" id="btnRetry" type="button" hidden>Try again</button>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="btnRetry" type="button" hidden>Try again</button>
+        <button class="btn btn-outline" id="btnSendBack" type="button" hidden>Back to exam list</button>
+      </div>
     </div>
   </section>
 
@@ -364,9 +515,13 @@
         </div>
         <h1 class="h1" id="doneTitle">Exam complete</h1>
         <p class="muted small" id="doneNote"></p>
-        <div class="actions" style="justify-content:center; margin-top:16px;">
+        <div class="actions" id="standardDoneActions" style="justify-content:center; margin-top:16px;">
           <button class="btn btn-primary" id="btnDoneExams" type="button">Go to exam list</button>
           <button class="btn btn-ghost" id="btnDoneHistory" type="button">View history</button>
+        </div>
+        <div class="actions" id="reviewerDoneActions" hidden style="justify-content:center; margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btnRetryReviewer" type="button">🔄 Retry Test</button>
+          <button class="btn btn-outline" id="btnEndReviewer" type="button">🏁 End Test</button>
         </div>
       </div>
       <div class="card cell-major" id="reviewCard">
@@ -396,6 +551,7 @@
       <h3 class="modal-title bad">You left the exam page</h3>
     </div>
     <p id="warningModalText" class="modal-body"></p>
+    <div id="warningModalNotes" class="muted small" style="margin: 8px 0 12px; padding: 8px; background: var(--sunk); border-radius: 6px; border-left: 3px solid var(--bad); line-height: 1.4;" hidden></div>
     <div id="warningModalCountdown" class="modal-count" aria-live="off"></div>
     <button class="btn btn-primary" id="btnResumeExam" type="button">I understand, resume exam</button>
   </div>
@@ -442,7 +598,7 @@
     <p class="modal-body" style="font-size:0.9rem; line-height:1.5;">
       In compliance with NPC Advisory No. 2020-1 and the Data Privacy Act of 2012, this platform collects your verified student identity, answers, and operational telemetry (such as tab focus-loss and connection heartbeats) strictly for examination administration.
     </p>
-    <label style="display:flex; align-items:flex-start; gap:10px; margin: 16px 0; font-size:0.88rem; cursor:pointer;">
+    <label for="chkPrivacyAck" style="display:flex; align-items:flex-start; gap:10px; margin: 16px 0; font-size:0.88rem; cursor:pointer;">
       <input type="checkbox" id="chkPrivacyAck" style="margin-top:3px; accent-color:var(--brand);">
       <span>I have read and agree to the <a href="privacy.html" target="_blank" rel="noopener" style="text-decoration:underline;">Privacy Notice &amp; Exam Policies</a>.</span>
     </label>
@@ -488,6 +644,6 @@
 
 </nav>
 
-<script type="module" src="app.js?v=20260913b"></script>
+<script type="module" src="app.js?v=20260922_ui_contrast_fix"></script>
 </body>
 </html>

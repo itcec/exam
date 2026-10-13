@@ -12,7 +12,8 @@ export const FIREBASE_CONFIG = {
    apiKey: 'AIzaSyDBk20h7M2evFU0OHtAhr73K4NX3AmWMFU',
    authDomain: 'onlinecec-bec0e.firebaseapp.com',
    projectId: 'onlinecec-bec0e',
-   appId: '1:69594006268:web:3d22028bc27fea704ccd79'
+   appId: '1:69594006268:web:3d22028bc27fea704ccd79',
+   databaseURL: 'https://onlinecec-bec0e-default-rtdb.asia-southeast1.firebasedatabase.app'
 };
 
 /* Apps Script ▸ Deploy ▸ New deployment ▸ Web app ▸ the /exec URL. */
@@ -46,6 +47,9 @@ export const FEATURE_FLAGS = {
   pilotExamCodes: ['PILOT01', 'IT101'],
   emergencyStopActive: false
 };
+
+export const EMERGENCY_SERVER_HALT = false;
+export const EMERGENCY_HALT_MESSAGE = "The exam has been temporarily paused by your instructor due to server maintenance. Your timer has been STOPPED and all your answers are safely saved. Please keep this tab open and await instructions from your instructor.";
 
 /**
  * Checks if delta autosave should be used for a given exam code.

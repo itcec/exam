@@ -12,7 +12,8 @@
      a teacher on the same wifi is not owed a worse deal than their class.
      gstatic stays: that is the Firebase SDK, not a font. -->
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
-<link rel="stylesheet" href="teacher.css?v=20260916b">
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+<link rel="stylesheet" href="teacher.css?v=20260918_edp_loading_fix">
 <link rel="stylesheet" href="../fx.css">
 <script>
   try {
@@ -292,6 +293,15 @@
             <select class="field-sm" id="detailEdpFilter" aria-label="Filter results by EDP Code" style="font-weight:600; min-width:130px;">
               <option value="">All EDP Codes</option>
             </select>
+            <!-- Clean Sorting Dropdown (Replaces redundant pills) -->
+            <select class="field-sm" id="resultsSortSelect" aria-label="Sort Submissions" style="font-weight:600; min-width:145px;">
+              <option value="default">Sort: Default</option>
+              <option value="score-desc">🏆 Highest Score</option>
+              <option value="score-asc">📉 Lowest Score</option>
+              <option value="name-asc">🔤 Name (A-Z)</option>
+              <option value="submitted-desc">🕒 Recently Submitted</option>
+              <option value="flagged-desc">🚩 Flagged First</option>
+            </select>
           </div>
 
           <div style="display:flex; align-items:center; gap:8px; flex:1; justify-content:flex-end; min-width:260px;">
@@ -307,7 +317,7 @@
           </div>
         </div>
 
-        <div class="results-sort-bar" id="resultsSortBar" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:12px; font-size:0.75rem;">
+        <div class="results-sort-bar" id="resultsSortBar" style="display:none;" aria-hidden="true" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:12px; font-size:0.75rem;">
           <span class="muted" style="font-weight:600;">Sort:</span>
           <button type="button" class="btn-sort-pill on" id="btnSortDefault" data-sort="default">Default</button>
           <button type="button" class="btn-sort-pill" id="btnSortHighest" data-sort="score-desc">🏆 Highest Score</button>
@@ -398,11 +408,23 @@
           </div>
 
           <div class="fld" style="background:var(--sunk); padding:10px 12px; border-radius:var(--r-md); border:1px solid var(--edge); margin-bottom:12px;">
+            <label class="lbl" for="tAssessmentTypeSelect" style="color:var(--accent); font-weight:700;">🎯 Assessment Type</label>
+            <select class="field" id="tAssessmentTypeSelect" style="font-weight:600;">
+              <option value="test">Formal Test / Exam (Timed, proctored, graded)</option>
+              <option value="reviewer">Practice Reviewer (Untimed, unlimited takes, instant answers)</option>
+            </select>
+            <p id="tAssessmentTypeHint" class="muted small" style="margin-top:6px;">
+              Formal exam mode applies timers and proctoring.
+            </p>
+          </div>
+
+          <div class="fld" style="background:var(--sunk); padding:10px 12px; border-radius:var(--r-md); border:1px solid var(--edge); margin-bottom:12px;">
             <label class="lbl" for="tExamTimerModeSelect" style="color:var(--accent); font-weight:700;">⏱️ Exam Delivery &amp; Timer Mode</label>
             <select class="field" id="tExamTimerModeSelect" style="font-weight:600;">
               <option value="whole-exam">One timer for the whole exam (Scroll all questions)</option>
               <option value="per-section">One timer per section</option>
               <option value="per-question">One timer per question (Step 1 by 1 with question timer)</option>
+              <option value="untimed">Untimed — self-paced (no timer)</option>
             </select>
 
             <!-- Whole Exam Timer Setup -->
@@ -524,24 +546,22 @@
     <!-- Per-question manager -->
     <div class="modal-backdrop" id="manageQuestionsModal" hidden>
       <div class="modal-card modal-card-lg" style="inline-size:min(100%, 860px);">
-        <div class="modal-header">
-          <div>
-            <h3 id="manageQModalTitle" style="margin:0;">Manage Questions</h3>
-            <p class="muted small" style="margin:2px 0 0;">Click any question to open its management dropdown, edit choices, duplicate, or delete.</p>
+        <div class="modal-header" style="padding:10px 14px; border-bottom:1px solid var(--edge); display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <h3 id="manageQModalTitle" style="margin:0; font-size:1.05rem;">Manage Questions</h3>
+            <span class="muted small" id="manageQTally" style="font-weight:600; font-size:0.75rem;">Loading…</span>
           </div>
-          <button class="close-btn" id="btnCloseManageQuestions" type="button" aria-label="Close question manager">✕</button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn-sm btn-outline" id="btnNewManagedQuestion" type="button" style="font-size:0.75rem; padding:4px 10px;">+ New Question</button>
+            <button class="btn-sm btn-primary" id="btnSaveAllManagedQuestions" type="button" style="font-size:0.75rem; padding:4px 12px; font-weight:700;">💾 Save All Questions</button>
+            <button class="close-btn" id="btnCloseManageQuestions" type="button" aria-label="Close question manager">✕</button>
+          </div>
         </div>
 
-        <div class="manage-q-toolbar" style="margin-top:10px;">
-          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-            <div style="flex:1; min-width:220px;">
-              <input class="field" id="manageQSearch" type="search" placeholder="🔍 Search questions by keyword or answer…" aria-label="Search questions">
-            </div>
-            <button class="btn-sm btn-accent" id="btnNewManagedQuestion" type="button" style="white-space:nowrap; height:38px; min-height:38px; inline-size:auto; flex-shrink:0;">+ New Question</button>
-          </div>
-
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px;">
-            <div class="manage-q-chips" id="manageQTypeFilter" role="toolbar" aria-label="Filter by question type">
+        <div class="manage-q-toolbar" style="padding:8px 14px; background:var(--sunk); border-bottom:1px solid var(--edge); display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:1;">
+            <input class="field-sm" id="manageQSearch" type="search" placeholder="🔍 Search questions…" aria-label="Search questions" style="max-width:200px;">
+            <div class="manage-q-chips" id="manageQTypeFilter" role="toolbar" aria-label="Filter by question type" style="display:flex; gap:3px;">
               <button type="button" class="q-filter-btn on" data-type="ALL">All</button>
               <button type="button" class="q-filter-btn" data-type="MC">MC</button>
               <button type="button" class="q-filter-btn" data-type="TF">TF</button>
@@ -550,7 +570,19 @@
               <button type="button" class="q-filter-btn" data-type="MA">MA</button>
               <button type="button" class="q-filter-btn" data-type="WB">WB</button>
             </div>
-            <span class="muted small" id="manageQTally" style="font-weight:600; font-size:0.8rem;">Loading…</span>
+          </div>
+          <div id="wrapGlobalTimer" style="display:flex; align-items:center; gap:6px; font-size:0.75rem;">
+            <span class="muted" style="font-weight:600; white-space:nowrap;">⏱ Global Timer:</span>
+            <input type="number" class="field-sm" id="manageGlobalTimerInput" min="5" max="3600" value="45" style="width:58px; text-align:center; padding:3px 4px; font-weight:700;" title="Apply this timer duration to all questions">
+            <span class="muted">s</span>
+            <button type="button" class="btn-sm btn-outline" id="btnApplyGlobalTimer" style="font-size:0.75rem; padding:3px 8px;" title="Set this timer duration on all questions">Apply to All</button>
+          </div>
+          <div id="wrapSectionTimers" hidden style="display:flex; flex-direction:column; gap:8px; width:100%; padding:10px 14px; background:var(--glass-hi); border-radius:var(--r-md); border:1px solid var(--edge); margin-top:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+              <span style="font-weight:700; font-size:0.8125rem; color:var(--accent);">⏱ Section Timers by Question Type</span>
+              <span class="muted small" style="font-size:0.72rem;">Configure the countdown duration for each section type below:</span>
+            </div>
+            <div id="manageSectionTimersGrid" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;"></div>
           </div>
         </div>
 
@@ -994,69 +1026,63 @@
         <h3 style="margin:0;">Audited Grade Correction</h3>
         <button class="close-btn" id="btnCloseGradeCorrection" type="button">✕</button>
       </div>
-      <div class="modal-body stack-s" style="margin-top:12px;">
-        <p class="muted small">
-          Submitted grades are immutable by default. Any change is permanently recorded in the submission's Notes and the institutional <code>_AuditLog</code>.
+      <div class="modal-body stack-s" style="margin-top:8px; padding:0 2px;">
+        <p class="muted small" style="font-size:0.75rem; margin-bottom:8px;">
+          Grades are recorded permanently in submission notes and institutional <code>_AuditLog</code>.
         </p>
 
-        <!-- Retake / Redo Test Authorization Card -->
-        <div class="retake-action-card" id="corrRetakeCard" style="background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); padding:12px; margin-bottom:12px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <!-- Compact Retake Banner -->
+        <div class="retake-action-card" id="corrRetakeCard" style="background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); padding:8px 10px; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <div>
-              <div style="font-weight:700; font-size:0.9rem; display:flex; align-items:center; gap:6px;">
-                <span>🔄 Authorize Retake (Redo Exam)</span>
-              </div>
-              <p class="muted small" style="margin:2px 0 0;">
-                Void this submission and allow this student to retake the exam from scratch.
-              </p>
+              <span style="font-weight:700; font-size:0.8rem;">🔄 Authorize Retake</span>
+              <span class="muted small" style="margin-left:6px; font-size:0.72rem;">Void submission &amp; allow retake</span>
             </div>
-            <button type="button" class="btn-sm btn-accent" id="btnShowRetakeForm">Authorize Retake</button>
+            <button type="button" class="btn-sm btn-accent" id="btnShowRetakeForm" style="font-size:0.72rem; padding:3px 8px;">Retake Exam</button>
           </div>
-          <div id="corrRetakeForm" hidden style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--line2, #ccc);">
-            <div class="fld" style="margin-bottom:8px;">
-              <label class="lbl" for="corrRetakeReason" style="font-size:0.8rem;">Reason for Retake (Mandatory)</label>
-              <input class="field" id="corrRetakeReason" placeholder="e.g. Student experienced power disruption / tab switch false alarm" required>
+          <div id="corrRetakeForm" hidden style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--line2, #ccc);">
+            <div class="fld" style="margin-bottom:6px;">
+              <input class="field-sm" id="corrRetakeReason" placeholder="Reason for retake (Mandatory)" style="width:100%; font-size:0.75rem;" required>
             </div>
-            <div style="display:flex; justify-content:flex-end; gap:8px;">
-              <button type="button" class="btn-sm btn-outline" id="btnCancelRetakeForm">Cancel</button>
-              <button type="button" class="btn-sm btn-danger" id="btnConfirmRetake">Confirm &amp; Grant Retake</button>
+            <div style="display:flex; justify-content:flex-end; gap:6px;">
+              <button type="button" class="btn-sm btn-outline" id="btnCancelRetakeForm" style="font-size:0.72rem; padding:2px 6px;">Cancel</button>
+              <button type="button" class="btn-sm btn-danger" id="btnConfirmRetake" style="font-size:0.72rem; padding:2px 8px;">Confirm Retake</button>
             </div>
           </div>
-        </div>
-
-        <div style="display:flex; align-items:center; gap:10px; margin: 4px 0 10px;">
-          <span style="height:1px; flex:1; background:var(--edge);"></span>
-          <span class="muted small" style="font-weight:600; text-transform:uppercase; font-size:0.75rem; letter-spacing:0.05em;">Or Modify Grade</span>
-          <span style="height:1px; flex:1; background:var(--edge);"></span>
         </div>
 
         <input type="hidden" id="corrAttemptId">
-        <div class="fld" style="margin-bottom:10px;">
-          <label class="lbl" for="corrStudentEmail" style="font-size:0.8rem;">Student Email</label>
-          <input class="field mono" id="corrStudentEmail" readonly style="background:var(--sunk);">
-        </div>
-        <div class="two" style="display:flex; gap:10px; margin-bottom:10px;">
-          <div class="fld" style="flex:1;">
-            <label class="lbl" for="corrAttemptNo" style="font-size:0.8rem;">Attempt #</label>
-            <input class="field mono" id="corrAttemptNo" readonly style="background:var(--sunk);">
+        <input type="hidden" id="corrExamCode">
+        <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:6px; margin-bottom:6px;">
+          <div class="fld">
+            <label class="lbl" for="corrStudentEmail" style="font-size:0.72rem; margin-bottom:2px;">Student Email</label>
+            <input class="field-sm mono" id="corrStudentEmail" readonly style="background:var(--sunk); font-size:0.75rem; width:100%;">
           </div>
-          <div class="fld" style="flex:1;">
-            <label class="lbl" for="corrCurrentScore" style="font-size:0.8rem;">Current Score</label>
-            <input class="field mono" id="corrCurrentScore" readonly style="background:var(--sunk);">
+          <div class="fld">
+            <label class="lbl" for="corrAttemptNo" style="font-size:0.72rem; margin-bottom:2px;">Attempt #</label>
+            <input class="field-sm mono" id="corrAttemptNo" readonly style="background:var(--sunk); font-size:0.75rem; width:100%;">
+          </div>
+          <div class="fld">
+            <label class="lbl" for="corrCurrentScore" style="font-size:0.72rem; margin-bottom:2px;">Current</label>
+            <input class="field-sm mono" id="corrCurrentScore" readonly style="background:var(--sunk); font-size:0.75rem; width:100%;">
           </div>
         </div>
-        <div class="fld" style="margin-bottom:10px;">
-          <label class="lbl" for="corrNewScore" style="font-size:0.8rem;">New Score</label>
-          <input class="field mono" id="corrNewScore" type="number" min="0" step="0.5" placeholder="e.g. 24" required>
+
+        <div style="display:grid; grid-template-columns: 1fr 2fr; gap:6px; margin-bottom:6px;">
+          <div class="fld">
+            <label class="lbl" for="corrNewScore" style="font-size:0.72rem; margin-bottom:2px;">New Score</label>
+            <input class="field-sm mono" id="corrNewScore" type="number" min="0" step="0.5" placeholder="e.g. 24" required style="font-size:0.75rem; width:100%;">
+          </div>
+          <div class="fld">
+            <label class="lbl" for="corrReason" style="font-size:0.72rem; margin-bottom:2px;">Justification (Mandatory)</label>
+            <textarea class="field-sm" id="corrReason" rows="2" placeholder="e.g. Credit awarded for Q3 alternate spelling" required style="font-size:0.75rem; width:100%; resize:none;"></textarea>
+          </div>
         </div>
-        <div class="fld" style="margin-bottom:10px;">
-          <label class="lbl" for="corrReason" style="font-size:0.8rem;">Justification / Reason (Mandatory)</label>
-          <textarea class="field" id="corrReason" rows="3" placeholder="e.g. Credit awarded for question 3 alternate spelling; approved by Department Head." required></textarea>
-        </div>
-        <p class="err small" id="corrModalErr" hidden></p>
-        <div class="actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px; border-top:1px solid var(--edge); padding-top:12px;">
-          <button class="btn btn-outline" id="btnCancelCorrection" type="button">Cancel</button>
-          <button class="btn btn-primary" id="btnSubmitCorrection" type="button">Apply &amp; Audit Log</button>
+
+        <p class="err small" id="corrModalErr" hidden style="margin:4px 0;"></p>
+        <div class="actions" style="display:flex; justify-content:flex-end; gap:6px; margin-top:8px; border-top:1px solid var(--edge); padding-top:8px;">
+          <button class="btn-sm btn-outline" id="btnCancelCorrection" type="button" style="font-size:0.75rem; padding:4px 10px;">Cancel</button>
+          <button class="btn-sm btn-primary" id="btnSubmitCorrection" type="button" style="font-size:0.75rem; padding:4px 12px; font-weight:700;">Apply Correction</button>
         </div>
       </div>
     </div>
@@ -1110,7 +1136,7 @@
     </div>
   </div>
 </main>
-<nav class="appbar" id="tAppBar" aria-label="Main" hidden>
+<nav class="appbar" id="tAppBar" aria-label="Main" hidden style="display:none !important;">
   <button class="appbar-tab" id="tTabDashboard" data-tab="dashboard" type="button">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     <span>Dashboard</span>
@@ -1128,6 +1154,6 @@
     <span>Results</span>
   </button>
 </nav>
-<script type="module" src="teacher.js?v=20260914a"></script>
+<script type="module" src="teacher.js?v=20260918_edp_loading_fix"></script>
 </body>
 </html>
