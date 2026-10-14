@@ -2745,6 +2745,7 @@ if ($('btnTAddAll')) {
     const specs = collectBuilderSpecs();
     if (!specs.length) { toast('Paste some questions first.', 'bad'); return; }
 
+    const mode = $('tAddQMode') ? $('tAddQMode').value : 'append';
     const currentExam = (_currentDetailExam && _currentDetailExam.code === _currentDetailExamCode)
       ? _currentDetailExam
       : (CACHE.exams || []).find(e => e.code === _currentDetailExamCode);
