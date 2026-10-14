@@ -2718,7 +2718,12 @@ function render() {
       $('qReviewerFeedback').hidden = true;
       $('qReviewerFeedback').replaceChildren();
     }
+    if ($('btnReviewerSubmit')) {
+      $('btnReviewerSubmit').hidden = false;
+      $('btnReviewerSubmit').onclick = () => submitReviewerAnswer();
+    }
     if ($('btnNextQuestion')) {
+      $('btnNextQuestion').hidden = true;
       $('btnNextQuestion').textContent = isLast ? 'Finish & Review All ✓' : 'Next Question ›';
       $('btnNextQuestion').onclick = () => {
         const qCur = current();
@@ -2728,9 +2733,6 @@ function render() {
         }
         advance();
       };
-    }
-    if ($('btnShowAnswer')) {
-      $('btnShowAnswer').onclick = () => showReviewerAnswer();
     }
   } else {
     if ($('standardActions')) $('standardActions').hidden = false;
@@ -2887,12 +2889,32 @@ function normText(s, keepCase) {
   return keepCase ? out : out.toLowerCase();
 }
 
-function showReviewerAnswer() {
+function buildGoogleAiUrl(q, key) {
+  let aiPrompt = 'Explain why';
+  if (q && q.question) {
+    aiPrompt += ', for the question: "' + q.question + '"';
+  }
+  if (key && key.expected) {
+    aiPrompt += ', the correct answer is: "' + key.expected + '"';
+  }
+  if (q && Array.isArray(q.choices) && q.choices.length) {
+    aiPrompt += '. The choices are: ' + q.choices.join(', ') + '. Please explain why the correct answer is right and why the other choices are not.';
+  } else {
+    aiPrompt += '. Please provide a detailed and clear explanation of why this answer is correct.';
+  }
+  return 'https://www.google.com/search?q=' + encodeURIComponent(aiPrompt);
+}
+
+function submitReviewerAnswer() {
   const q = current();
   if (!q || !q.answerKey) return;
   const key = q.answerKey;
   const given = readAnswer();
   const feedbackBox = $('qReviewerFeedback');
+  const aiUrl = buildGoogleAiUrl(q, key);
+
+  // Persist student's answered state
+  setDirtyAnswer(q.no, given || '');
 
   if (q.type === 'MC' || q.type === 'TF') {
     const opts = document.querySelectorAll('#qInput .opt');
@@ -2919,6 +2941,9 @@ function showReviewerAnswer() {
       feedbackBox.innerHTML = `
         <div class="rf-badge ${isCorrect ? 'ok' : 'bad'}">${isCorrect ? '✓ Correct!' : '✗ Incorrect'}</div>
         <div class="rf-exp">Correct Answer: <b>${esc(key.expected)}</b></div>
+        <div style="margin-top:8px;">
+          <a class="rf-ai-btn" href="${aiUrl}" target="_blank" rel="noopener noreferrer">✨ Ask Google AI for Explanation</a>
+        </div>
       `;
     }
 
@@ -2957,28 +2982,71 @@ function showReviewerAnswer() {
       feedbackBox.innerHTML = `
         <div class="rf-badge ${ok ? 'ok' : 'bad'}">${ok ? '✓ Correct!' : '✗ Incorrect'}</div>
         <div class="rf-exp">Correct Answer: <b>${esc(key.expected)}</b></div>
+        <div style="margin-top:8px;">
+          <a class="rf-ai-btn" href="${aiUrl}" target="_blank" rel="noopener noreferrer">✨ Ask Google AI for Explanation</a>
+        </div>
       `;
     }
     if (ok) { play('chime'); haptic(30); } else { play('wrong'); haptic(15); }
   } else if (q.type === 'EN') {
+    const keepCase = !!key.caseSensitive;
+    const wanted = (key.items || []).map(a =>
+      String(a).split('/').map(x => normText(x, keepCase)).filter(Boolean));
+    const got = String(given || '').split('\n').map(l => normText(l, keepCase)).filter(Boolean);
+    const used = {};
+    let hits = 0;
+    wanted.forEach(alts => {
+      for (let g = 0; g < got.length; g++) {
+        if (used[g]) continue;
+        if (alts.indexOf(got[g]) !== -1) { used[g] = true; hits++; return; }
+      }
+    });
+    const isCorrect = wanted.length > 0 && hits === wanted.length;
+
     if (feedbackBox) {
       feedbackBox.hidden = false;
       feedbackBox.innerHTML = `
-        <div class="rf-badge ok">✓ Answers</div>
+        <div class="rf-badge ${isCorrect ? 'ok' : 'bad'}">${isCorrect ? '✓ Correct!' : '✗ ' + hits + ' of ' + wanted.length + ' Items Correct'}</div>
         <div class="rf-exp">Expected Items: <b>${esc(key.expected)}</b></div>
+        <div style="margin-top:8px;">
+          <a class="rf-ai-btn" href="${aiUrl}" target="_blank" rel="noopener noreferrer">✨ Ask Google AI for Explanation</a>
+        </div>
       `;
     }
-    play('click');
+    if (isCorrect) { play('chime'); haptic(30); } else { play('wrong'); haptic(15); }
   } else if (q.type === 'MA') {
+    let picks = {};
+    try { picks = (typeof given === 'object' && given) ? given : JSON.parse(given); }
+    catch (e) { picks = {}; }
+    let hits = 0;
+    const totalPairs = Object.keys(key.pairs || {}).length;
+    Object.keys(key.pairs || {}).forEach(left => {
+      const right = key.pairs[left];
+      const chose = picks[left];
+      if (chose != null && normText(chose) === normText(right)) hits++;
+    });
+    const isCorrect = totalPairs > 0 && hits === totalPairs;
+
     if (feedbackBox) {
       feedbackBox.hidden = false;
       feedbackBox.innerHTML = `
-        <div class="rf-badge ok">✓ Pairings</div>
+        <div class="rf-badge ${isCorrect ? 'ok' : 'bad'}">${isCorrect ? '✓ Correct!' : '✗ ' + hits + ' of ' + totalPairs + ' Pairs Correct'}</div>
         <div class="rf-exp">Correct Matches: <b>${esc(key.expected)}</b></div>
+        <div style="margin-top:8px;">
+          <a class="rf-ai-btn" href="${aiUrl}" target="_blank" rel="noopener noreferrer">✨ Ask Google AI for Explanation</a>
+        </div>
       `;
     }
-    play('click');
+    if (isCorrect) { play('chime'); haptic(30); } else { play('wrong'); haptic(15); }
   }
+
+  // Switch action buttons: hide Submit, show Next Question
+  if ($('btnReviewerSubmit')) $('btnReviewerSubmit').hidden = true;
+  if ($('btnNextQuestion')) $('btnNextQuestion').hidden = false;
+}
+
+function showReviewerAnswer() {
+  submitReviewerAnswer();
 }
 
 let saveTimer = null;
