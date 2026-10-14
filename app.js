@@ -2974,7 +2974,17 @@ async function handleReviewerAiExplain(q, key, btnAi) {
     return;
   }
 
-  const aiCacheKey = 'ai_exp_' + (S.code || '') + '_' + q.no;
+  const qSig = [
+    q.no,
+    q.question || '',
+    (q.choices || []).join('|'),
+    (key && key.expected) || ''
+  ].join('::');
+  let h = 0;
+  for (let i = 0; i < qSig.length; i++) h = (Math.imul(31, h) + qSig.charCodeAt(i)) | 0;
+  const sigHash = (h >>> 0).toString(36);
+  const aiCacheKey = 'ai_exp_' + (S.code || '') + '_' + q.no + '_' + sigHash;
+
   let cached = null;
   try { cached = sessionStorage.getItem(aiCacheKey); } catch (e) {}
 
@@ -2996,8 +3006,13 @@ async function handleReviewerAiExplain(q, key, btnAi) {
   }
 
   try {
+    const userToken = await idToken().catch(() => '');
+    if (!userToken) {
+      throw new Error('Please sign in to access AI explanations.');
+    }
+
     const res = await api('reviewerExplain', {
-      idToken: S.idToken,
+      idToken: userToken,
       attemptToken: S.token,
       qNo: q.no
     });
