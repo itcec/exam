@@ -1670,6 +1670,19 @@ async function prepare(r) {
   behaviorWarnings = 0;
   awayAt = null;
   if (blurCheck) { clearTimeout(blurCheck); blurCheck = null; }
+  S.sections = null;
+  S.isReviewMode = false;
+  S.currentSecIndex = 0;
+  _lastDoneResult = null;
+  if ($('singleExamView')) $('singleExamView').hidden = true;
+  if ($('wholeExamView')) $('wholeExamView').hidden = true;
+  if ($('sectionExamView')) $('sectionExamView').hidden = true;
+  if ($('sectionReviewView')) $('sectionReviewView').hidden = true;
+  if ($('sectionReviewCardsList')) $('sectionReviewCardsList').replaceChildren();
+  if ($('sectionQuestionList')) $('sectionQuestionList').replaceChildren();
+  if ($('wholeExamList')) $('wholeExamList').replaceChildren();
+  if ($('reviewCard')) $('reviewCard').hidden = true;
+  if ($('reviewWrap')) $('reviewWrap').replaceChildren();
   initFirestoreAttempt(r).catch(() => {});
 }
 
@@ -1853,10 +1866,15 @@ function begin() {
   awayAt = null;
   if (blurCheck) { clearTimeout(blurCheck); blurCheck = null; }
   show('scExam');
+
+  // Explicitly hide all exam view containers before selecting the active mode
+  if ($('singleExamView')) $('singleExamView').hidden = true;
+  if ($('wholeExamView')) $('wholeExamView').hidden = true;
+  if ($('sectionExamView')) $('sectionExamView').hidden = true;
+  if ($('sectionReviewView')) $('sectionReviewView').hidden = true;
+
   if (S.isReviewer) {
     if ($('singleExamView')) $('singleExamView').hidden = false;
-    if ($('wholeExamView')) $('wholeExamView').hidden = true;
-    if ($('sectionExamView')) $('sectionExamView').hidden = true;
     if ($('reviewerWatermark')) $('reviewerWatermark').hidden = false;
     if ($('pillReviewer')) $('pillReviewer').hidden = false;
     if ($('pillTimer')) $('pillTimer').hidden = true;
@@ -1865,16 +1883,12 @@ function begin() {
   } else if (S.timerMode === 'whole-exam') {
     if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
     if ($('pillReviewer')) $('pillReviewer').hidden = true;
-    if ($('singleExamView')) $('singleExamView').hidden = true;
-    if ($('sectionExamView')) $('sectionExamView').hidden = true;
     if ($('wholeExamView')) $('wholeExamView').hidden = false;
     renderWholeExam();
     startGlobal();
   } else if (S.timerMode === 'per-section') {
     if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
     if ($('pillReviewer')) $('pillReviewer').hidden = true;
-    if ($('singleExamView')) $('singleExamView').hidden = true;
-    if ($('wholeExamView')) $('wholeExamView').hidden = true;
     if ($('sectionExamView')) $('sectionExamView').hidden = false;
     S.sections = buildSections();
     S.currentSecIndex = 0;
@@ -1883,8 +1897,6 @@ function begin() {
     if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
     if ($('pillReviewer')) $('pillReviewer').hidden = true;
     if ($('singleExamView')) $('singleExamView').hidden = false;
-    if ($('wholeExamView')) $('wholeExamView').hidden = true;
-    if ($('sectionExamView')) $('sectionExamView').hidden = true;
     step();
   }
   autosave();
@@ -3708,6 +3720,17 @@ function leaveFinishedExam(destination) {
   S.finished = false;
   behaviorWarnings = 0;
   S.isReviewer = false;
+  S.sections = null;
+  S.isReviewMode = false;
+  S.currentSecIndex = 0;
+  _lastDoneResult = null;
+  if ($('singleExamView')) $('singleExamView').hidden = true;
+  if ($('wholeExamView')) $('wholeExamView').hidden = true;
+  if ($('sectionExamView')) $('sectionExamView').hidden = true;
+  if ($('sectionReviewView')) $('sectionReviewView').hidden = true;
+  if ($('sectionReviewCardsList')) $('sectionReviewCardsList').replaceChildren();
+  if ($('reviewCard')) $('reviewCard').hidden = true;
+  if ($('reviewWrap')) $('reviewWrap').replaceChildren();
   if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
   if ($('pillReviewer')) $('pillReviewer').hidden = true;
   awayAt = null;
