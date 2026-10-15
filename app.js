@@ -169,7 +169,7 @@ if ($('btnTheme')) mountSoundToggle($('btnTheme'));
 
 const SCREENS = ['scLoading', 'scInAppBrowser', 'scSignIn', 'scFatal', 'scRegister', 'scPick',
                  'scNotListed', 'scStart', 'scHistory', 'scAccount',
-                 'scQueue', 'scBrief', 'scResume', 'scExam', 'scSending', 'scDone'];
+                 'scQueue', 'scBrief', 'scResume', 'scReviewerLoading', 'scExam', 'scSending', 'scDone'];
 
 /** What a screen is called, for the live region. */
 const SCREEN_NAME = {
@@ -177,7 +177,7 @@ const SCREEN_NAME = {
   scStart: 'Choose your exam', scHistory: 'Exams you have taken',
   scAccount: 'Account', scRegister: 'Find your name', scPick: 'Which one is you',
   scNotListed: 'We could not find you', scQueue: 'Exam room admissions',
-  scBrief: 'Exam details', scResume: 'Exam in progress',
+  scBrief: 'Exam details', scResume: 'Exam in progress', scReviewerLoading: 'Loading reviewer',
   scExam: 'Exam', scSending: 'Submitting', scDone: 'Exam submitted', scFatal: 'Something went wrong'
 };
 
@@ -1861,11 +1861,54 @@ if ($('btnResumeBack')) {
 
 /* ---------------- exam ---------------- */
 
+function showReviewerLoadingTransition(onComplete) {
+  if (typeof window === 'undefined' || !$('scReviewerLoading')) {
+    onComplete();
+    return;
+  }
+  show('scReviewerLoading');
+  const bar = $('dinoProgressFill');
+  const pct = $('dinoPercent');
+  const status = $('dinoStatusText');
+
+  const messages = [
+    '🦖 Dinosaur hatching your study session…',
+    '🦕 Loading questions and answer keys…',
+    '✨ Priming AI tutor study guides…',
+    '🎯 Ready! Launching Question 1…'
+  ];
+
+  let p = 0;
+  let msgIdx = 0;
+  if (status) status.textContent = messages[0];
+  if (bar) bar.style.width = '0%';
+  if (pct) pct.textContent = '0%';
+
+  const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (prefersReduced) {
+    setTimeout(onComplete, 50);
+    return;
+  }
+
+  const timer = setInterval(() => {
+    p += 20;
+    if (bar) bar.style.width = Math.min(p, 100) + '%';
+    if (pct) pct.textContent = Math.min(p, 100) + '%';
+    if (msgIdx < messages.length - 1 && p >= (msgIdx + 1) * 25) {
+      msgIdx++;
+      if (status) status.textContent = messages[msgIdx];
+    }
+    if (p >= 100) {
+      clearInterval(timer);
+      setTimeout(onComplete, 120);
+    }
+  }, 180);
+}
+
 function begin() {
   behaviorWarnings = 0;
   awayAt = null;
   if (blurCheck) { clearTimeout(blurCheck); blurCheck = null; }
-  show('scExam');
 
   // Explicitly hide all exam view containers before selecting the active mode
   if ($('singleExamView')) $('singleExamView').hidden = true;
@@ -1874,30 +1917,36 @@ function begin() {
   if ($('sectionReviewView')) $('sectionReviewView').hidden = true;
 
   if (S.isReviewer) {
-    if ($('singleExamView')) $('singleExamView').hidden = false;
-    if ($('reviewerWatermark')) $('reviewerWatermark').hidden = false;
-    if ($('pillReviewer')) $('pillReviewer').hidden = false;
-    if ($('pillTimer')) $('pillTimer').hidden = true;
-    if ($('timerBar')) $('timerBar').hidden = true;
-    step();
-  } else if (S.timerMode === 'whole-exam') {
-    if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
-    if ($('pillReviewer')) $('pillReviewer').hidden = true;
-    if ($('wholeExamView')) $('wholeExamView').hidden = false;
-    renderWholeExam();
-    startGlobal();
-  } else if (S.timerMode === 'per-section') {
-    if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
-    if ($('pillReviewer')) $('pillReviewer').hidden = true;
-    if ($('sectionExamView')) $('sectionExamView').hidden = false;
-    S.sections = buildSections();
-    S.currentSecIndex = 0;
-    renderSection(0);
+    showReviewerLoadingTransition(() => {
+      show('scExam');
+      if ($('singleExamView')) $('singleExamView').hidden = false;
+      if ($('reviewerWatermark')) $('reviewerWatermark').hidden = false;
+      if ($('pillReviewer')) $('pillReviewer').hidden = false;
+      if ($('pillTimer')) $('pillTimer').hidden = true;
+      if ($('timerBar')) $('timerBar').hidden = true;
+      step();
+    });
   } else {
-    if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
-    if ($('pillReviewer')) $('pillReviewer').hidden = true;
-    if ($('singleExamView')) $('singleExamView').hidden = false;
-    step();
+    show('scExam');
+    if (S.timerMode === 'whole-exam') {
+      if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
+      if ($('pillReviewer')) $('pillReviewer').hidden = true;
+      if ($('wholeExamView')) $('wholeExamView').hidden = false;
+      renderWholeExam();
+      startGlobal();
+    } else if (S.timerMode === 'per-section') {
+      if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
+      if ($('pillReviewer')) $('pillReviewer').hidden = true;
+      if ($('sectionExamView')) $('sectionExamView').hidden = false;
+      S.sections = buildSections();
+      S.currentSecIndex = 0;
+      renderSection(0);
+    } else {
+      if ($('reviewerWatermark')) $('reviewerWatermark').hidden = true;
+      if ($('pillReviewer')) $('pillReviewer').hidden = true;
+      if ($('singleExamView')) $('singleExamView').hidden = false;
+      step();
+    }
   }
   autosave();
 }
@@ -2726,10 +2775,12 @@ function render() {
   if (S.isReviewer) {
     if ($('standardActions')) $('standardActions').hidden = true;
     if ($('reviewerActions')) $('reviewerActions').hidden = false;
-    if ($('qReviewerFeedback')) {
-      $('qReviewerFeedback').hidden = true;
-      $('qReviewerFeedback').replaceChildren();
+    if ($('reviewerFeedbackArea')) $('reviewerFeedbackArea').hidden = true;
+    if ($('rfExplanationCard')) {
+      $('rfExplanationCard').hidden = true;
+      $('rfExplanationCard').dataset.loadedFor = '';
     }
+    if ($('rfAiFallback')) $('rfAiFallback').hidden = true;
     if ($('btnReviewerSubmit')) {
       $('btnReviewerSubmit').hidden = false;
       $('btnReviewerSubmit').onclick = () => submitReviewerAnswer();
@@ -2918,6 +2969,7 @@ function buildGoogleAiUrl(q, key) {
 }
 
 function renderSafeAiMarkdown(text, container) {
+  const skipPrivacy = arguments[2] === true;
   container.replaceChildren();
   if (!text) return;
   const lines = String(text).split('\n');
@@ -2956,20 +3008,77 @@ function renderSafeAiMarkdown(text, container) {
     }
   });
 
-  const privacyNote = document.createElement('div');
-  privacyNote.className = 'rf-ai-privacy';
-  privacyNote.textContent = '🔒 AI explanation generated by Google Gemini using question text only.';
-  container.appendChild(privacyNote);
+  if (!skipPrivacy) {
+    const privacyNote = document.createElement('div');
+    privacyNote.className = 'rf-ai-privacy';
+    privacyNote.textContent = '🔒 AI explanation generated by Google Gemini using question text only.';
+    container.appendChild(privacyNote);
+  }
+}
+
+function parseExplanationSections(rawText) {
+  const text = String(rawText || '').trim();
+  const res = { whyCorrect: '', whyWrong: '', keyConcept: '' };
+
+  const mCorrect = text.match(/(?:^|\n)(?:#{1,4}\s*|\*{0,2})(?:1\.\s*)?Why (?:the )?correct answer[^\n]*\*{0,2}([\s\S]*?)(?=(?:\n(?:#{1,4}\s*|\*{0,2})(?:2\.\s*)?Why (?:the )?other choices|\n(?:#{1,4}\s*|\*{0,2})(?:3\.\s*)?Key [Cc]oncept|$))/i);
+  const mWrong = text.match(/(?:^|\n)(?:#{1,4}\s*|\*{0,2})(?:2\.\s*)?Why (?:the )?other choices[^\n]*\*{0,2}([\s\S]*?)(?=(?:\n(?:#{1,4}\s*|\*{0,2})(?:3\.\s*)?Key [Cc]oncept|$))/i);
+  const mConcept = text.match(/(?:^|\n)(?:#{1,4}\s*|\*{0,2})(?:3\.\s*)?Key [Cc]oncept[^\n]*\*{0,2}([\s\S]*?)$/i);
+
+  if (mCorrect) res.whyCorrect = mCorrect[1].trim();
+  if (mWrong) res.whyWrong = mWrong[1].trim();
+  if (mConcept) res.keyConcept = mConcept[1].trim();
+
+  if (!res.whyCorrect && !res.whyWrong && !res.keyConcept) {
+    res.whyCorrect = text;
+  }
+  return res;
+}
+
+function populateExplanationCards(explanation, modelName, qNo) {
+  const expCard = $('rfExplanationCard');
+  if (!expCard) return;
+  expCard.hidden = false;
+  expCard.dataset.loadedFor = String(qNo);
+
+  const tag = $('rfModelTag');
+  if (tag) tag.textContent = modelName || 'gemini-3.5-flash-lite';
+
+  const sections = parseExplanationSections(explanation);
+
+  const whyCorrect = $('rfWhyCorrect');
+  if (whyCorrect) renderSafeAiMarkdown(sections.whyCorrect, whyCorrect, true);
+
+  const wrongSec = $('rfWrongSection');
+  const whyWrong = $('rfWhyWrong');
+  if (wrongSec && whyWrong) {
+    if (sections.whyWrong) {
+      wrongSec.hidden = false;
+      renderSafeAiMarkdown(sections.whyWrong, whyWrong, true);
+    } else {
+      wrongSec.hidden = true;
+    }
+  }
+
+  const conceptSec = $('rfConceptSection');
+  const keyConcept = $('rfKeyConcept');
+  if (conceptSec && keyConcept) {
+    if (sections.keyConcept) {
+      conceptSec.hidden = false;
+      renderSafeAiMarkdown(sections.keyConcept, keyConcept, true);
+    } else {
+      conceptSec.hidden = true;
+    }
+  }
 }
 
 async function handleReviewerAiExplain(q, key, btnAi) {
   if (!q || !btnAi) return;
-  const outBox = $('rfAiOutput');
+  const expCard = $('rfExplanationCard');
   const fallbackBox = $('rfAiFallback');
   const errText = $('rfAiErrorText');
 
-  if (outBox && !outBox.hidden && outBox.dataset.loadedFor === String(q.no)) {
-    outBox.hidden = true;
+  if (expCard && !expCard.hidden && expCard.dataset.loadedFor === String(q.no)) {
+    expCard.hidden = true;
     btnAi.textContent = '✨ Explain with AI';
     return;
   }
@@ -2988,10 +3097,10 @@ async function handleReviewerAiExplain(q, key, btnAi) {
   let cached = null;
   try { cached = sessionStorage.getItem(aiCacheKey); } catch (e) {}
 
-  if (cached && outBox) {
-    outBox.hidden = false;
-    outBox.dataset.loadedFor = String(q.no);
-    renderSafeAiMarkdown(cached, outBox);
+  if (cached && expCard) {
+    let cachedObj = null;
+    try { cachedObj = JSON.parse(cached); } catch (e) { cachedObj = { explanation: cached, model: 'gemini-3.5-flash-lite' }; }
+    populateExplanationCards(cachedObj.explanation, cachedObj.model, q.no);
     btnAi.textContent = '✨ AI Explanation (Hide)';
     if (fallbackBox) fallbackBox.hidden = true;
     return;
@@ -3000,10 +3109,6 @@ async function handleReviewerAiExplain(q, key, btnAi) {
   btnAi.disabled = true;
   btnAi.textContent = '✨ AI Tutor is thinking…';
   if (fallbackBox) fallbackBox.hidden = true;
-  if (outBox) {
-    outBox.hidden = false;
-    outBox.innerHTML = '<div class="rf-ai-loading"><span class="rf-spinner"></span> Analyzing question and choices…</div>';
-  }
 
   try {
     const userToken = await idToken().catch(() => '');
@@ -3018,19 +3123,17 @@ async function handleReviewerAiExplain(q, key, btnAi) {
     });
 
     if (res && res.ok && res.explanation) {
-      try { sessionStorage.setItem(aiCacheKey, res.explanation); } catch (e) {}
-      if (outBox) {
-        outBox.hidden = false;
-        outBox.dataset.loadedFor = String(q.no);
-        renderSafeAiMarkdown(res.explanation, outBox);
-      }
+      try {
+        sessionStorage.setItem(aiCacheKey, JSON.stringify({ explanation: res.explanation, model: res.model || 'gemini-3.5-flash-lite' }));
+      } catch (e) {}
+      populateExplanationCards(res.explanation, res.model, q.no);
       btnAi.disabled = false;
       btnAi.textContent = '✨ AI Explanation (Hide)';
     } else {
       throw new Error(res && res.message ? res.message : 'Could not generate AI explanation.');
     }
   } catch (err) {
-    if (outBox) outBox.hidden = true;
+    if (expCard) expCard.hidden = true;
     if (fallbackBox) fallbackBox.hidden = false;
     if (errText) errText.textContent = (err && err.message) || 'AI explanation temporarily unavailable.';
     btnAi.disabled = false;
@@ -3039,27 +3142,38 @@ async function handleReviewerAiExplain(q, key, btnAi) {
 }
 
 function renderReviewerFeedback(isCorrect, badgeText, expHtml, q, key) {
-  const feedbackBox = $('qReviewerFeedback');
-  if (!feedbackBox) return;
-  feedbackBox.hidden = false;
+  const area = $('reviewerFeedbackArea');
+  if (!area) return;
+  area.hidden = false;
+
+  const badge = $('rfStatusBadge');
+  if (badge) {
+    badge.className = 'rf-badge ' + (isCorrect ? 'ok' : 'bad');
+    badge.textContent = badgeText;
+  }
+
+  const ans = $('rfAnswerText');
+  if (ans) {
+    ans.innerHTML = expHtml;
+  }
 
   const fallbackUrl = buildGoogleAiUrl(q, key);
+  const gLink = $('rfGoogleLink');
+  if (gLink) gLink.href = fallbackUrl;
 
-  feedbackBox.innerHTML = `
-    <div class="rf-badge ${isCorrect ? 'ok' : 'bad'}">${badgeText}</div>
-    <div class="rf-exp">${expHtml}</div>
-    <div class="rf-ai-container">
-      <button type="button" class="rf-ai-btn" id="btnReviewerAi">✨ Explain with AI</button>
-      <div class="rf-ai-output" id="rfAiOutput" hidden></div>
-      <div class="rf-ai-fallback" id="rfAiFallback" hidden>
-        <span class="rf-ai-error-text" id="rfAiErrorText"></span>
-        <a class="rf-ai-link" href="${fallbackUrl}" target="_blank" rel="noopener noreferrer">🔍 Search on Google</a>
-      </div>
-    </div>
-  `;
+  const fallbackBox = $('rfAiFallback');
+  if (fallbackBox) fallbackBox.hidden = true;
+
+  const expCard = $('rfExplanationCard');
+  if (expCard) {
+    expCard.hidden = true;
+    expCard.dataset.loadedFor = '';
+  }
 
   const btnAi = $('btnReviewerAi');
   if (btnAi) {
+    btnAi.disabled = false;
+    btnAi.textContent = '✨ Explain with AI';
     btnAi.onclick = () => handleReviewerAiExplain(q, key, btnAi);
   }
 }

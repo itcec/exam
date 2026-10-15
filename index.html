@@ -11,7 +11,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
-<link rel="stylesheet" href="app.css?v=20261014_inpage_gemini_v2">
+<link rel="stylesheet" href="app.css?v=20261015_reviewer_layout_v3">
 <link rel="stylesheet" href="fx.css">
 <script>
   // Before first paint, so a saved choice never flashes the other theme.
@@ -410,16 +410,44 @@
     </div>
   </section>
 
+  <!-- Reviewer Intro Transition with Walking Dinosaur -->
+  <section id="scReviewerLoading" class="reviewer-loading-screen" hidden>
+    <div class="card solo dino-loading-card">
+      <div class="dino-scene">
+        <div class="dino-track">
+          <div class="dino-avatar" id="dinoAvatar" aria-label="Walking Dinosaur">
+            <svg viewBox="0 0 48 48" class="dino-svg" width="48" height="48">
+              <path fill="currentColor" d="M30 4h10v6h-4v4h4v6h-2v2h-4v2h-2v2h-2v2h-2v4h4v2h2v4h-4v-2h-2v-4h-2v-2h-2v-2h-2v-4h-4v-2h-4v-4h4v2h4v2h2v-4h2v-4h2v-2h4v-2h4V4zM12 28h4v4h-4zM24 38h4v4h-4z"/>
+              <circle cx="34" cy="8" r="1.5" fill="#fff"/>
+            </svg>
+          </div>
+          <div class="dino-ground"></div>
+        </div>
+        <div class="dino-progress-bar">
+          <div class="dino-progress-fill" id="dinoProgressFill" style="width: 0%;"></div>
+        </div>
+        <div class="dino-stats">
+          <span id="dinoPercent" class="dino-percent">0%</span>
+          <span class="dino-badge">REVIEWER INITIALIZATION</span>
+        </div>
+      </div>
+      <p class="dino-status-text" id="dinoStatusText">🦖 Dinosaur hatching your study session…</p>
+      <p class="muted small" style="margin-top:6px;">Questions loaded • Answer keys prepared • Launching Question 1</p>
+    </div>
+  </section>
+
   <section id="scExam" hidden>
     <div id="reviewerWatermark" class="reviewer-watermark" aria-hidden="true" hidden>PRACTICE REVIEWER • UNTIMED</div>
     <!-- Per-Question Mode View -->
     <div id="singleExamView">
       <div id="stepperDots" class="stepper-dots"></div>
+      
+      <!-- QUESTIONNAIRE CARD: Inputs and Action Buttons only -->
       <div class="card solo" id="qCard">
         <p class="eyebrow" id="qMeta">Question</p>
         <div class="qtext" id="qText"></div>
         <div id="qInput"></div>
-        <div id="qReviewerFeedback" class="reviewer-feedback" hidden></div>
+        
         <div class="actions" id="standardActions">
           <button class="btn btn-primary" id="btnAnswer" type="button">Submit answer</button>
           <button class="btn btn-ghost" id="btnSkip" type="button">Skip</button>
@@ -427,6 +455,47 @@
         <div class="actions" id="reviewerActions" hidden>
           <button class="btn btn-primary" id="btnReviewerSubmit" type="button">Submit</button>
           <button class="btn btn-primary" id="btnNextQuestion" type="button" hidden>Next Question ›</button>
+        </div>
+      </div>
+
+      <!-- FEEDBACK AREA: Sibling outside #qCard -->
+      <div id="reviewerFeedbackArea" class="reviewer-feedback-area stack" style="margin-top:16px; gap:12px;" hidden>
+        <!-- Card 1: Result Status, Correct Answer, and Explain with AI button -->
+        <div class="card solo rf-result-card" id="rfResultCard">
+          <div class="rf-badge" id="rfStatusBadge"></div>
+          <div class="rf-exp" id="rfAnswerText"></div>
+          <div class="rf-ai-action-bar" style="margin-top:12px;">
+            <button type="button" class="rf-ai-btn" id="btnReviewerAi">✨ Explain with AI</button>
+            <div class="rf-ai-fallback" id="rfAiFallback" hidden>
+              <span class="rf-ai-error-text" id="rfAiErrorText"></span>
+              <a class="rf-ai-link" id="rfGoogleLink" href="#" target="_blank" rel="noopener noreferrer">🔍 Search on Google</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: AI Tutor Study Breakdown (3 distinct sections) -->
+        <div class="card solo rf-explanation-card" id="rfExplanationCard" hidden>
+          <div class="rf-card-header">
+            <span class="rf-header-title">🤖 AI Tutor Study Breakdown</span>
+            <span class="rf-model-tag" id="rfModelTag">gemini-3.5-flash-lite</span>
+          </div>
+
+          <div class="rf-study-section rf-sec-correct">
+            <div class="rf-sec-title">💡 Why the Correct Answer is Right</div>
+            <div class="rf-sec-body" id="rfWhyCorrect"></div>
+          </div>
+
+          <div class="rf-study-section rf-sec-wrong" id="rfWrongSection">
+            <div class="rf-sec-title">🔍 Why Other Choices are Incorrect</div>
+            <div class="rf-sec-body" id="rfWhyWrong"></div>
+          </div>
+
+          <div class="rf-study-section rf-sec-concept" id="rfConceptSection">
+            <div class="rf-sec-title">🧠 Key Concept to Remember</div>
+            <div class="rf-sec-body" id="rfKeyConcept"></div>
+          </div>
+
+          <div class="rf-ai-privacy">🔒 Generated by Google Gemini using question text only. No student personal data is transmitted.</div>
         </div>
       </div>
     </div>
@@ -644,6 +713,6 @@
 
 </nav>
 
-<script type="module" src="app.js?v=20261014_inpage_gemini_v2"></script>
+<script type="module" src="app.js?v=20261015_reviewer_layout_v3"></script>
 </body>
 </html>
