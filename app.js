@@ -1659,6 +1659,7 @@ async function prepare(r) {
   S.proctoringStrikes = S.isReviewer ? 0 : (r.proctoringStrikes != null ? Number(r.proctoringStrikes) : (STRICT_AUTO_SUBMIT ? 3 : 0));
   S.proctoringWarningNotes = S.isReviewer ? '' : (r.proctoringWarningNotes || '');
   S.questions = r.questions || [];
+  S.explanations = Object.assign({}, r.explanations || {});
   const localBackup = loadSessionBackup(r.token);
   const journalBackup = await loadJournalAnswers(r.token);
   S.answers = Object.assign({}, r.answers || {}, localBackup || {}, journalBackup || {});
@@ -3077,9 +3078,9 @@ async function handleReviewerAiExplain(q, key, btnAi) {
   const fallbackBox = $('rfAiFallback');
   const errText = $('rfAiErrorText');
 
-  if (expCard && !expCard.hidden && expCard.dataset.loadedFor === String(q.no)) {
-    expCard.hidden = true;
-    btnAi.textContent = '✨ Explain with AI';
+  if (expCard && expCard.dataset.loadedFor === String(q.no)) {
+    expCard.hidden = !expCard.hidden;
+    btnAi.textContent = expCard.hidden ? '✨ Explain with AI' : '✨ AI Explanation (Hide)';
     return;
   }
 
@@ -3095,12 +3096,17 @@ async function handleReviewerAiExplain(q, key, btnAi) {
   const aiCacheKey = 'ai_exp_' + (S.code || '') + '_' + q.no + '_' + sigHash;
 
   let cached = null;
-  try { cached = sessionStorage.getItem(aiCacheKey); } catch (e) {}
+  if (S.explanations && S.explanations[q.no] && S.explanations[q.no].explanation) {
+    cached = S.explanations[q.no];
+  } else {
+    try {
+      const stored = sessionStorage.getItem(aiCacheKey);
+      if (stored) cached = JSON.parse(stored);
+    } catch (e) {}
+  }
 
   if (cached && expCard) {
-    let cachedObj = null;
-    try { cachedObj = JSON.parse(cached); } catch (e) { cachedObj = { explanation: cached, model: 'gemini-3.5-flash-lite' }; }
-    populateExplanationCards(cachedObj.explanation, cachedObj.model, q.no);
+    populateExplanationCards(cached.explanation, cached.model, q.no);
     btnAi.textContent = '✨ AI Explanation (Hide)';
     if (fallbackBox) fallbackBox.hidden = true;
     return;
@@ -3123,8 +3129,10 @@ async function handleReviewerAiExplain(q, key, btnAi) {
     });
 
     if (res && res.ok && res.explanation) {
+      if (!S.explanations) S.explanations = {};
+      S.explanations[q.no] = { explanation: res.explanation, model: res.model || 'gemini-3.5-flash-lite' };
       try {
-        sessionStorage.setItem(aiCacheKey, JSON.stringify({ explanation: res.explanation, model: res.model || 'gemini-3.5-flash-lite' }));
+        sessionStorage.setItem(aiCacheKey, JSON.stringify(S.explanations[q.no]));
       } catch (e) {}
       populateExplanationCards(res.explanation, res.model, q.no);
       btnAi.disabled = false;
@@ -3165,16 +3173,48 @@ function renderReviewerFeedback(isCorrect, badgeText, expHtml, q, key) {
   if (fallbackBox) fallbackBox.hidden = true;
 
   const expCard = $('rfExplanationCard');
-  if (expCard) {
-    expCard.hidden = true;
-    expCard.dataset.loadedFor = '';
+  const btnAi = $('btnReviewerAi');
+
+  // Check if explanation already exists (from Firestore prefetch S.explanations or sessionStorage)
+  const qSig = [
+    q.no,
+    q.question || '',
+    (q.choices || []).join('|'),
+    (key && key.expected) || ''
+  ].join('::');
+  let h = 0;
+  for (let i = 0; i < qSig.length; i++) h = (Math.imul(31, h) + qSig.charCodeAt(i)) | 0;
+  const sigHash = (h >>> 0).toString(36);
+  const aiCacheKey = 'ai_exp_' + (S.code || '') + '_' + q.no + '_' + sigHash;
+
+  let existing = null;
+  if (S.explanations && S.explanations[q.no] && S.explanations[q.no].explanation) {
+    existing = S.explanations[q.no];
+  } else {
+    try {
+      const stored = sessionStorage.getItem(aiCacheKey);
+      if (stored) existing = JSON.parse(stored);
+    } catch (e) {}
   }
 
-  const btnAi = $('btnReviewerAi');
-  if (btnAi) {
-    btnAi.disabled = false;
-    btnAi.textContent = '✨ Explain with AI';
-    btnAi.onclick = () => handleReviewerAiExplain(q, key, btnAi);
+  if (existing && existing.explanation) {
+    // DIRECT DISPLAY OF "WHY": No need to prompt the AI model again!
+    populateExplanationCards(existing.explanation, existing.model, q.no);
+    if (btnAi) {
+      btnAi.disabled = false;
+      btnAi.textContent = '✨ AI Explanation (Hide)';
+      btnAi.onclick = () => handleReviewerAiExplain(q, key, btnAi);
+    }
+  } else {
+    if (expCard) {
+      expCard.hidden = true;
+      expCard.dataset.loadedFor = '';
+    }
+    if (btnAi) {
+      btnAi.disabled = false;
+      btnAi.textContent = '✨ Explain with AI';
+      btnAi.onclick = () => handleReviewerAiExplain(q, key, btnAi);
+    }
   }
 }
 
