@@ -251,6 +251,126 @@ export function toast(msg, kind = 'info', ms = 4200) {
   return el;
 }
 
+/**
+ * Interactive / persistent progress toast with animated loading bar and state sentences.
+ * Returns a controller: { el, update({ title, sentence, current, total, kind, isComplete, isError, isRateLimited, onRetry }), dismiss() }
+ */
+export function progressToast(opts = {}) {
+  if (!toastHost) {
+    toastHost = document.createElement('div');
+    toastHost.className = 'fx-toasts';
+    toastHost.setAttribute('role', 'status');
+    toastHost.setAttribute('aria-live', 'polite');
+    document.body.append(toastHost);
+  }
+
+  const el = document.createElement('div');
+  el.className = 'fx-toast ' + (opts.kind || 'info');
+  el.tabIndex = 0;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'fx-toast-progress-wrap';
+
+  const head = document.createElement('div');
+  head.className = 'fx-toast-head';
+
+  const titleEl = document.createElement('span');
+  titleEl.className = 'fx-toast-title';
+  titleEl.textContent = opts.title || 'Preparing Reviewer AI…';
+
+  const countEl = document.createElement('span');
+  countEl.className = 'fx-toast-count';
+  const total = Number(opts.total) || 0;
+  const current = Number(opts.current) || 0;
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  countEl.textContent = total > 0 ? `${current}/${total} (${pct}%)` : '';
+
+  head.append(titleEl, countEl);
+
+  const bar = document.createElement('div');
+  bar.className = 'fx-toast-bar';
+  const fill = document.createElement('div');
+  fill.className = 'fx-toast-fill';
+  fill.style.width = pct + '%';
+  bar.append(fill);
+
+  const sentenceEl = document.createElement('div');
+  sentenceEl.className = 'fx-toast-sentence';
+  sentenceEl.textContent = opts.sentence || 'Initializing…';
+
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'fx-toast-actions';
+  actionsEl.hidden = true;
+
+  wrap.append(head, bar, sentenceEl, actionsEl);
+
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'fx-toast-x';
+  x.setAttribute('aria-label', 'Dismiss');
+  x.textContent = '✕';
+
+  const dismiss = () => {
+    el.classList.add('out');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  };
+  x.onclick = dismiss;
+  el.addEventListener('keydown', e => { if (e.key === 'Escape') dismiss(); });
+
+  el.append(wrap, x);
+  toastHost.append(el);
+  play(opts.kind === 'bad' ? 'error' : 'pop');
+
+  let autoDismissTimer = null;
+
+  return {
+    el,
+    update: ({ title, sentence, current: cur, total: tot, kind, isComplete, isError, isRateLimited, onRetry } = {}) => {
+      if (title != null) titleEl.textContent = title;
+      if (sentence != null) sentenceEl.textContent = sentence;
+      if (kind) {
+        el.className = 'fx-toast ' + kind;
+      }
+      const t = tot != null ? Number(tot) : total;
+      const c = cur != null ? Number(cur) : current;
+      if (t > 0) {
+        const p = Math.min(100, Math.max(0, Math.round((c / t) * 100)));
+        fill.style.width = p + '%';
+        countEl.textContent = `${c}/${t} (${p}%)`;
+      }
+
+      // If an error or rate limit occurred, make toast sticky and reveal retry action
+      if (isError || isRateLimited) {
+        actionsEl.replaceChildren();
+        if (typeof onRetry === 'function') {
+          const btnRetry = document.createElement('button');
+          btnRetry.type = 'button';
+          btnRetry.className = 'fx-toast-btn';
+          btnRetry.textContent = isRateLimited ? '▶ Resume Preparation' : '🔄 Try Again';
+          btnRetry.onclick = () => {
+            actionsEl.hidden = true;
+            onRetry();
+          };
+          actionsEl.append(btnRetry);
+          actionsEl.hidden = false;
+        }
+        play('error');
+      }
+
+      // If 100% complete, turn green, celebrate, and auto-dismiss after 5s
+      if (isComplete) {
+        fill.style.width = '100%';
+        if (t > 0) countEl.textContent = `${t}/${t} (100%)`;
+        el.className = 'fx-toast ok';
+        play('pop');
+        if (autoDismissTimer) clearTimeout(autoDismissTimer);
+        autoDismissTimer = setTimeout(dismiss, 5000);
+      }
+    },
+    dismiss
+  };
+}
+
 /* ---------------- modals ----------------
 
    The two portals had four hand-rolled dialogs between them, none of

@@ -15,7 +15,7 @@ import { getDatabase, ref, onValue, off }
 
 import { FIREBASE_CONFIG, API_URL, validateConfig } from '../config.js';
 import {
-  initFx, play, feedback, announce, toast, revealIn, countTo,
+  initFx, play, feedback, announce, toast, progressToast, revealIn, countTo,
   openModal, closeModal, mountSoundToggle
 } from '../fx.js';
 
@@ -1194,32 +1194,121 @@ async function runTeacherPrepareReviewerAi(code) {
   const btnInline = $('btnPrepareReviewerAiInline');
   if (btnTop) { btnTop.disabled = true; btnTop.textContent = 'Preparing AI…'; }
   if (btnInline) { btnInline.disabled = true; btnInline.textContent = 'Preparing AI…'; }
-  toast('Preparing Reviewer AI explanations in quota-safe batches…', 'info');
+
+  // Initial check to establish total and prepared baseline
+  let initStatus = null;
+  try {
+    initStatus = await api('teacherGetReviewerAiStatus', {
+      idToken: await idToken(),
+      code: code
+    });
+  } catch (e) {}
+
+  const totalQuestions = (initStatus && initStatus.totalQuestions) || 0;
+  let preparedCount = (initStatus && initStatus.preparedCount) || 0;
+
+  // Initialize persistent progress toast with animated loading bar
+  const pToast = progressToast({
+    title: 'Preparing Reviewer AI: ' + code,
+    sentence: 'Connecting to Gemini AI… Checking existing question explanations',
+    current: preparedCount,
+    total: totalQuestions,
+    kind: 'info'
+  });
+
+  const retryRun = () => runTeacherPrepareReviewerAi(code);
 
   try {
     let done = false;
     let round = 1;
-    while (!done && round <= 10) {
+    const maxRounds = Math.max(12, Math.ceil(totalQuestions / 6) + 3);
+
+    while (!done && round <= maxRounds) {
+      pToast.update({
+        title: 'Preparing Reviewer AI (Batch ' + round + ')',
+        sentence: 'Processing questions… Generating explanations with Gemini Flash (Batch ' + round + ')',
+        current: preparedCount,
+        total: totalQuestions,
+        kind: 'info'
+      });
+
       const res = await api('teacherPrepareReviewerAi', {
         idToken: await idToken(),
         code: code,
         limit: 8
       });
+
       if (!res.ok) {
-        toast(res.message || 'Error preparing AI explanations.', 'bad');
+        // Sticky error toast: stays visible on failure so the teacher can see what happened
+        pToast.update({
+          title: '⚠️ Reviewer AI Preparation Halted',
+          sentence: (res.message || 'Error occurred while preparing AI explanations.') +
+                    ' Prepared ' + preparedCount + ' of ' + totalQuestions + ' questions so far.',
+          kind: 'bad',
+          isError: true,
+          current: preparedCount,
+          total: totalQuestions,
+          onRetry: retryRun
+        });
         break;
       }
-      toast(res.message, res.isComplete ? 'good' : 'info');
-      if (res.isComplete || res.rateLimited || res.missingCount === 0) {
+
+      preparedCount = res.preparedCount || preparedCount;
+      const total = res.totalQuestions || totalQuestions;
+
+      if (res.rateLimited) {
+        // Quota rate limited (429): sticky toast, does not vanish
+        pToast.update({
+          title: '⏸️ Gemini AI Rate Limit Reached',
+          sentence: 'Google Gemini per-minute quota reached. Prepared ' + preparedCount + ' of ' + total +
+                    ' explanations. Stored safely in Firestore. You can resume anytime.',
+          kind: 'warn',
+          isRateLimited: true,
+          current: preparedCount,
+          total: total,
+          onRetry: retryRun
+        });
+        done = true;
+        break;
+      }
+
+      if (res.isComplete || res.missingCount === 0) {
+        // 100% complete: fills bar to 100%, turns green, celebrates, auto-dismisses after 5s
+        pToast.update({
+          title: '🎉 Reviewer AI 100% Prepared!',
+          sentence: 'All ' + total + ' questions have complete study breakdowns (Why Correct, Why Wrong, Key Concept). Reviewer is offline-ready!',
+          kind: 'ok',
+          isComplete: true,
+          current: total,
+          total: total
+        });
         done = true;
       } else {
+        const pct = Math.round((preparedCount / total) * 100);
+        pToast.update({
+          title: 'Prepared ' + preparedCount + ' of ' + total + ' (' + pct + '%)',
+          sentence: 'Batch ' + round + ' complete. Saving to Firestore and continuing next batch…',
+          current: preparedCount,
+          total: total,
+          kind: 'info'
+        });
         round++;
         await sleep(1500);
       }
     }
     await refreshReviewerAiStatus(code);
   } catch (err) {
-    toast('Preparation failed: ' + (err.message || err), 'bad');
+    // Uncaught exception / network error: sticky error toast, does not disappear
+    pToast.update({
+      title: '❌ AI Preparation Failed',
+      sentence: 'Connection or processing issue: ' + (err.message || err) +
+                '. All completed explanations remain saved in Firestore.',
+      kind: 'bad',
+      isError: true,
+      current: preparedCount,
+      total: totalQuestions,
+      onRetry: retryRun
+    });
   } finally {
     if (btnTop) { btnTop.disabled = false; btnTop.textContent = '✨ Prepare Reviewer AI'; }
     if (btnInline) { btnInline.disabled = false; btnInline.textContent = '✨ Prepare Explanations'; }
