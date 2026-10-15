@@ -1141,6 +1141,97 @@
       </div>
     </div>
   </div>
+
+  <!-- Reviewer AI Preparation & JSON Import Modal -->
+  <div class="modal-backdrop" id="reviewerAiModal" hidden>
+    <div class="modal-card modal-card-lg" style="max-width:760px;">
+      <div class="modal-header">
+        <h3 id="reviewerAiModalTitle">✨ Reviewer AI Explanations</h3>
+        <button class="close-btn" id="btnCloseReviewerAiModal" type="button">✕</button>
+      </div>
+      <p class="muted small" style="margin-bottom:14px;">
+        Generate comprehensive question explanations for practice reviewer mode using your preferred AI (ChatGPT, Claude, Gemini Web) and drop or paste the JSON back here for instant offline availability.
+      </p>
+
+      <!-- Current Status Banner -->
+      <div class="card" style="padding:10px 14px; margin-bottom:14px; background:var(--bg-secondary); border-radius:8px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <div>
+          <span class="muted small" style="font-weight:600; display:block;">Current AI Package Status:</span>
+          <span id="revAiModalStatus" class="pill" style="font-size:0.8rem; margin-top:2px;">Checking…</span>
+        </div>
+        <div style="text-align:right;">
+          <span id="revAiModalCounts" class="muted small">0 questions in bank</span>
+        </div>
+      </div>
+
+      <!-- Step 1: Export Questions & Prompt -->
+      <div style="margin-bottom:16px;">
+        <label class="lbl" style="font-size:0.85rem; font-weight:700; margin-bottom:6px; display:block;">
+          Step 1: Download or Copy Questions &amp; Prompt
+        </label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+          <button type="button" class="btn-sm btn-primary" id="btnDownloadQuestionsJson">📥 Download Questions JSON</button>
+          <button type="button" class="btn-sm btn-outline" id="btnCopyQuestionsJson">📋 Copy Questions (Raw JSON)</button>
+          <button type="button" class="btn-sm btn-accent" id="btnCopyAiPrompt">📋 Copy Complete AI Prompt</button>
+        </div>
+
+        <!-- Copyable Raw JSON of Questions (User explicit requirement) -->
+        <div style="margin-top:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label class="lbl muted small" for="txtRawQuestionsJson" style="font-weight:600; margin:0;">
+              Copyable Raw JSON of Questions &amp; Answers:
+            </label>
+            <button type="button" class="btn-sm btn-ghost" id="btnCopyRawJsonArea" style="font-size:0.75rem;">📋 Copy Raw JSON</button>
+          </div>
+          <textarea readonly id="txtRawQuestionsJson" rows="6" class="field code-font" style="width:100%; font-size:0.78rem; background:var(--bg-card); border-radius:6px; padding:8px; resize:vertical; font-family:monospace; line-height:1.4;" placeholder="Loading questions JSON…"></textarea>
+        </div>
+      </div>
+
+      <!-- Step 2: External AI Instructions -->
+      <div style="margin-bottom:16px; background:var(--bg-secondary); padding:10px 14px; border-radius:8px; border-left:3px solid var(--accent);">
+        <p class="small" style="margin:0 0 4px 0; font-weight:600;">🤖 Prompt Guidance for AI:</p>
+        <p class="muted small" style="margin:0; line-height:1.4;">
+          Paste the copied prompt into ChatGPT, Claude, or Gemini. The prompt instructs the AI to return a clean JSON list identifying each explanation by question number (<code>no</code>).
+        </p>
+      </div>
+
+      <!-- Step 3: Drop or Paste AI Explanations JSON -->
+      <div>
+        <label class="lbl" style="font-size:0.85rem; font-weight:700; margin-bottom:6px; display:block;">
+          Step 2: Drop or Paste AI Explanations JSON
+        </label>
+        
+        <!-- Drag & Drop Zone -->
+        <div id="dropZoneReviewerAi" style="border:2px dashed var(--border); border-radius:8px; padding:20px 14px; text-align:center; background:var(--bg-card); cursor:pointer; transition:all 0.2s ease; margin-bottom:10px;">
+          <div style="font-size:1.6rem; margin-bottom:4px;">📥</div>
+          <p style="margin:0; font-weight:600; font-size:0.9rem;">Drag &amp; drop explanations JSON file here</p>
+          <p class="muted small" style="margin:4px 0 0 0;">or click to browse from your computer (.json or .txt)</p>
+          <input type="file" id="fileInputReviewerAi" accept=".json,application/json,text/plain" style="display:none;">
+        </div>
+
+        <!-- Direct Paste Area -->
+        <div style="margin-bottom:8px;">
+          <label class="lbl muted small" for="txtPasteReviewerAiJson" style="font-weight:600; margin-bottom:4px; display:block;">
+            Or paste raw JSON response text:
+          </label>
+          <textarea id="txtPasteReviewerAiJson" rows="5" class="field code-font" style="width:100%; font-size:0.78rem; font-family:monospace; padding:8px; line-height:1.4;" placeholder="Paste JSON array like [{ &quot;no&quot;: 1, &quot;explanation&quot;: &quot;...&quot; }] or { &quot;1&quot;: &quot;...&quot; } here…"></textarea>
+        </div>
+
+        <!-- Live Validation Preview Box -->
+        <div id="reviewerAiImportPreview" style="display:none; padding:8px 12px; border-radius:6px; font-size:0.8rem; margin-bottom:10px;"></div>
+      </div>
+
+      <!-- Footer Actions -->
+      <div class="actions" style="margin-top:16px; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <button class="btn btn-ghost" id="btnCancelReviewerAiModal" type="button">Cancel</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-outline" id="btnRunServerAiFallback" type="button" title="Slow sequential generation using Google Gemini">⚡ Generate with Server AI</button>
+          <button class="btn btn-primary" id="btnSubmitImportReviewerAi" type="button" disabled>💾 Import Explanations</button>
+        </div>
+      </div>
+      <div id="reviewerAiModalOut" role="alert" aria-live="assertive" style="margin-top:6px;"></div>
+    </div>
+  </div>
 </main>
 <nav class="appbar" id="tAppBar" aria-label="Main" hidden style="display:none !important;">
   <button class="appbar-tab" id="tTabDashboard" data-tab="dashboard" type="button">

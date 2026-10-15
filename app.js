@@ -3291,6 +3291,136 @@ async function handleReviewerAiExplain(q, key, btnAi) {
   }
 }
 
+function renderDeepDiveBody(text) {
+  const container = $('ddRenderedBody');
+  if (!container) return;
+  container.replaceChildren();
+
+  const raw = String(text || '').trim();
+  if (!raw) return;
+
+  const sectionDefs = [
+    { key: 'concept', icon: '💡', title: 'The Core Concept', pattern: /(?:^|\n)(?:#{1,4}\s*|\*{0,2})(?:💡\s*)?(?:The )?Core Concept[^\n]*\*{0,2}([\s\S]*?)(?=(?:\n(?:#{1,4}\s*|\*{0,2})(?:[🧠🎯⚠️🔑]|\d\.)|$))/i, className: 'dd-card-concept' },
+    { key: 'analogy', icon: '🧠', title: 'Memorable Analogy / Mental Model', pattern: /(?:^|\n)(?:#{1,4}\s*|\*{0,2})(?:🧠\s*)?(?:Memorable )?Analogy[^\n]*\*{0,2}([\s\S]*?)(?=(?:\n(?:#{1,4}\s*|\*{0,2})(?:[🎯⚠️🔑]|\d\.)|$))/i, className: 'dd-card-analogy' },
+    { key: 'logic', icon: '🎯', title: 'Why the Answer Works', pattern: /(?:^|\n)(?:#{1,4}\s*|\*{0,2})(?:🎯\s*)?Why (?:the )?Answer Works[^\n]*\*{0,2}([\s\S]*?)(?=(?:\n(?:#{1,4}\s*|\*{0,2})(?:[⚠️🔑]|\d\.)|$))/i, className: 'dd-card-logic' },
+    { key: 'traps', icon: '⚠️', title: 'Common Traps & Why Other Choices Fail', pattern: /(?:^|\n)(?:#{1,4}\s*|\*{0,2})(?:⚠️\s*)?(?:Common Traps|Why Other Choices)[^\n]*\*{0,2}([\s\S]*?)(?=(?:\n(?:#{1,4}\s*|\*{0,2})(?:[🔑]|\d\.)|$))/i, className: 'dd-card-traps' },
+    { key: 'hook', icon: '🔑', title: 'Memory Hook & Mnemonic', pattern: /(?:^|\n)(?:#{1,4}\s*|\*{0,2})(?:🔑\s*)?Memory Hook[^\n]*\*{0,2}([\s\S]*?)$/i, className: 'dd-card-hook' }
+  ];
+
+  let matchedAny = false;
+  sectionDefs.forEach(sec => {
+    const m = raw.match(sec.pattern);
+    if (m && m[1] && m[1].trim()) {
+      matchedAny = true;
+      const card = document.createElement('div');
+      card.className = 'card solo dd-section-card ' + sec.className;
+      card.style.padding = '12px 14px';
+      card.style.borderRadius = '8px';
+      card.style.border = '1px solid var(--border)';
+
+      const head = document.createElement('div');
+      head.style.display = 'flex';
+      head.style.alignItems = 'center';
+      head.style.gap = '6px';
+      head.style.fontWeight = '700';
+      head.style.fontSize = '0.9rem';
+      head.style.marginBottom = '6px';
+      head.textContent = sec.icon + ' ' + sec.title;
+      card.appendChild(head);
+
+      const b = document.createElement('div');
+      b.className = 'dd-card-content';
+      b.style.fontSize = '0.85rem';
+      b.style.lineHeight = '1.45';
+      renderSafeAiMarkdown(m[1].trim(), b, true);
+      card.appendChild(b);
+
+      container.appendChild(card);
+    }
+  });
+
+  if (!matchedAny) {
+    const card = document.createElement('div');
+    card.className = 'card solo dd-section-card dd-card-concept';
+    card.style.padding = '14px';
+    card.style.borderRadius = '8px';
+    renderSafeAiMarkdown(raw, card, true);
+    container.appendChild(card);
+  }
+}
+
+async function openDeepDiveModal(q, key) {
+  if (!q) return;
+  const modal = $('deepDiveModal');
+  if (!modal) return;
+
+  const heading = $('ddQuestionHeading');
+  const qText = $('ddQuestionText');
+  const ansText = $('ddCorrectAnswerText');
+  const skeleton = $('ddSkeletonLoader');
+  const body = $('ddRenderedBody');
+  const errNotice = $('ddErrorNotice');
+
+  if (heading) heading.textContent = 'Question ' + q.no + ' (' + (q.type || 'MC') + ')';
+  if (qText) qText.textContent = q.question || '';
+  if (ansText) ansText.textContent = 'Correct Answer: ' + ((key && (key.expected || key.correctLetter)) || 'Verified Answer');
+
+  if (errNotice) errNotice.style.display = 'none';
+  if (body) body.replaceChildren();
+
+  openModal(modal, $('btnCloseDeepDiveModal'));
+
+  if (!S.deepExplanations) S.deepExplanations = {};
+  const cacheKey = 'ai_deep_' + (S.code || '') + '_' + q.no;
+  let cachedText = S.deepExplanations[q.no] || null;
+  if (!cachedText) {
+    try {
+      cachedText = sessionStorage.getItem(cacheKey);
+      if (cachedText) S.deepExplanations[q.no] = cachedText;
+    } catch (e) {}
+  }
+
+  if (cachedText) {
+    if (skeleton) skeleton.style.display = 'none';
+    renderDeepDiveBody(cachedText);
+    return;
+  }
+
+  if (skeleton) skeleton.style.display = 'block';
+
+  try {
+    const userToken = await idToken().catch(() => '');
+    if (!userToken) {
+      throw new Error('Please sign in to access in-depth AI explanations.');
+    }
+
+    const res = await api('reviewerExplain', {
+      idToken: userToken,
+      attemptToken: S.token,
+      qNo: q.no,
+      detailLevel: 'deep'
+    });
+
+    if (res && res.ok && res.explanation) {
+      S.deepExplanations[q.no] = res.explanation;
+      try { sessionStorage.setItem(cacheKey, res.explanation); } catch (e) {}
+      if (skeleton) skeleton.style.display = 'none';
+      renderDeepDiveBody(res.explanation);
+    } else {
+      throw new Error((res && res.message) || 'Failed to generate in-depth explanation.');
+    }
+  } catch (err) {
+    if (skeleton) skeleton.style.display = 'none';
+    if (errNotice) {
+      errNotice.style.display = 'block';
+      errNotice.textContent = '⚠️ ' + ((err && err.message) || 'AI tutor could not generate in-depth context.');
+    }
+  }
+}
+
+if ($('btnCloseDeepDiveModal')) $('btnCloseDeepDiveModal').onclick = () => closeModal($('deepDiveModal'));
+if ($('btnDoneDeepDiveModal')) $('btnDoneDeepDiveModal').onclick = () => closeModal($('deepDiveModal'));
+
 function renderReviewerFeedback(isCorrect, badgeText, expHtml, q, key) {
   const area = $('reviewerFeedbackArea');
   if (!area) return;
@@ -3357,6 +3487,11 @@ function renderReviewerFeedback(isCorrect, badgeText, expHtml, q, key) {
       btnAi.textContent = '✨ Explain with AI';
       btnAi.onclick = () => handleReviewerAiExplain(q, key, btnAi);
     }
+  }
+
+  const btnDeep = $('btnExplainDeepDive');
+  if (btnDeep) {
+    btnDeep.onclick = () => openDeepDiveModal(q, key);
   }
 }
 

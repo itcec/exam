@@ -1141,8 +1141,8 @@ function updateDetailStatsAndControls(ex) {
     if (rowAi) rowAi.hidden = false;
     if (btnAi) btnAi.hidden = false;
     refreshReviewerAiStatus(ex.code);
-    if (btnAi) btnAi.onclick = () => runTeacherPrepareReviewerAi(ex.code);
-    if (btnAiInline) btnAiInline.onclick = () => runTeacherPrepareReviewerAi(ex.code);
+    if (btnAi) btnAi.onclick = () => openReviewerAiModal(ex.code);
+    if (btnAiInline) btnAiInline.onclick = () => openReviewerAiModal(ex.code);
   } else {
     if (rowAi) rowAi.hidden = true;
     if (btnAi) btnAi.hidden = true;
@@ -1313,6 +1313,384 @@ async function runTeacherPrepareReviewerAi(code) {
     if (btnTop) { btnTop.disabled = false; btnTop.textContent = '✨ Prepare Reviewer AI'; }
     if (btnInline) { btnInline.disabled = false; btnInline.textContent = '✨ Prepare Explanations'; }
   }
+}
+
+/* ================================================================
+   Reviewer AI Modal & JSON Import Handlers
+   ================================================================ */
+
+let _currentReviewerAiCode = '';
+let _currentReviewerAiQuestions = [];
+let _parsedReviewerAiExplanations = null;
+
+function normalizeJsonText_(text) {
+  if (!text) return '';
+  let cleaned = String(text).trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```[a-zA-Z]*\n?/, '').replace(/\n?```$/, '').trim();
+  }
+  return cleaned;
+}
+
+function parseAndValidateReviewerAiJson(rawText) {
+  const cleaned = normalizeJsonText_(rawText);
+  if (!cleaned) {
+    return { ok: false, message: 'Please provide JSON text.' };
+  }
+  let parsed = null;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    return { ok: false, message: 'Invalid JSON syntax: ' + err.message };
+  }
+
+  const detected = {};
+  if (Array.isArray(parsed)) {
+    parsed.forEach((item, idx) => {
+      if (!item) return;
+      const num = Number(item.no || item.id || item.qNo || item.number || item.questionNumber || (idx + 1));
+      const exp = item.explanation || item.text || item.content || item.whyCorrect;
+      if (!isNaN(num) && exp) {
+        detected[num] = item;
+      }
+    });
+  } else if (parsed && typeof parsed === 'object') {
+    Object.keys(parsed).forEach(k => {
+      const num = parseInt(k.replace(/[^0-9]/g, ''), 10);
+      const val = parsed[k];
+      if (!isNaN(num) && val) {
+        detected[num] = val;
+      }
+    });
+  }
+
+  const keys = Object.keys(detected).map(Number);
+  if (!keys.length) {
+    return {
+      ok: false,
+      message: 'No explanations found. Expected array of [{ "no": 1, "explanation": "..." }] or map { "1": "..." }.'
+    };
+  }
+
+  const bankNos = new Set((_currentReviewerAiQuestions || []).map(q => q.no));
+  let matchedCount = 0;
+  keys.forEach(k => {
+    if (bankNos.has(k)) matchedCount++;
+  });
+
+  return {
+    ok: true,
+    parsed: parsed,
+    totalDetected: keys.length,
+    matchedCount: matchedCount,
+    keys: keys
+  };
+}
+
+function updateReviewerAiImportValidation() {
+  const txt = $('txtPasteReviewerAiJson');
+  const preview = $('reviewerAiImportPreview');
+  const btnSubmit = $('btnSubmitImportReviewerAi');
+  if (!txt || !preview || !btnSubmit) return;
+
+  const raw = txt.value.trim();
+  if (!raw) {
+    preview.style.display = 'none';
+    preview.textContent = '';
+    btnSubmit.disabled = true;
+    _parsedReviewerAiExplanations = null;
+    return;
+  }
+
+  const res = parseAndValidateReviewerAiJson(raw);
+  preview.style.display = 'block';
+
+  if (!res.ok) {
+    preview.style.background = 'rgba(239, 68, 68, 0.12)';
+    preview.style.color = 'var(--bad, #ef4444)';
+    preview.style.border = '1px solid var(--bad, #ef4444)';
+    preview.textContent = '⚠️ ' + res.message;
+    btnSubmit.disabled = true;
+    _parsedReviewerAiExplanations = null;
+    return;
+  }
+
+  _parsedReviewerAiExplanations = res.parsed;
+  btnSubmit.disabled = false;
+  preview.style.background = 'rgba(16, 185, 129, 0.12)';
+  preview.style.color = 'var(--ok, #10b981)';
+  preview.style.border = '1px solid var(--ok, #10b981)';
+  preview.textContent = '✅ Valid JSON: Detected ' + res.totalDetected + ' explanation(s) (' +
+    res.matchedCount + ' match questions in this bank). Ready to import!';
+}
+
+async function openReviewerAiModal(code) {
+  _currentReviewerAiCode = code;
+  _currentReviewerAiQuestions = [];
+  _parsedReviewerAiExplanations = null;
+
+  if ($('reviewerAiModalTitle')) {
+    $('reviewerAiModalTitle').textContent = '✨ Reviewer AI Explanations — ' + code;
+  }
+  if ($('revAiModalStatus')) {
+    $('revAiModalStatus').textContent = 'Loading…';
+    $('revAiModalStatus').className = 'pill';
+  }
+  if ($('revAiModalCounts')) {
+    $('revAiModalCounts').textContent = 'Loading question bank…';
+  }
+  if ($('txtRawQuestionsJson')) {
+    $('txtRawQuestionsJson').value = 'Loading questions from question bank…';
+  }
+  if ($('txtPasteReviewerAiJson')) {
+    $('txtPasteReviewerAiJson').value = '';
+  }
+  if ($('reviewerAiImportPreview')) {
+    $('reviewerAiImportPreview').style.display = 'none';
+  }
+  if ($('btnSubmitImportReviewerAi')) {
+    $('btnSubmitImportReviewerAi').disabled = true;
+  }
+  if ($('reviewerAiModalOut')) {
+    $('reviewerAiModalOut').replaceChildren();
+  }
+
+  openModal($('reviewerAiModal'), $('txtPasteReviewerAiJson'));
+
+  try {
+    const [qRes, sRes] = await Promise.all([
+      api('teacherListQuestions', { idToken: await idToken(), code: code }),
+      api('teacherGetReviewerAiStatus', { idToken: await idToken(), code: code }).catch(() => null)
+    ]);
+
+    if (!qRes || !qRes.ok) {
+      if ($('txtRawQuestionsJson')) $('txtRawQuestionsJson').value = 'Error loading questions: ' + ((qRes && qRes.message) || 'Unknown error');
+      return;
+    }
+
+    const cleanQuestions = (qRes.questions || []).map(q => ({
+      no: q.no,
+      type: q.type,
+      question: q.question,
+      choices: q.choices || [],
+      answers: q.answers || [],
+      points: q.points || 1
+    }));
+    _currentReviewerAiQuestions = cleanQuestions;
+
+    const rawJsonText = JSON.stringify(cleanQuestions, null, 2);
+    if ($('txtRawQuestionsJson')) $('txtRawQuestionsJson').value = rawJsonText;
+    if ($('revAiModalCounts')) $('revAiModalCounts').textContent = cleanQuestions.length + ' questions in bank';
+
+    if (sRes && sRes.ok) {
+      const badge = $('revAiModalStatus');
+      if (badge) {
+        if (sRes.isComplete) {
+          badge.className = 'pill ok';
+          badge.textContent = 'Ready (' + sRes.preparedCount + '/' + sRes.totalQuestions + ' ready)';
+        } else {
+          badge.className = 'pill warn';
+          badge.textContent = 'Incomplete (' + sRes.preparedCount + '/' + sRes.totalQuestions + ' ready, ' + sRes.missingCount + ' missing)';
+        }
+      }
+    }
+  } catch (err) {
+    if ($('txtRawQuestionsJson')) $('txtRawQuestionsJson').value = 'Network error loading questions: ' + err.message;
+  }
+}
+
+// Modal event listeners initialization
+if ($('btnCloseReviewerAiModal')) $('btnCloseReviewerAiModal').onclick = () => closeModal($('reviewerAiModal'));
+if ($('btnCancelReviewerAiModal')) $('btnCancelReviewerAiModal').onclick = () => closeModal($('reviewerAiModal'));
+
+if ($('btnCopyQuestionsJson')) {
+  $('btnCopyQuestionsJson').onclick = async () => {
+    const val = $('txtRawQuestionsJson') ? $('txtRawQuestionsJson').value : '';
+    if (!val || val.startsWith('Loading')) {
+      toast('Questions not ready yet.', 'warn');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(val);
+      toast('📋 Questions JSON copied to clipboard!', 'ok');
+    } catch (e) {
+      toast('Failed to copy to clipboard.', 'bad');
+    }
+  };
+}
+
+if ($('btnCopyRawJsonArea')) {
+  $('btnCopyRawJsonArea').onclick = async () => {
+    const area = $('txtRawQuestionsJson');
+    if (!area || !area.value || area.value.startsWith('Loading')) {
+      toast('Questions not ready yet.', 'warn');
+      return;
+    }
+    area.select();
+    try {
+      await navigator.clipboard.writeText(area.value);
+      toast('📋 Raw questions JSON copied!', 'ok');
+    } catch (e) {
+      toast('Failed to copy to clipboard.', 'bad');
+    }
+  };
+}
+
+if ($('btnDownloadQuestionsJson')) {
+  $('btnDownloadQuestionsJson').onclick = () => {
+    const val = $('txtRawQuestionsJson') ? $('txtRawQuestionsJson').value : '';
+    if (!val || val.startsWith('Loading')) {
+      toast('Questions not ready yet.', 'warn');
+      return;
+    }
+    const blob = new Blob([val], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (_currentReviewerAiCode || 'exam') + '-questions.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('📥 Downloaded ' + a.download, 'ok');
+  };
+}
+
+if ($('btnCopyAiPrompt')) {
+  $('btnCopyAiPrompt').onclick = async () => {
+    const val = $('txtRawQuestionsJson') ? $('txtRawQuestionsJson').value : '';
+    if (!val || val.startsWith('Loading')) {
+      toast('Questions not ready yet.', 'warn');
+      return;
+    }
+    const promptText =
+      'You are an expert academic tutor. Below is a JSON list of questions with their correct answers from an exam.\n' +
+      'For EACH question, write a clear, helpful study breakdown with these sections:\n' +
+      '1. Why the correct answer is right.\n' +
+      '2. Why the other choices are incorrect (if multiple choice).\n' +
+      '3. Key Concept to remember.\n\n' +
+      'CRITICAL OUTPUT FORMAT REQUIREMENT:\n' +
+      'Return your entire response as ONLY a raw JSON array of objects. Do NOT wrap in markdown quotes (no ```json). Do NOT add preamble or conclusion text.\n' +
+      'Each item MUST have "no" (the question number) and "explanation" (the breakdown text).\n\n' +
+      'Example JSON output structure:\n' +
+      '[\n' +
+      '  {\n' +
+      '    "no": 1,\n' +
+      '    "explanation": "1. Why the correct answer is right: ...\\n2. Why other choices are incorrect: ...\\n3. Key Concept: ..."\n' +
+      '  }\n' +
+      ']\n\n' +
+      'Exam Questions JSON:\n' +
+      val;
+
+    try {
+      await navigator.clipboard.writeText(promptText);
+      toast('📋 AI Prompt with questions copied! Paste into ChatGPT, Claude, or Gemini.', 'ok');
+    } catch (e) {
+      toast('Failed to copy prompt to clipboard.', 'bad');
+    }
+  };
+}
+
+if ($('dropZoneReviewerAi')) {
+  const dz = $('dropZoneReviewerAi');
+  const fileInput = $('fileInputReviewerAi');
+
+  dz.onclick = () => { if (fileInput) fileInput.click(); };
+
+  dz.ondragover = (e) => {
+    e.preventDefault();
+    dz.style.borderColor = 'var(--accent, #6366f1)';
+    dz.style.background = 'rgba(99, 102, 241, 0.08)';
+  };
+  dz.ondragleave = () => {
+    dz.style.borderColor = 'var(--border)';
+    dz.style.background = 'var(--bg-card)';
+  };
+  dz.ondrop = (e) => {
+    e.preventDefault();
+    dz.style.borderColor = 'var(--border)';
+    dz.style.background = 'var(--bg-card)';
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      const reader = new window.FileReader();
+      reader.onload = (re) => {
+        if ($('txtPasteReviewerAiJson')) {
+          $('txtPasteReviewerAiJson').value = re.target.result || '';
+          updateReviewerAiImportValidation();
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  if (fileInput) {
+    fileInput.onchange = () => {
+      if (fileInput.files && fileInput.files[0]) {
+        const file = fileInput.files[0];
+        const reader = new window.FileReader();
+        reader.onload = (re) => {
+          if ($('txtPasteReviewerAiJson')) {
+            $('txtPasteReviewerAiJson').value = re.target.result || '';
+            updateReviewerAiImportValidation();
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+  }
+}
+
+if ($('txtPasteReviewerAiJson')) {
+  $('txtPasteReviewerAiJson').oninput = () => updateReviewerAiImportValidation();
+}
+
+if ($('btnRunServerAiFallback')) {
+  $('btnRunServerAiFallback').onclick = () => {
+    const code = _currentReviewerAiCode;
+    closeModal($('reviewerAiModal'));
+    if (code) runTeacherPrepareReviewerAi(code);
+  };
+}
+
+if ($('btnSubmitImportReviewerAi')) {
+  $('btnSubmitImportReviewerAi').onclick = async () => {
+    const btn = $('btnSubmitImportReviewerAi');
+    const out = $('reviewerAiModalOut');
+    if (!_parsedReviewerAiExplanations || !_currentReviewerAiCode) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Importing to Firestore…';
+    if (out) out.replaceChildren();
+
+    try {
+      const res = await api('teacherImportReviewerExplanations', {
+        idToken: await idToken(),
+        code: _currentReviewerAiCode,
+        explanations: _parsedReviewerAiExplanations
+      });
+
+      if (!res.ok) {
+        throw new Error(res.message || 'Import failed.');
+      }
+
+      toast('🎉 ' + (res.message || 'Explanations imported successfully!'), 'ok');
+      await refreshReviewerAiStatus(_currentReviewerAiCode);
+      setTimeout(() => {
+        closeModal($('reviewerAiModal'));
+      }, 800);
+    } catch (err) {
+      if (out) {
+        const p = document.createElement('p');
+        p.className = 'bad';
+        p.textContent = 'Import error: ' + err.message;
+        out.appendChild(p);
+      }
+      toast('Import failed: ' + err.message, 'bad');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '💾 Import Explanations';
+    }
+  };
 }
 
 /* Set Exam Deadline Modal Handlers */
