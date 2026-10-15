@@ -250,6 +250,7 @@
       <button class="btn-sm btn-outline" id="btnDuplicateExamDetail" type="button">📋 Duplicate</button>
       <button class="btn-sm btn-outline" id="btnManageQuestions" type="button">🧩 Manage Questions</button>
       <button class="btn-sm btn-accent" id="btnOpenAddQuestions" type="button">+ Add Questions</button>
+      <button class="btn-sm btn-outline" id="btnPrepareReviewerAi" type="button" hidden>✨ Prepare Reviewer AI</button>
       <button class="btn-sm btn-outline" id="btnRefreshDetail" type="button">🔄 Refresh</button>
       <button class="btn-sm btn-danger" id="btnDeleteExamDetail" type="button">🗑️ Delete</button>
     </div>
@@ -260,6 +261,11 @@
           <span class="muted small" style="font-weight:600;">Usable EDP Codes:</span>
           <div id="detailEdpBadges" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
           <button type="button" class="btn-sm btn-ghost" id="btnManageEdpInline" style="font-size:0.75rem;">+ Manage EDP Codes</button>
+        </div>
+        <div class="detail-reviewer-ai-row" id="reviewerAiStatusRow" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;" hidden>
+          <span class="muted small" style="font-weight:600;">Reviewer AI Status:</span>
+          <span id="reviewerAiBadge" class="pill" style="font-size:0.75rem; padding:2px 8px;">Checking…</span>
+          <button type="button" class="btn-sm btn-ghost" id="btnPrepareReviewerAiInline" style="font-size:0.75rem; font-weight:600;">✨ Prepare Explanations</button>
         </div>
         <div class="actions-row" id="detailActions"></div>
       </div>
@@ -1154,6 +1160,6 @@
     <span>Results</span>
   </button>
 </nav>
-<script type="module" src="teacher.js?v=20260918_edp_loading_fix"></script>
+<script type="module" src="teacher.js?v=20261015_offline_ai_v1"></script>
 </body>
 </html>

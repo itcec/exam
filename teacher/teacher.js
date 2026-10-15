@@ -1133,6 +1133,21 @@ function updateDetailStatsAndControls(ex) {
 
   updateDetailEdpBadges(ex);
 
+  const isRev = (ex.examType === 'reviewer' || ex.isReviewer);
+  const rowAi = $('reviewerAiStatusRow');
+  const btnAi = $('btnPrepareReviewerAi');
+  const btnAiInline = $('btnPrepareReviewerAiInline');
+  if (isRev) {
+    if (rowAi) rowAi.hidden = false;
+    if (btnAi) btnAi.hidden = false;
+    refreshReviewerAiStatus(ex.code);
+    if (btnAi) btnAi.onclick = () => runTeacherPrepareReviewerAi(ex.code);
+    if (btnAiInline) btnAiInline.onclick = () => runTeacherPrepareReviewerAi(ex.code);
+  } else {
+    if (rowAi) rowAi.hidden = true;
+    if (btnAi) btnAi.hidden = true;
+  }
+
   if ($('btnSetDeadlineDetail')) $('btnSetDeadlineDetail').onclick = () => openSetDeadlineModal(ex);
   if ($('btnManageEdpDetail')) $('btnManageEdpDetail').onclick = () => openEdpModal(ex);
   if ($('btnManageEdpInline')) $('btnManageEdpInline').onclick = () => openEdpModal(ex);
@@ -1140,6 +1155,75 @@ function updateDetailStatsAndControls(ex) {
   if ($('btnDuplicateExamDetail')) $('btnDuplicateExamDetail').onclick = () => openDuplicateModal(ex);
   if ($('btnDeleteExamDetail')) $('btnDeleteExamDetail').onclick = () => openDeleteModal(ex);
   if ($('btnRefreshActiveAttempts')) $('btnRefreshActiveAttempts').onclick = () => loadActiveAttempts(ex.code);
+}
+
+async function refreshReviewerAiStatus(code) {
+  const row = $('reviewerAiStatusRow');
+  const badge = $('reviewerAiBadge');
+  const btnInline = $('btnPrepareReviewerAiInline');
+  if (!row || !badge) return;
+  badge.textContent = 'Checking AI status…';
+  badge.className = 'pill';
+
+  try {
+    const res = await api('teacherGetReviewerAiStatus', {
+      idToken: await idToken(),
+      code: code
+    });
+    if (res.ok) {
+      if (res.isComplete) {
+        badge.textContent = 'Ready (' + res.preparedCount + '/' + res.totalQuestions + ' explanations)';
+        badge.className = 'pill ok';
+        if (btnInline) btnInline.textContent = 'Verify / Update AI';
+      } else {
+        badge.textContent = 'Incomplete (' + res.preparedCount + '/' + res.totalQuestions + ' ready)';
+        badge.className = 'pill warn';
+        if (btnInline) btnInline.textContent = 'Prepare ' + res.missingCount + ' Missing';
+      }
+    } else {
+      badge.textContent = 'Status unavailable';
+      badge.className = 'pill muted';
+    }
+  } catch (e) {
+    badge.textContent = 'Offline / Error';
+  }
+}
+
+async function runTeacherPrepareReviewerAi(code) {
+  const btnTop = $('btnPrepareReviewerAi');
+  const btnInline = $('btnPrepareReviewerAiInline');
+  if (btnTop) { btnTop.disabled = true; btnTop.textContent = 'Preparing AI…'; }
+  if (btnInline) { btnInline.disabled = true; btnInline.textContent = 'Preparing AI…'; }
+  toast('Preparing Reviewer AI explanations in quota-safe batches…', 'info');
+
+  try {
+    let done = false;
+    let round = 1;
+    while (!done && round <= 10) {
+      const res = await api('teacherPrepareReviewerAi', {
+        idToken: await idToken(),
+        code: code,
+        limit: 8
+      });
+      if (!res.ok) {
+        toast(res.message || 'Error preparing AI explanations.', 'bad');
+        break;
+      }
+      toast(res.message, res.isComplete ? 'good' : 'info');
+      if (res.isComplete || res.rateLimited || res.missingCount === 0) {
+        done = true;
+      } else {
+        round++;
+        await sleep(1500);
+      }
+    }
+    await refreshReviewerAiStatus(code);
+  } catch (err) {
+    toast('Preparation failed: ' + (err.message || err), 'bad');
+  } finally {
+    if (btnTop) { btnTop.disabled = false; btnTop.textContent = '✨ Prepare Reviewer AI'; }
+    if (btnInline) { btnInline.disabled = false; btnInline.textContent = '✨ Prepare Explanations'; }
+  }
 }
 
 /* Set Exam Deadline Modal Handlers */

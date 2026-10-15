@@ -550,6 +550,7 @@ const TYPE_NAME = {
 
 const IDB_NAME = 'proctor_journal_v1';
 const IDB_STORE = 'answers';
+const IDB_PACKAGE_STORE = 'offline_packages';
 let _idbPromise = null;
 
 function getJournalDb() {
@@ -557,11 +558,14 @@ function getJournalDb() {
   _idbPromise = new Promise(resolve => {
     if (typeof window === 'undefined' || !window.indexedDB) { resolve(null); return; }
     try {
-      const req = window.indexedDB.open(IDB_NAME, 1);
+      const req = window.indexedDB.open(IDB_NAME, 2);
       req.onupgradeneeded = e => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains(IDB_STORE)) {
           db.createObjectStore(IDB_STORE, { keyPath: ['token', 'qNo'] });
+        }
+        if (!db.objectStoreNames.contains(IDB_PACKAGE_STORE)) {
+          db.createObjectStore(IDB_PACKAGE_STORE, { keyPath: 'code' });
         }
       };
       req.onsuccess = e => resolve(e.target.result);
@@ -571,6 +575,62 @@ function getJournalDb() {
     }
   });
   return _idbPromise;
+}
+
+async function saveOfflineExamPackage(pkg) {
+  if (!pkg || !pkg.code) return;
+  const db = await getJournalDb();
+  if (!db || !db.objectStoreNames.contains(IDB_PACKAGE_STORE)) {
+    try { localStorage.setItem('offline_pkg_' + pkg.code, JSON.stringify(pkg)); } catch {}
+    return;
+  }
+  try {
+    const tx = db.transaction(IDB_PACKAGE_STORE, 'readwrite');
+    tx.objectStore(IDB_PACKAGE_STORE).put({
+      code: String(pkg.code).toUpperCase(),
+      token: pkg.token || '',
+      attemptId: pkg.attemptId || '',
+      package: pkg,
+      savedAt: Date.now()
+    });
+  } catch (e) {
+    try { localStorage.setItem('offline_pkg_' + pkg.code, JSON.stringify(pkg)); } catch {}
+  }
+}
+
+async function loadOfflineExamPackage(codeOrToken) {
+  if (!codeOrToken) return null;
+  const target = String(codeOrToken).trim().toUpperCase();
+  const db = await getJournalDb();
+  if (db && db.objectStoreNames.contains(IDB_PACKAGE_STORE)) {
+    const fromIdb = await new Promise(resolve => {
+      try {
+        const tx = db.transaction(IDB_PACKAGE_STORE, 'readonly');
+        const store = tx.objectStore(IDB_PACKAGE_STORE);
+        const req = store.getAll();
+        req.onsuccess = () => {
+          const rows = req.result || [];
+          for (const row of rows) {
+            if (row.code === target || row.token === codeOrToken || row.attemptId === codeOrToken) {
+              resolve(row.package);
+              return;
+            }
+          }
+          resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+    if (fromIdb) return fromIdb;
+  }
+  try {
+    const raw = localStorage.getItem('offline_pkg_' + target);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function recordJournalAnswer(token, qNo, val) {
@@ -651,6 +711,52 @@ function clearSessionBackup(token) {
   try { sessionStorage.removeItem('exam_answers_' + token); } catch {}
 }
 
+function updateOfflineStatus(isOnline) {
+  const banner = $('offlineIndicator');
+  const text = $('offlineIndicatorText');
+  if (!banner) return;
+  if (!isOnline) {
+    banner.hidden = false;
+    banner.classList.remove('online');
+    if (text) text.textContent = 'You are currently offline. Answers are saved locally and will sync when reconnected.';
+  } else {
+    banner.hidden = false;
+    banner.classList.add('online');
+    if (text) text.textContent = 'Back online! Syncing your answers…';
+    setTimeout(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine && banner) {
+        banner.hidden = true;
+        banner.classList.remove('online');
+      }
+    }, 4000);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    updateOfflineStatus(true);
+    if (typeof S !== 'undefined' && S && S.token) {
+      if (typeof flushFirestoreCheckpoint === 'function') {
+        flushFirestoreCheckpoint().catch(() => {});
+      }
+      if (typeof flushDeltaAnswers === 'function') {
+        flushDeltaAnswers().catch(() => {});
+      }
+      const btnRetry = $('btnRetry');
+      if (btnRetry && !btnRetry.hidden) {
+        toast('Connection restored — retrying submission…', 'good');
+        btnRetry.click();
+      } else {
+        toast('Connection restored — answers synced', 'good');
+      }
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    updateOfflineStatus(false);
+  });
+}
+
 const _dirtyKeys = new Set();
 let _deltaFlushTimer = null;
 let _isFlushingDelta = false;
@@ -662,6 +768,22 @@ function setDirtyAnswer(qNo, val) {
   saveSessionBackup(S.token, S.answers);
   recordJournalAnswer(S.token, qNo, val);
   _dirtyKeys.add(String(qNo));
+
+  if (S.isReviewer && S.code) {
+    saveOfflineExamPackage({
+      code: S.code,
+      token: S.token,
+      attemptId: S.attemptId,
+      examType: S.examType,
+      isReviewer: S.isReviewer,
+      isOfflineReady: S.isOfflineReady,
+      timerMode: S.timerMode,
+      questions: S.questions,
+      explanations: S.explanations,
+      answers: S.answers,
+      student: S.student
+    }).catch(() => {});
+  }
 
   // If delta HTTP autosave is explicitly enabled (legacy fallback)
   if (isDeltaAutosaveEnabled(S.code) && S.token && !S.finished && !db) {
@@ -1524,6 +1646,13 @@ async function requestExamAdmission_(code, idempotencyKey, privacyAck) {
         })
       });
     } catch (error) {
+      if ((typeof navigator !== 'undefined' && !navigator.onLine) || attempt === ADMISSION_MAX_RETRIES) {
+        const offlinePkg = await loadOfflineExamPackage(code);
+        if (offlinePkg) {
+          toast('Loaded offline practice package', 'info');
+          return offlinePkg;
+        }
+      }
       if (attempt === ADMISSION_MAX_RETRIES) throw error;
       const waitMs = Math.min(12000, 1400 * 2 ** (attempt - 1)) + Math.floor(Math.random() * 700);
       setAdmissionProgress(20, {
@@ -1654,12 +1783,16 @@ async function prepare(r) {
   S.attemptId = r.attemptId || r.token;
   S.examType = r.examType || 'test';
   S.isReviewer = !!r.isReviewer || (r.examType === 'reviewer');
+  S.isOfflineReady = !!r.isOfflineReady;
   S.timerMode = S.isReviewer ? 'untimed' : r.timerMode;
   S.defaultTimer = S.isReviewer ? null : r.defaultTimer;
   S.proctoringStrikes = S.isReviewer ? 0 : (r.proctoringStrikes != null ? Number(r.proctoringStrikes) : (STRICT_AUTO_SUBMIT ? 3 : 0));
   S.proctoringWarningNotes = S.isReviewer ? '' : (r.proctoringWarningNotes || '');
   S.questions = r.questions || [];
   S.explanations = Object.assign({}, r.explanations || {});
+  if (S.isReviewer) {
+    saveOfflineExamPackage(r).catch(() => {});
+  }
   const localBackup = loadSessionBackup(r.token);
   const journalBackup = await loadJournalAnswers(r.token);
   S.answers = Object.assign({}, r.answers || {}, localBackup || {}, journalBackup || {});
@@ -1843,7 +1976,16 @@ async function doResume(token) {
     S.queue = S.questions.filter(q => S.answers[q.no] == null);
     if (!S.queue.length) { finish(); return; }
     ensurePrivacyConsent(begin);
-  } catch {
+  } catch (netErr) {
+    const offlinePkg = await loadOfflineExamPackage(token);
+    if (offlinePkg) {
+      await prepare(offlinePkg);
+      S.queue = S.questions.filter(q => S.answers[q.no] == null);
+      if (!S.queue.length) { finish(); return; }
+      ensurePrivacyConsent(begin);
+      toast('Resumed from offline practice package', 'info');
+      return;
+    }
     S.active = null;
     if ($('activeExamCard')) $('activeExamCard').hidden = true;
     clearSessionBackup(token);
@@ -3552,12 +3694,22 @@ async function retryReviewer() {
   $('sendSub').textContent = 'Please wait a moment.';
 
   try {
-    const userToken = await idToken().catch(() => '');
-    const r = await api('startAttempt', {
-      code: code,
-      idToken: userToken,
-      forceNew: true
-    });
+    let r;
+    try {
+      const userToken = await idToken().catch(() => '');
+      r = await api('startAttempt', {
+        code: code,
+        idToken: userToken,
+        forceNew: true
+      });
+    } catch (netErr) {
+      const offlinePkg = await loadOfflineExamPackage(code);
+      if (offlinePkg) {
+        r = Object.assign({}, offlinePkg, { answers: {} });
+      } else {
+        throw netErr;
+      }
+    }
     if (!r.ok) {
       toast(r.message || 'Could not restart reviewer.', 'bad');
       show('scDone');

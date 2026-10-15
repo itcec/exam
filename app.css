@@ -2045,6 +2045,57 @@
   }
 }
 
+/* Floating offline indicator banner */
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-bottom: 1px solid #fde68a;
+  text-align: center;
+  transition: all 0.25s ease;
+}
+
+[data-theme="dark"] .offline-banner {
+  background: #78350f;
+  color: #fef3c7;
+  border-bottom-color: #92400e;
+}
+
+.offline-banner.online {
+  background: #ecfdf5;
+  color: #065f46;
+  border-bottom-color: #a7f3d0;
+}
+
+[data-theme="dark"] .offline-banner.online {
+  background: #064e3b;
+  color: #ecfdf5;
+  border-bottom-color: #047857;
+}
+
+.offline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.offline-banner.online .offline-dot {
+  background: #10b981;
+}
+
+
 
 
 
