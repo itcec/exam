@@ -445,7 +445,14 @@
     <div id="reviewerWatermark" class="reviewer-watermark" aria-hidden="true" hidden>PRACTICE REVIEWER • UNTIMED</div>
     <!-- Per-Question Mode View -->
     <div id="singleExamView">
-      <div id="stepperDots" class="stepper-dots"></div>
+      <!-- Top Navigation & Conveyor Belt Tracker -->
+      <div class="reviewer-top-nav" id="reviewerTopNav">
+        <button type="button" class="btn-sm btn-outline reviewer-nav-btn" id="btnPrevQuestionTop" aria-label="Previous Question" title="Previous Question" hidden>‹ Prev</button>
+        <div class="conveyor-track-container" id="conveyorTrackContainer">
+          <div id="stepperDots" class="stepper-dots conveyor-belt"></div>
+        </div>
+        <button type="button" class="btn-sm btn-outline reviewer-nav-btn" id="btnNextQuestionTop" aria-label="Next Question" title="Next Question" hidden>Next ›</button>
+      </div>
       
       <!-- QUESTIONNAIRE CARD: Inputs and Action Buttons only -->
       <div class="card solo" id="qCard">

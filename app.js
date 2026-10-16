@@ -2138,24 +2138,97 @@ function renderStepperDots() {
 
   const cur = current();
   let done = 0, skipped = 0;
+  let activeDot = null;
 
-  S.questions.forEach(q => {
+  S.questions.forEach((q, i) => {
     const dot = document.createElement('span');
     dot.className = 'stepper-dot';
-    dot.setAttribute('aria-hidden', 'true');
-    if (cur && q.no === cur.no) dot.classList.add('active');
-    else if (S.answers[q.no] != null && S.answers[q.no] !== '') { dot.classList.add('done'); done++; }
-    else if (S.deferred.some(d => (d && d.no != null ? d.no : d) === q.no) ||
+    dot.dataset.qNo = q.no;
+    dot.dataset.qIndex = i;
+    dot.title = `Question ${i + 1}`;
+
+    const isCurrent = cur && q.no === cur.no;
+    if (isCurrent) {
+      dot.classList.add('active');
+      activeDot = dot;
+    } else if (S.answers[q.no] != null && S.answers[q.no] !== '') {
+      dot.classList.add('done');
+      done++;
+    } else if (S.deferred.some(d => (d && d.no != null ? d.no : d) === q.no) ||
              (S.secondPass && S.queue.some(d => (d && d.no != null ? d.no : d) === q.no))) {
       dot.classList.add('skipped');
       skipped++;
     }
+
+    if (S.isReviewer) {
+      dot.tabIndex = 0;
+      dot.style.cursor = 'pointer';
+      dot.onclick = () => {
+        const queueIdx = S.queue.findIndex(item => item.no === q.no);
+        if (queueIdx !== -1) {
+          goToReviewerQuestion(queueIdx);
+        }
+      };
+      dot.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          dot.click();
+        }
+      };
+    }
+
     host.append(dot);
   });
 
-  host.setAttribute('role', 'img');
+  host.setAttribute('role', S.isReviewer ? 'toolbar' : 'img');
   host.setAttribute('aria-label',
     `${done} of ${S.questions.length} answered` + (skipped ? `, ${skipped} skipped` : ''));
+
+  // Conveyor belt auto-centering on active question
+  if (activeDot) {
+    try {
+      activeDot.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    } catch (e) {
+      const container = $('conveyorTrackContainer');
+      if (container) {
+        const offset = activeDot.offsetLeft - (container.clientWidth / 2) + (activeDot.clientWidth / 2);
+        container.scrollTo({ left: Math.max(0, offset), behavior: 'smooth' });
+      }
+    }
+  }
+}
+
+function prevReviewerQuestion() {
+  if (S.pos <= 0) return;
+  const qCur = current();
+  if (qCur) {
+    const val = readAnswer();
+    setDirtyAnswer(qCur.no, val || '');
+  }
+  stopQuestion();
+  S.pos--;
+  step();
+}
+
+function nextReviewerQuestion() {
+  const qCur = current();
+  if (qCur) {
+    const val = readAnswer();
+    setDirtyAnswer(qCur.no, val || '');
+  }
+  advance();
+}
+
+function goToReviewerQuestion(targetIdx) {
+  if (!S.isReviewer || targetIdx < 0 || targetIdx >= S.queue.length) return;
+  const qCur = current();
+  if (qCur) {
+    const val = readAnswer();
+    setDirtyAnswer(qCur.no, val || '');
+  }
+  stopQuestion();
+  S.pos = targetIdx;
+  step();
 }
 
 /* ---- Multi-Question Card Builder (for Whole Exam & Per-Section Modes) ---- */
@@ -2916,6 +2989,16 @@ function render() {
   // Next/Skip button labels and click bindings
   const isLast = S.pos === S.queue.length - 1 && !S.deferred.length;
   if (S.isReviewer) {
+    if ($('btnPrevQuestionTop')) {
+      $('btnPrevQuestionTop').hidden = false;
+      $('btnPrevQuestionTop').disabled = (S.pos <= 0);
+      $('btnPrevQuestionTop').onclick = () => prevReviewerQuestion();
+    }
+    if ($('btnNextQuestionTop')) {
+      $('btnNextQuestionTop').hidden = false;
+      $('btnNextQuestionTop').textContent = isLast ? 'Finish ✓' : 'Next ›';
+      $('btnNextQuestionTop').onclick = () => nextReviewerQuestion();
+    }
     if ($('standardActions')) $('standardActions').hidden = true;
     if ($('reviewerActions')) $('reviewerActions').hidden = false;
     if ($('reviewerFeedbackArea')) $('reviewerFeedbackArea').hidden = true;
@@ -2931,16 +3014,16 @@ function render() {
     if ($('btnNextQuestion')) {
       $('btnNextQuestion').hidden = true;
       $('btnNextQuestion').textContent = isLast ? 'Finish & Review All ✓' : 'Next Question ›';
-      $('btnNextQuestion').onclick = () => {
-        const qCur = current();
-        if (qCur) {
-          const val = readAnswer();
-          setDirtyAnswer(qCur.no, val || '');
-        }
-        advance();
-      };
+      $('btnNextQuestion').onclick = () => nextReviewerQuestion();
+    }
+
+    // If this question was already answered, restore feedback and choices
+    if (S.answers[q.no] != null && S.answers[q.no] !== '') {
+      submitReviewerAnswer();
     }
   } else {
+    if ($('btnPrevQuestionTop')) $('btnPrevQuestionTop').hidden = true;
+    if ($('btnNextQuestionTop')) $('btnNextQuestionTop').hidden = true;
     if ($('standardActions')) $('standardActions').hidden = false;
     if ($('reviewerActions')) $('reviewerActions').hidden = true;
     if ($('btnAnswer')) {
@@ -3912,25 +3995,134 @@ function renderReviewList(filter) {
       got.textContent = d.detail;
       q.append(' ', got);
     }
+    box.append(q);
 
+    // Look up question definition from S.questions if available
+    const qObj = (S.questions || []).find(it => it.no === d.no || it.text === d.question);
+    const qType = d.type || (qObj && qObj.type) || 'MC';
+    const choices = (d.choices && d.choices.length)
+      ? d.choices
+      : (qObj && qObj.choices && qObj.choices.length)
+      ? qObj.choices
+      : (qType === 'TF' ? ['True', 'False'] : []);
+
+    // 1. Choice breakdown for choice-based questions (MC / TF)
+    if (choices && choices.length > 0 && (qType === 'MC' || qType === 'TF')) {
+      const choicesWrap = document.createElement('div');
+      choicesWrap.className = 'rev-choices-list';
+
+      choices.forEach((choiceStr, idx) => {
+        const choiceLetter = String.fromCharCode(65 + idx);
+        const item = document.createElement('div');
+        item.className = 'rev-choice-item';
+
+        const cleanChoice = choiceStr.replace(/^[A-Za-z0-9][.)]\s*/, '').trim();
+        const isGivenChoice = Boolean(d.given && (
+          d.given.toUpperCase() === choiceLetter ||
+          d.given.toUpperCase() === cleanChoice.toUpperCase() ||
+          d.given.toUpperCase() === choiceStr.toUpperCase() ||
+          (d.givenText && (d.givenText.toUpperCase() === cleanChoice.toUpperCase() || choiceStr.toUpperCase().includes(d.givenText.toUpperCase())))
+        ));
+
+        const isExpectedChoice = Boolean(d.expected && (
+          d.expected.toUpperCase() === choiceLetter ||
+          d.expected.toUpperCase() === cleanChoice.toUpperCase() ||
+          d.expected.toUpperCase() === choiceStr.toUpperCase() ||
+          (d.expectedText && (d.expectedText.toUpperCase() === cleanChoice.toUpperCase() || choiceStr.toUpperCase().includes(d.expectedText.toUpperCase())))
+        ));
+
+        if (isGivenChoice && d.correct) {
+          item.classList.add('selected-correct');
+        } else if (isGivenChoice && !d.correct) {
+          item.classList.add('selected-wrong');
+        } else if (isExpectedChoice && !d.correct) {
+          item.classList.add('expected-answer');
+        }
+
+        const label = document.createElement('span');
+        label.style.flex = '1';
+        if (qType === 'MC') {
+          label.innerHTML = `<strong>${choiceLetter}.</strong> ${esc(cleanChoice)}`;
+        } else {
+          label.innerHTML = `<strong>${esc(choiceStr)}</strong>`;
+        }
+        item.append(label);
+
+        if (isGivenChoice && d.correct) {
+          const badge = document.createElement('span');
+          badge.className = 'rev-choice-badge badge-correct';
+          badge.textContent = '✓ Your Answer (Correct)';
+          item.append(badge);
+        } else if (isGivenChoice && !d.correct) {
+          const badge = document.createElement('span');
+          badge.className = 'rev-choice-badge badge-wrong';
+          badge.textContent = '✗ Your Answer';
+          item.append(badge);
+        } else if (isExpectedChoice && !d.correct) {
+          const badge = document.createElement('span');
+          badge.className = 'rev-choice-badge badge-correct';
+          badge.textContent = '★ Correct Answer';
+          item.append(badge);
+        }
+
+        choicesWrap.append(item);
+      });
+
+      box.append(choicesWrap);
+    }
+
+    // 2. Clear answer summary lines with FULL DETAIL (text, not just letters)
     const a = document.createElement('div');
     a.className = 'a';
     a.append('Your answer: ');
     const ab = document.createElement('b');
-    ab.textContent = d.given || '(blank)';
+    let givenDisplay = d.given || '(blank)';
+    if (d.givenText && d.given && d.givenText !== d.given) {
+      givenDisplay = `${d.given} — ${d.givenText}`;
+    }
+    ab.textContent = givenDisplay;
     a.append(ab);
-
-    box.append(q, a);
+    box.append(a);
 
     if (d.expected != null) {
       const e = document.createElement('div');
       e.className = 'a';
       e.append('Correct answer: ');
       const eb = document.createElement('b');
-      eb.textContent = d.expected;
+      let expDisplay = d.expected;
+      if (d.expectedText && d.expected && d.expectedText !== d.expected) {
+        expDisplay = `${d.expected} — ${d.expectedText}`;
+      }
+      eb.textContent = expDisplay;
       e.append(eb);
       box.append(e);
     }
+
+    // 3. Study explanation (if available in S.explanations or sessionStorage)
+    const expObj = (S.explanations && S.explanations[d.no]) ||
+      (() => {
+        try {
+          const raw = sessionStorage.getItem('ai_exp_' + S.code + '_' + d.no);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+      })();
+
+    if (expObj && expObj.explanation) {
+      const toggle = document.createElement('details');
+      toggle.className = 'rev-explanation-toggle';
+      const summary = document.createElement('summary');
+      summary.style.cursor = 'pointer';
+      summary.style.fontWeight = '600';
+      summary.style.fontSize = '0.85rem';
+      summary.style.color = 'var(--accent, #6366f1)';
+      summary.textContent = '💡 View Study Explanation';
+      const expBox = document.createElement('div');
+      expBox.className = 'rev-explanation-box';
+      renderSafeAiMarkdown(expObj.explanation, expBox, true);
+      toggle.append(summary, expBox);
+      box.append(toggle);
+    }
+
     list.append(box);
   }
   wrap.append(list);
