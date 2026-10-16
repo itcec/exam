@@ -2154,6 +2154,18 @@ function renderStepperDots() {
     } else if (S.answers[q.no] != null && S.answers[q.no] !== '') {
       dot.classList.add('done');
       done++;
+      if (q.answerKey) {
+        const key = q.answerKey;
+        const ans = S.answers[q.no];
+        let isOk = false;
+        if (q.type === 'MC') isOk = ans === key.correctLetter;
+        else if (q.type === 'TF') isOk = (ans === key.correctValue || ans === key.correctLetter);
+        else if (q.type === 'ID' || q.type === 'WB') {
+          const g = normText(ans, !!key.caseSensitive);
+          isOk = (key.alts || []).some(a => normText(a, !!key.caseSensitive) === g);
+        }
+        dot.classList.add(isOk ? 'ans-correct' : 'ans-wrong');
+      }
     } else if (S.deferred.some(d => (d && d.no != null ? d.no : d) === q.no) ||
              (S.secondPass && S.queue.some(d => (d && d.no != null ? d.no : d) === q.no))) {
       dot.classList.add('skipped');
@@ -2163,7 +2175,9 @@ function renderStepperDots() {
     if (S.isReviewer) {
       dot.tabIndex = 0;
       dot.style.cursor = 'pointer';
+      dot.textContent = String(i + 1);
       dot.onclick = () => {
+        feedback('nav', 8);
         const queueIdx = S.queue.findIndex(item => item.no === q.no);
         if (queueIdx !== -1) {
           goToReviewerQuestion(queueIdx);
@@ -2203,7 +2217,9 @@ function prevReviewerQuestion() {
   const qCur = current();
   if (qCur) {
     const val = readAnswer();
-    setDirtyAnswer(qCur.no, val || '');
+    if (val !== '' && val != null) {
+      setDirtyAnswer(qCur.no, val);
+    }
   }
   stopQuestion();
   S.pos--;
@@ -2214,7 +2230,9 @@ function nextReviewerQuestion() {
   const qCur = current();
   if (qCur) {
     const val = readAnswer();
-    setDirtyAnswer(qCur.no, val || '');
+    if (val !== '' && val != null) {
+      setDirtyAnswer(qCur.no, val);
+    }
   }
   advance();
 }
@@ -2224,7 +2242,9 @@ function goToReviewerQuestion(targetIdx) {
   const qCur = current();
   if (qCur) {
     const val = readAnswer();
-    setDirtyAnswer(qCur.no, val || '');
+    if (val !== '' && val != null) {
+      setDirtyAnswer(qCur.no, val);
+    }
   }
   stopQuestion();
   S.pos = targetIdx;
@@ -2816,9 +2836,11 @@ function render() {
   renderStepperDots();
 
   const done = Object.keys(S.answers).length;
-  $('pillProgress').textContent = S.secondPass
-    ? `Reviewing ${S.pos + 1} of ${S.queue.length}`
-    : `Question ${Math.min(done + 1, S.questions.length)} of ${S.questions.length}`;
+  $('pillProgress').textContent = S.isReviewer
+    ? `Question ${S.pos + 1} of ${S.questions.length}`
+    : (S.secondPass
+        ? `Reviewing ${S.pos + 1} of ${S.queue.length}`
+        : `Question ${Math.min(done + 1, S.questions.length)} of ${S.questions.length}`);
 
   const sk = $('pillSkipped');
   sk.hidden = !S.deferred.length && !S.secondPass;
@@ -2851,6 +2873,7 @@ function render() {
       const val = q.type === 'TF' ? String(t).toUpperCase() : letters[i];
       b.dataset.value = val;
       const isSel = S.answers[q.no] === val;
+      if (isSel) b.classList.add('selected');
       b.setAttribute('aria-checked', isSel ? 'true' : 'false');
       b.tabIndex = isSel ? 0 : (!hasSelection && i === 0 ? 0 : -1);
 
@@ -2999,6 +3022,11 @@ function render() {
       $('btnNextQuestionTop').textContent = isLast ? 'Finish ✓' : 'Next ›';
       $('btnNextQuestionTop').onclick = () => nextReviewerQuestion();
     }
+    if ($('btnPrevQuestion')) {
+      $('btnPrevQuestion').hidden = false;
+      $('btnPrevQuestion').disabled = (S.pos <= 0);
+      $('btnPrevQuestion').onclick = () => prevReviewerQuestion();
+    }
     if ($('standardActions')) $('standardActions').hidden = true;
     if ($('reviewerActions')) $('reviewerActions').hidden = false;
     if ($('reviewerFeedbackArea')) $('reviewerFeedbackArea').hidden = true;
@@ -3024,6 +3052,7 @@ function render() {
   } else {
     if ($('btnPrevQuestionTop')) $('btnPrevQuestionTop').hidden = true;
     if ($('btnNextQuestionTop')) $('btnNextQuestionTop').hidden = true;
+    if ($('btnPrevQuestion')) $('btnPrevQuestion').hidden = true;
     if ($('standardActions')) $('standardActions').hidden = false;
     if ($('reviewerActions')) $('reviewerActions').hidden = true;
     if ($('btnAnswer')) {

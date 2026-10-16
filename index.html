@@ -464,9 +464,12 @@
           <button class="btn btn-primary" id="btnAnswer" type="button">Submit answer</button>
           <button class="btn btn-ghost" id="btnSkip" type="button">Skip</button>
         </div>
-        <div class="actions" id="reviewerActions" hidden>
-          <button class="btn btn-primary" id="btnReviewerSubmit" type="button">Submit</button>
-          <button class="btn btn-primary btn-next-q" id="btnNextQuestion" type="button" hidden>Next Question ›</button>
+        <div class="actions" id="reviewerActions" hidden style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-prev-q" id="btnPrevQuestion" type="button" aria-label="Previous Question">‹ Prev Question</button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-primary" id="btnReviewerSubmit" type="button">Submit</button>
+            <button class="btn btn-primary btn-next-q" id="btnNextQuestion" type="button" hidden>Next Question ›</button>
+          </div>
         </div>
       </div>
 
