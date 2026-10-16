@@ -576,6 +576,10 @@
               <button type="button" class="q-filter-btn" data-type="MA">MA</button>
               <button type="button" class="q-filter-btn" data-type="WB">WB</button>
             </div>
+            <button type="button" class="btn-sm btn-outline btn-filter-issues" id="btnToggleNeedsImprovement" style="font-size:0.75rem; padding:3px 8px; display:inline-flex; align-items:center; gap:4px;" title="Filter to questions that need clearer instructions or improvement">
+              <span>⚠️ Needs Improvement</span>
+              <span class="badge-count" id="countNeedsImprovement" style="display:none; padding:1px 5px; border-radius:10px; font-size:0.7rem; font-weight:800; background:var(--bad, #ef4444); color:#fff;">0</span>
+            </button>
           </div>
           <div id="wrapGlobalTimer" style="display:flex; align-items:center; gap:6px; font-size:0.75rem;">
             <span class="muted" style="font-weight:600; white-space:nowrap;">⏱ Global Timer:</span>
@@ -1222,9 +1226,9 @@
       </div>
 
       <!-- Footer Actions -->
-      <div class="actions" style="margin-top:16px; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <div class="reviewer-ai-modal-footer">
         <button class="btn btn-ghost" id="btnCancelReviewerAiModal" type="button">Cancel</button>
-        <div style="display:flex; gap:8px;">
+        <div class="reviewer-ai-modal-actions">
           <button class="btn btn-outline" id="btnRunServerAiFallback" type="button" title="Slow sequential generation using Google Gemini">⚡ Generate with Server AI</button>
           <button class="btn btn-primary" id="btnSubmitImportReviewerAi" type="button" disabled>💾 Import Explanations</button>
         </div>

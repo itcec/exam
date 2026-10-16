@@ -36,7 +36,7 @@
   <span class="pill pill-reviewer" id="pillReviewer" hidden>📖 REVIEWER</span>
   <span class="grow"></span>
   <span class="pill" id="pillTimer" role="timer" aria-live="off" hidden>—</span>
-  <button class="btn-sm btn-outline exit-btn" id="btnExit" type="button" hidden style="margin-right:8px; border-radius:var(--r-full); padding:4px 12px; font-weight:600; display:inline-flex; align-items:center; gap:4px;"><span aria-hidden="true" style="font-size:1.1rem;line-height:1;">‹</span> Exit</button>
+  <button class="exit-btn" id="btnExit" type="button" hidden><span aria-hidden="true" class="exit-btn-chevron">‹</span> Exit</button>
   <button class="icon-btn" id="btnTheme" type="button" aria-label="Switch to dark mode">
     <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" aria-hidden="true">
@@ -447,11 +447,11 @@
     <div id="singleExamView">
       <!-- Top Navigation & Conveyor Belt Tracker -->
       <div class="reviewer-top-nav" id="reviewerTopNav">
-        <button type="button" class="btn-sm btn-outline reviewer-nav-btn" id="btnPrevQuestionTop" aria-label="Previous Question" title="Previous Question" hidden>‹ Prev</button>
+        <button type="button" class="btn-sm btn-outline reviewer-nav-btn btn-prev" id="btnPrevQuestionTop" aria-label="Previous Question" title="Previous Question" hidden>‹ Prev</button>
         <div class="conveyor-track-container" id="conveyorTrackContainer">
           <div id="stepperDots" class="stepper-dots conveyor-belt"></div>
         </div>
-        <button type="button" class="btn-sm btn-outline reviewer-nav-btn" id="btnNextQuestionTop" aria-label="Next Question" title="Next Question" hidden>Next ›</button>
+        <button type="button" class="btn-sm btn-outline reviewer-nav-btn btn-next" id="btnNextQuestionTop" aria-label="Next Question" title="Next Question" hidden>Next ›</button>
       </div>
       
       <!-- QUESTIONNAIRE CARD: Inputs and Action Buttons only -->
@@ -466,7 +466,7 @@
         </div>
         <div class="actions" id="reviewerActions" hidden>
           <button class="btn btn-primary" id="btnReviewerSubmit" type="button">Submit</button>
-          <button class="btn btn-primary" id="btnNextQuestion" type="button" hidden>Next Question ›</button>
+          <button class="btn btn-primary btn-next-q" id="btnNextQuestion" type="button" hidden>Next Question ›</button>
         </div>
       </div>
 

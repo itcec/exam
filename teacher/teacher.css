@@ -3252,6 +3252,84 @@ textarea {
   color: var(--fg);
 }
 
+.q-num-badge.badge-warn {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.q-direct-card.needs-improvement {
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.q-improve-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  font-size: 0.74rem;
+  color: #b45309;
+  flex-wrap: wrap;
+}
+
+[data-theme="dark"] .q-improve-banner {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+}
+
+.q-improve-text {
+  flex: 1;
+  min-width: 200px;
+  line-height: 1.4;
+}
+
+.q-btn-fix-ai {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  background: linear-gradient(135deg, #1a73e8 0%, #7c3aed 100%);
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(26, 115, 232, 0.3);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.q-btn-fix-ai:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.q-improved-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  font-size: 0.74rem;
+  color: #059669;
+}
+
+[data-theme="dark"] .q-improved-banner {
+  color: #34d399;
+}
+
+.btn-filter-issues.active {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: #d97706;
+  color: #d97706;
+  font-weight: 700;
+}
+
 .field-compact {
   font-size: 0.76rem;
   padding: 3px 6px;
@@ -3763,6 +3841,54 @@ table tbody tr:hover {
 
 .modal-body {
   padding: clamp(18px, 3vw, 28px);
+}
+
+/* Reviewer AI Preparation Modal Footer Actions */
+.reviewer-ai-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.reviewer-ai-modal-footer .btn-ghost {
+  flex: 0 0 auto !important;
+}
+
+.reviewer-ai-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.reviewer-ai-modal-actions .btn {
+  white-space: normal;
+  text-align: center;
+  flex: 0 1 auto;
+}
+
+@media (max-width: 480px) {
+  .reviewer-ai-modal-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .reviewer-ai-modal-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .reviewer-ai-modal-actions .btn,
+  .reviewer-ai-modal-footer .btn-ghost {
+    width: 100%;
+  }
 }
 
 /* Ensure appbar is completely hidden when [hidden] is set */

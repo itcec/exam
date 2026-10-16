@@ -1332,24 +1332,78 @@ function normalizeJsonText_(text) {
   return cleaned;
 }
 
+function repairUnescapedJsonQuotes_(raw) {
+  if (!raw || typeof raw !== 'string') return raw;
+  const lines = raw.split(/\r?\n/);
+  const out = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    const singleLineMatch = line.match(/^(\s*"[^"]+"\s*:\s*")(.*)$/);
+    if (singleLineMatch) {
+      const prefix = singleLineMatch[1];
+      let rest = singleLineMatch[2];
+      const endMatch = rest.match(/(",?|"\s*\}?,?)$/);
+      if (endMatch) {
+        const suffix = endMatch[1];
+        const inner = rest.slice(0, rest.length - suffix.length);
+        const unescapedQuotePattern = new RegExp('(?<!\\\\)"', 'g');
+        const fixedInner = inner.replace(unescapedQuotePattern, '\\"');
+        line = prefix + fixedInner + suffix;
+      }
+    }
+    out.push(line);
+  }
+
+  return out.join('\n');
+}
+
 function parseAndValidateReviewerAiJson(rawText) {
   const cleaned = normalizeJsonText_(rawText);
   if (!cleaned) {
     return { ok: false, message: 'Please provide JSON text.' };
   }
   let parsed = null;
+  let autoRepaired = false;
+  let repairedText = null;
+
   try {
     parsed = JSON.parse(cleaned);
   } catch (err) {
-    return { ok: false, message: 'Invalid JSON syntax: ' + err.message };
+    // Attempt auto-repair of unescaped quotes
+    try {
+      const fixed = repairUnescapedJsonQuotes_(cleaned);
+      parsed = JSON.parse(fixed);
+      autoRepaired = true;
+      repairedText = fixed;
+    } catch (err2) {
+      let errorLine = null;
+      const m = err.message.match(/line\s+(\d+)\s+column\s+(\d+)/i) || err.message.match(/position\s+(\d+)/i);
+      const lines = cleaned.split(/\r?\n/);
+      if (m && m[1] && m[2]) {
+        errorLine = parseInt(m[1], 10);
+      }
+      let snippet = '';
+      if (errorLine && lines[errorLine - 1]) {
+        snippet = lines[errorLine - 1].trim();
+      }
+      return {
+        ok: false,
+        isSyntaxError: true,
+        message: err.message,
+        errorLine: errorLine,
+        snippet: snippet,
+        suggestion: snippet ? ('Problem near line ' + errorLine + ': ' + snippet.slice(0, 90)) : 'Incomplete or unescaped JSON text.'
+      };
+    }
   }
 
   const detected = {};
   if (Array.isArray(parsed)) {
     parsed.forEach((item, idx) => {
-      if (!item) return;
-      const num = Number(item.no || item.id || item.qNo || item.number || item.questionNumber || (idx + 1));
-      const exp = item.explanation || item.text || item.content || item.whyCorrect;
+      const rawId = item.no ?? item.id ?? item.qNo ?? item.number ?? item.questionNumber ?? item.question_id ?? (idx + 1);
+      const num = typeof rawId === 'number' ? rawId : parseInt(String(rawId).replace(/[^0-9]/g, ''), 10);
+      const exp = item.explanation || item.text || item.content || item.whyCorrect || item.keyConcept || item.coreConcept;
       if (!isNaN(num) && exp) {
         detected[num] = item;
       }
@@ -1381,10 +1435,44 @@ function parseAndValidateReviewerAiJson(rawText) {
   return {
     ok: true,
     parsed: parsed,
+    autoRepaired: autoRepaired,
+    repairedText: repairedText,
     totalDetected: keys.length,
     matchedCount: matchedCount,
-    keys: keys
+    keys: keys,
+    missingCount: bankNos.size > matchedCount ? (bankNos.size - matchedCount) : 0
   };
+}
+
+async function triggerAiJsonRepair() {
+  const txt = $('txtPasteReviewerAiJson');
+  if (!txt || !txt.value.trim() || !_currentReviewerAiCode) return;
+  const btn = $('btnFixReviewerAiWithAi');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '🤖 AI is repairing & completing...';
+  }
+  toast('🤖 Contacting AI to repair and complete explanations...', 'warn');
+  try {
+    const res = await api('teacherRepairReviewerAiJson', {
+      idToken: await idToken(),
+      code: _currentReviewerAiCode,
+      rawText: txt.value.trim()
+    });
+    if (!res || !res.ok) {
+      throw new Error((res && res.message) || 'AI repair failed.');
+    }
+    txt.value = res.repairedJson;
+    updateReviewerAiImportValidation();
+    toast('🎉 ' + (res.message || 'Explanations repaired and completed!'), 'ok');
+  } catch (err) {
+    toast('AI repair failed: ' + err.message, 'bad');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '✨ Fix & Complete with AI';
+    }
+  }
 }
 
 function updateReviewerAiImportValidation() {
@@ -1406,10 +1494,49 @@ function updateReviewerAiImportValidation() {
   preview.style.display = 'block';
 
   if (!res.ok) {
-    preview.style.background = 'rgba(239, 68, 68, 0.12)';
+    preview.style.background = 'rgba(239, 68, 68, 0.1)';
     preview.style.color = 'var(--bad, #ef4444)';
     preview.style.border = '1px solid var(--bad, #ef4444)';
-    preview.textContent = '⚠️ ' + res.message;
+    preview.innerHTML = '';
+
+    const titleP = document.createElement('div');
+    titleP.style.fontWeight = '700';
+    titleP.style.marginBottom = '4px';
+    titleP.textContent = '⚠️ ' + (res.isSyntaxError ? 'JSON Syntax Issue Detected' : res.message);
+    preview.appendChild(titleP);
+
+    if (res.suggestion) {
+      const sug = document.createElement('div');
+      sug.style.fontSize = '0.76rem';
+      sug.style.fontFamily = 'monospace';
+      sug.style.background = 'rgba(0,0,0,0.06)';
+      sug.style.padding = '6px 8px';
+      sug.style.borderRadius = '4px';
+      sug.style.marginBottom = '8px';
+      sug.textContent = res.suggestion;
+      preview.appendChild(sug);
+    }
+
+    const actionRow = document.createElement('div');
+    actionRow.style.display = 'flex';
+    actionRow.style.gap = '8px';
+    actionRow.style.flexWrap = 'wrap';
+    actionRow.style.marginTop = '6px';
+
+    const btnFixAi = document.createElement('button');
+    btnFixAi.type = 'button';
+    btnFixAi.id = 'btnFixReviewerAiWithAi';
+    btnFixAi.className = 'btn-sm btn-primary';
+    btnFixAi.style.background = 'linear-gradient(135deg, #1a73e8, #7c3aed)';
+    btnFixAi.style.border = 'none';
+    btnFixAi.style.color = '#fff';
+    btnFixAi.style.fontWeight = '700';
+    btnFixAi.textContent = '✨ Fix & Complete with AI';
+    btnFixAi.onclick = () => triggerAiJsonRepair();
+    actionRow.appendChild(btnFixAi);
+
+    preview.appendChild(actionRow);
+
     btnSubmit.disabled = true;
     _parsedReviewerAiExplanations = null;
     return;
@@ -1420,8 +1547,39 @@ function updateReviewerAiImportValidation() {
   preview.style.background = 'rgba(16, 185, 129, 0.12)';
   preview.style.color = 'var(--ok, #10b981)';
   preview.style.border = '1px solid var(--ok, #10b981)';
-  preview.textContent = '✅ Valid JSON: Detected ' + res.totalDetected + ' explanation(s) (' +
-    res.matchedCount + ' match questions in this bank). Ready to import!';
+  preview.innerHTML = '';
+
+  const msgDiv = document.createElement('div');
+  msgDiv.textContent = '✅ ' + (res.autoRepaired ? 'Auto-Repaired JSON Quotes: ' : 'Valid JSON: ') +
+    'Detected ' + res.totalDetected + ' explanation(s) (' + res.matchedCount + ' match questions in this bank). Ready to import!';
+  preview.appendChild(msgDiv);
+
+  if (res.missingCount > 0) {
+    const warnRow = document.createElement('div');
+    warnRow.style.marginTop = '6px';
+    warnRow.style.display = 'flex';
+    warnRow.style.alignItems = 'center';
+    warnRow.style.justifyContent = 'space-between';
+    warnRow.style.gap = '8px';
+    warnRow.style.flexWrap = 'wrap';
+
+    const warnSpan = document.createElement('span');
+    warnSpan.style.color = 'var(--warn, #d97706)';
+    warnSpan.style.fontSize = '0.78rem';
+    warnSpan.textContent = '💡 ' + res.missingCount + ' question(s) in this bank are missing explanations.';
+    warnRow.appendChild(warnSpan);
+
+    const btnCompleteAi = document.createElement('button');
+    btnCompleteAi.type = 'button';
+    btnCompleteAi.id = 'btnFixReviewerAiWithAi';
+    btnCompleteAi.className = 'btn-sm btn-outline';
+    btnCompleteAi.style.fontSize = '0.75rem';
+    btnCompleteAi.textContent = '✨ Complete Missing with AI';
+    btnCompleteAi.onclick = () => triggerAiJsonRepair();
+    warnRow.appendChild(btnCompleteAi);
+
+    preview.appendChild(warnRow);
+  }
 }
 
 async function openReviewerAiModal(code) {
@@ -3356,6 +3514,7 @@ let _managedExpandedRow = null;
 let _managedEditingRow = null;
 let _managedSearchQuery = '';
 let _managedTypeFilter = 'ALL';
+let _managedFilterNeedsImprovement = false;
 
 const MANAGED_TYPE_LABELS = {
   MC: 'Multiple choice', TF: 'True or false', ID: 'Identification',
@@ -3473,14 +3632,153 @@ function managedSpec(q) {
   return { mode: q.type, text: text + ' | ' + q.answers.join(';'), pool, instruction, seconds: q.timer };
 }
 
+function evaluateQuestionQuality(q) {
+  if (!q) return { needsImprovement: false, reasons: [] };
+  const reasons = [];
+  const prompt = String(q.question || '').trim();
+  const type = String(q.type || 'MC').toUpperCase();
+  const choices = Array.isArray(q.choices) ? q.choices.map(s => String(s).trim()).filter(Boolean) : [];
+  const answers = Array.isArray(q.answers) ? q.answers.map(s => String(s).trim()).filter(Boolean) : [];
+
+  if (!prompt) {
+    reasons.push('Prompt is empty');
+  } else if (prompt.length < 25) {
+    reasons.push('Prompt is too brief or lacks clear instructions');
+  } else if (!/[?.:!]/.test(prompt) && prompt.split(/\s+/).length <= 4) {
+    reasons.push('Prompt lacks clear description or context');
+  }
+
+  if (type === 'MC') {
+    if (choices.length < 2) {
+      reasons.push('Multiple choice needs at least 2 options');
+    }
+    if (!answers.length) {
+      reasons.push('Missing correct answer key');
+    }
+  } else if (type === 'TF') {
+    if (!answers.length) {
+      reasons.push('Missing True/False answer key');
+    }
+  } else if (type === 'MA') {
+    if (choices.length === 0) {
+      reasons.push('Missing premises to match');
+    }
+    if (answers.length === 0) {
+      reasons.push('Missing matching pairs');
+    }
+  } else if (type === 'WB') {
+    if (choices.length === 0) {
+      reasons.push('Word pool is empty');
+    }
+    if (!prompt.includes('___') && !prompt.includes('[') && !prompt.toLowerCase().includes('blank')) {
+      reasons.push('Prompt is missing blank indicators (e.g. ____)');
+    }
+  } else if (type === 'ID' || type === 'EN') {
+    if (!answers.length) {
+      reasons.push('Answer key is empty');
+    }
+  }
+
+  return {
+    needsImprovement: reasons.length > 0,
+    reasons: reasons
+  };
+}
+
+async function improveManagedQuestionWithAi(q, card) {
+  if (!_currentDetailExamCode) return;
+  const promptInput = card.querySelector('.q-direct-prompt');
+  const choicesInput = card.querySelector('.q-edit-choices');
+  const answersInput = card.querySelector('.q-edit-answers');
+  const typeSelect = card.querySelector('.q-edit-type');
+
+  const currentQ = {
+    no: q.no,
+    row: q.row,
+    type: typeSelect ? typeSelect.value : q.type,
+    question: promptInput ? promptInput.value.trim() : (q.question || ''),
+    choices: choicesInput ? choicesInput.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean) : (q.choices || []),
+    answers: answersInput ? answersInput.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean) : (q.answers || [])
+  };
+
+  const aiBtns = card.querySelectorAll('.q-btn-fix-ai, .q-btn-ai-improve');
+  aiBtns.forEach(b => {
+    b.disabled = true;
+    b.dataset.oldText = b.textContent;
+    b.textContent = '🤖 Improving…';
+  });
+
+  toast(`🤖 Contacting AI to improve question Q${q.no}…`, 'warn', 3000);
+
+  try {
+    const res = await api('teacherImproveQuestionWithAi', {
+      idToken: await idToken(),
+      code: _currentDetailExamCode,
+      question: currentQ
+    });
+
+    if (!res || !res.ok) {
+      throw new Error((res && res.message) || 'AI could not improve question.');
+    }
+
+    if (promptInput && res.improvedQuestion) {
+      promptInput.value = res.improvedQuestion;
+    }
+    if (choicesInput && Array.isArray(res.improvedChoices) && res.improvedChoices.length) {
+      choicesInput.value = res.improvedChoices.join('\n');
+    }
+    if (answersInput && Array.isArray(res.improvedAnswers) && res.improvedAnswers.length) {
+      answersInput.value = res.improvedAnswers.join('\n');
+    }
+
+    card.classList.add('is-dirty');
+    markQuestionsDirty();
+
+    const existingBanner = card.querySelector('.q-improve-banner');
+    if (existingBanner) {
+      existingBanner.className = 'q-improved-banner';
+      existingBanner.innerHTML = `✨ <b>Improved with AI:</b> ${esc(res.improvementNotes || 'Instructions and context enriched.')}`;
+    }
+
+    const badge = card.querySelector('.q-num-badge');
+    if (badge) {
+      badge.classList.remove('badge-warn');
+      badge.textContent = `Q${q.no}`;
+      badge.title = 'Improved with AI';
+    }
+
+    toast(`🎉 Question Q${q.no} improved! Remember to click "Save All Questions".`, 'ok', 4000);
+    play('pop');
+  } catch (err) {
+    toast(`AI improvement failed: ${err.message}`, 'bad');
+  } finally {
+    aiBtns.forEach(b => {
+      b.disabled = false;
+      b.textContent = b.dataset.oldText || '✨ Fix with AI';
+    });
+  }
+}
+
 function renderManagedQuestionList() {
   const host = $('manageQuestionsList');
   if (!host) return;
   host.replaceChildren();
 
+  // Update needs improvement issues count
+  let totalIssuesCount = 0;
+  _managedQuestions.forEach(q => {
+    if (evaluateQuestionQuality(q).needsImprovement) totalIssuesCount++;
+  });
+  const issueBadge = $('countNeedsImprovement');
+  if (issueBadge) {
+    issueBadge.textContent = String(totalIssuesCount);
+    issueBadge.style.display = totalIssuesCount > 0 ? 'inline-block' : 'none';
+  }
+
   // Filter list
   const qQuery = _managedSearchQuery.toLowerCase().trim();
   const filtered = _managedQuestions.filter(q => {
+    if (_managedFilterNeedsImprovement && !evaluateQuestionQuality(q).needsImprovement) return false;
     if (_managedTypeFilter !== 'ALL' && q.type !== _managedTypeFilter) return false;
     if (qQuery) {
       const qNoMatch = ('q' + q.no).includes(qQuery);
@@ -3501,9 +3799,13 @@ function renderManagedQuestionList() {
     const empty = document.createElement('div');
     empty.className = 'muted small';
     empty.style.cssText = 'padding:28px 12px; text-align:center; background:var(--glass); border-radius:var(--r-md); border:1px dashed var(--edge);';
-    empty.textContent = _managedQuestions.length
-      ? 'No questions match the search keyword or type filter.'
-      : 'No questions yet in this exam. Click "+ New Question" above to create one.';
+    if (_managedFilterNeedsImprovement) {
+      empty.textContent = '🎉 Great job! No questions currently need improvement.';
+    } else {
+      empty.textContent = _managedQuestions.length
+        ? 'No questions match the search keyword or type filter.'
+        : 'No questions yet in this exam. Click "+ New Question" above to create one.';
+    }
     host.append(empty);
     return;
   }
@@ -3514,7 +3816,12 @@ function renderManagedQuestionList() {
     card.id = `qCardRow_${q.row}`;
     card.dataset.row = q.row;
 
-    // Top control bar: Q#, Type Select, Points, Timer, Delete, Duplicate
+    const qual = evaluateQuestionQuality(q);
+    if (qual.needsImprovement) {
+      card.classList.add('needs-improvement');
+    }
+
+    // Top control bar: Q#, Type Select, Points, Timer, Delete, Duplicate, AI Fix
     const topBar = document.createElement('div');
     topBar.className = 'q-direct-top';
 
@@ -3523,7 +3830,13 @@ function renderManagedQuestionList() {
 
     const numBadge = document.createElement('span');
     numBadge.className = 'q-num-badge';
-    numBadge.textContent = `Q${q.no}`;
+    if (qual.needsImprovement) {
+      numBadge.classList.add('badge-warn');
+      numBadge.textContent = `⚠️ Q${q.no}`;
+      numBadge.title = qual.reasons.join(' · ');
+    } else {
+      numBadge.textContent = `Q${q.no}`;
+    }
 
     const typeSelect = document.createElement('select');
     typeSelect.className = 'field-compact q-edit-type';
@@ -3567,6 +3880,15 @@ function renderManagedQuestionList() {
     topRight.style.alignItems = 'center';
     topRight.style.gap = '4px';
 
+    const fixAiTopBtn = document.createElement('button');
+    fixAiTopBtn.type = 'button';
+    fixAiTopBtn.className = 'btn-sm btn-ghost q-btn-ai-improve';
+    fixAiTopBtn.style.padding = '2px 7px';
+    fixAiTopBtn.style.fontSize = '0.75rem';
+    fixAiTopBtn.title = 'Improve question instructions with AI';
+    fixAiTopBtn.textContent = '✨ AI';
+    fixAiTopBtn.onclick = () => improveManagedQuestionWithAi(q, card);
+
     const dupBtn = document.createElement('button');
     dupBtn.type = 'button';
     dupBtn.className = 'btn-sm btn-ghost';
@@ -3586,7 +3908,7 @@ function renderManagedQuestionList() {
     delBtn.textContent = '🗑️';
     delBtn.onclick = () => deleteManagedQuestion(q);
 
-    topRight.append(dupBtn, delBtn);
+    topRight.append(fixAiTopBtn, dupBtn, delBtn);
     topBar.append(topLeft, topRight);
 
     // Prompt row
@@ -3599,6 +3921,20 @@ function renderManagedQuestionList() {
       card.classList.add('is-dirty');
       markQuestionsDirty();
     };
+
+    // Improvement banner if question has quality issues
+    let improveBanner = null;
+    if (qual.needsImprovement) {
+      improveBanner = document.createElement('div');
+      improveBanner.className = 'q-improve-banner';
+      improveBanner.innerHTML = `
+        <div class="q-improve-text">
+          ⚠️ <b>Needs improvement:</b> ${esc(qual.reasons.join(' · '))}
+        </div>
+        <button type="button" class="btn-sm q-btn-fix-ai">✨ Fix with AI</button>
+      `;
+      improveBanner.querySelector('.q-btn-fix-ai').onclick = () => improveManagedQuestionWithAi(q, card);
+    }
 
     // Choices & Answers container
     const bottomGrid = document.createElement('div');
@@ -3656,7 +3992,11 @@ function renderManagedQuestionList() {
     timerLabel.querySelector('input').oninput = () => { card.classList.add('is-dirty'); markQuestionsDirty(); };
 
     bottomGrid.append(choicesCol, answersCol);
-    card.append(topBar, promptInput, bottomGrid);
+    if (improveBanner) {
+      card.append(topBar, promptInput, improveBanner, bottomGrid);
+    } else {
+      card.append(topBar, promptInput, bottomGrid);
+    }
     host.append(card);
   });
 }
@@ -3837,6 +4177,8 @@ async function openQuestionManager() {
   _managedEditingRow = null;
   _managedSearchQuery = '';
   _managedTypeFilter = 'ALL';
+  _managedFilterNeedsImprovement = false;
+  if ($('btnToggleNeedsImprovement')) $('btnToggleNeedsImprovement').classList.remove('active');
   if ($('manageQSearch')) $('manageQSearch').value = '';
   document.querySelectorAll('#manageQTypeFilter .q-filter-btn').forEach(b => {
     b.classList.toggle('on', b.getAttribute('data-type') === 'ALL');
@@ -3861,6 +4203,14 @@ if ($('btnSaveAllManagedQuestions')) $('btnSaveAllManagedQuestions').onclick = s
 if ($('manageQSearch')) {
   $('manageQSearch').oninput = (e) => {
     _managedSearchQuery = e.target.value;
+    renderManagedQuestionList();
+  };
+}
+
+if ($('btnToggleNeedsImprovement')) {
+  $('btnToggleNeedsImprovement').onclick = () => {
+    _managedFilterNeedsImprovement = !_managedFilterNeedsImprovement;
+    $('btnToggleNeedsImprovement').classList.toggle('active', _managedFilterNeedsImprovement);
     renderManagedQuestionList();
   };
 }
