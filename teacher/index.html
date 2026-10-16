@@ -239,23 +239,59 @@
     </div>
   </section>
   <section id="scTExamDetail" hidden>
-    <div class="section-header" style="flex-wrap:wrap; gap:8px;">
-      <button class="back-btn" id="btnExamBack" type="button">‹ Exams</button>
-      <span class="exam-code-label" id="detailCode"></span>
-      <span class="grow"></span>
-      <button class="btn-sm btn-outline" id="btnToggleActiveDetail" type="button">▶ Set Active</button>
-      <button class="btn-sm btn-outline" id="btnSetDeadlineDetail" type="button">⏰ Set Deadline</button>
-      <button class="btn-sm btn-outline" id="btnManageEdpDetail" type="button">🏷️ EDP Codes</button>
-      <button class="btn-sm btn-outline" id="btnManageProctoringDetail" type="button">🛡️ Proctoring</button>
-      <button class="btn-sm btn-outline" id="btnDuplicateExamDetail" type="button">📋 Duplicate</button>
-      <button class="btn-sm btn-outline" id="btnManageQuestions" type="button">🧩 Manage Questions</button>
-      <button class="btn-sm btn-accent" id="btnOpenAddQuestions" type="button">+ Add Questions</button>
-      <button class="btn-sm btn-outline" id="btnPrepareReviewerAi" type="button" hidden>✨ Prepare Reviewer AI</button>
-      <button class="btn-sm btn-outline" id="btnRefreshDetail" type="button">🔄 Refresh</button>
-      <button class="btn-sm btn-danger" id="btnDeleteExamDetail" type="button">🗑️ Delete</button>
+    <div class="exam-workspace-header">
+      <div class="exam-header-left">
+        <nav class="exam-breadcrumb" aria-label="Breadcrumb">
+          <button class="back-btn" id="btnExamBack" type="button">‹ Exams</button>
+          <span class="crumb-sep">/</span>
+          <span class="exam-code-label" id="detailCode"></span>
+        </nav>
+      </div>
+      <div class="exam-header-actions">
+        <button class="btn-sm btn-outline" id="btnRefreshDetail" type="button">🔄 Refresh</button>
+        <button class="btn-sm btn-primary" id="btnToggleActiveDetail" type="button">▶ Set Active</button>
+        <div class="exam-more-menu-container">
+          <button class="btn-sm btn-outline" id="btnExamMoreMenu" type="button" aria-haspopup="true" aria-expanded="false" title="More options">⋯ More</button>
+          <div class="exam-more-dropdown" id="examMoreDropdown" hidden>
+            <button class="menu-item" id="btnSetDeadlineDetail" type="button">⏰ Set Deadline</button>
+            <button class="menu-item" id="btnManageEdpDetail" type="button">🏷️ EDP Codes</button>
+            <button class="menu-item" id="btnManageProctoringDetail" type="button">🛡️ Proctoring</button>
+            <button class="menu-item" id="btnDuplicateExamDetail" type="button">📋 Duplicate Exam</button>
+            <button class="menu-item" id="btnPrepareReviewerAi" type="button" hidden>✨ Prepare Reviewer AI</button>
+            <div class="menu-divider"></div>
+            <button class="menu-item menu-item-danger" id="btnDeleteExamDetail" type="button">🗑️ Delete Exam</button>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="bento">
-      <div class="card cell-wide">
+
+    <!-- Exam Workspace 5-Tab Bar -->
+    <div class="exam-workspace-tabs" role="tablist" aria-label="Exam workspace sections">
+      <button class="exam-ws-tab active" id="tabExamOverview" role="tab" aria-selected="true" data-exam-tab="overview" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        <span>Overview</span>
+      </button>
+      <button class="exam-ws-tab" id="tabExamResults" role="tab" aria-selected="false" data-exam-tab="results" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+        <span>Results &amp; Submissions</span>
+      </button>
+      <button class="exam-ws-tab" id="tabExamLive" role="tab" aria-selected="false" data-exam-tab="live" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+        <span>Live Monitor</span>
+      </button>
+      <button class="exam-ws-tab" id="tabExamQuestions" role="tab" aria-selected="false" data-exam-tab="questions" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span>Questions</span>
+      </button>
+      <button class="exam-ws-tab" id="tabExamSettings" role="tab" aria-selected="false" data-exam-tab="settings" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </button>
+    </div>
+
+    <!-- Panel 1: Overview -->
+    <div class="exam-tab-panel" id="panelExamOverview">
+      <div class="card cell-wide" style="margin-bottom:14px;">
         <div class="detail-stat-row" id="detailStats"></div>
         <div class="detail-edp-row" id="detailEdpRow" style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
           <span class="muted small" style="font-weight:600;">Usable EDP Codes:</span>
@@ -267,19 +303,38 @@
           <span id="reviewerAiBadge" class="pill" style="font-size:0.75rem; padding:2px 8px;">Checking…</span>
           <button type="button" class="btn-sm btn-ghost" id="btnPrepareReviewerAiInline" style="font-size:0.75rem; font-weight:600;">✨ Prepare Explanations</button>
         </div>
-        <div class="actions-row" id="detailActions"></div>
+        <div class="actions-row" id="detailActions" style="margin-top:12px;"></div>
       </div>
+
+      <!-- Quick Lifecycle Navigation Shortcuts -->
+      <div class="exam-overview-shortcuts" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:14px;">
+        <div class="shortcut-card" id="cardShortcutResults" style="cursor:pointer; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); padding:14px; transition:border-color .2s, transform .15s;">
+          <div style="font-size:1.2rem; margin-bottom:4px;">📊</div>
+          <div style="font-weight:700; font-size:0.92rem; color:var(--fg);">Results &amp; Submissions</div>
+          <p class="muted small" style="margin:4px 0 0;">Inspect attempts, review scores, export spreadsheets, and sync to Sheets archive.</p>
+        </div>
+        <div class="shortcut-card" id="cardShortcutLive" style="cursor:pointer; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); padding:14px; transition:border-color .2s, transform .15s;">
+          <div style="font-size:1.2rem; margin-bottom:4px;">🛡️</div>
+          <div style="font-weight:700; font-size:0.92rem; color:var(--fg);">Live Anti-Cheat Monitor</div>
+          <p class="muted small" style="margin:4px 0 0;">Track active student attempts in real time, view flags, and grant reopen time.</p>
+        </div>
+        <div class="shortcut-card" id="cardShortcutQuestions" style="cursor:pointer; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); padding:14px; transition:border-color .2s, transform .15s;">
+          <div style="font-size:1.2rem; margin-bottom:4px;">🧩</div>
+          <div style="font-weight:700; font-size:0.92rem; color:var(--fg);">Question Bank &amp; Blueprint</div>
+          <p class="muted small" style="margin:4px 0 0;">Review questions, fix items with AI, import question blueprints, or update choices.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 2: Results & Submissions -->
+    <div class="exam-tab-panel" id="panelExamResults" hidden>
       <div class="card cell-wide">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
           <div>
             <p class="eyebrow" style="margin:0;">Proctoring &amp; Submissions</p>
-            <h4 style="margin:0; font-size:1.1rem;">Exam Results &amp; Anti-Cheat Monitor</h4>
+            <h4 style="margin:0; font-size:1.1rem;">Exam Results &amp; Submissions Log</h4>
           </div>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <label class="toggle-control small muted" for="chkAutoRefreshResults" style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
-              <input type="checkbox" id="chkAutoRefreshResults">
-              <span>Live Monitor (15s)</span>
-            </label>
             <button class="btn-sm btn-primary" id="btnCopyScores" type="button" title="Copy scores table formatted for spreadsheets (TSV)">📋 Copy Scores</button>
             <button class="btn-sm btn-outline" id="btnExportCSV" type="button">📥 Export CSV</button>
             <button class="btn-sm btn-outline" id="btnBatchSyncResults" type="button" title="Sync all submitted results to the Google Sheet archive">💾 Sync to Sheet</button>
@@ -299,7 +354,7 @@
             <select class="field-sm" id="detailEdpFilter" aria-label="Filter results by EDP Code" style="font-weight:600; min-width:130px;">
               <option value="">All EDP Codes</option>
             </select>
-            <!-- Clean Sorting Dropdown (Replaces redundant pills) -->
+            <!-- Clean Sorting Dropdown -->
             <select class="field-sm" id="resultsSortSelect" aria-label="Sort Submissions" style="font-weight:600; min-width:145px;">
               <option value="default">Sort: Default</option>
               <option value="score-desc">🏆 Highest Score</option>
@@ -323,7 +378,7 @@
           </div>
         </div>
 
-        <div class="results-sort-bar" id="resultsSortBar" style="display:none;" aria-hidden="true" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:12px; font-size:0.75rem;">
+        <div class="results-sort-bar" id="resultsSortBar" style="display:none;" aria-hidden="true">
           <span class="muted" style="font-weight:600;">Sort:</span>
           <button type="button" class="btn-sort-pill on" id="btnSortDefault" data-sort="default">Default</button>
           <button type="button" class="btn-sort-pill" id="btnSortHighest" data-sort="score-desc">🏆 Highest Score</button>
@@ -336,6 +391,10 @@
         <div id="detailResultsList" class="muted small">No submissions yet.</div>
         <div id="rosterReconciliationWrap" style="margin-top:14px; padding:10px 12px; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md);"></div>
       </div>
+    </div>
+
+    <!-- Panel 3: Live Monitor -->
+    <div class="exam-tab-panel" id="panelExamLive" hidden>
       <div class="card cell-wide" id="activeSessionsCard">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
           <div>
@@ -343,6 +402,10 @@
             <h4 style="margin:0; font-size:1.1rem;">Active &amp; Interrupted Sessions</h4>
           </div>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <label class="toggle-control small muted" for="chkAutoRefreshResults" style="display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+              <input type="checkbox" id="chkAutoRefreshResults">
+              <span>Auto-poll (15s)</span>
+            </label>
             <button class="btn-sm btn-outline" id="btnRebuildLiveView" type="button" title="Rebuild realtime live projection from Firestore">🔄 Rebuild Live View</button>
             <button class="btn-sm btn-outline" id="btnRefreshActiveAttempts" type="button">🔄 Refresh Sessions</button>
             <button class="btn-sm btn-outline" id="btnPurgeActiveSessions" type="button" style="color:var(--bad, #dc2626); border-color:var(--bad, #dc2626);" title="Force reset all in-progress student sessions for this exam">🚨 Clear In-Progress Sessions</button>
@@ -353,6 +416,86 @@
         </p>
         <div id="activeAttemptsList" class="muted small">No active attempts for this exam.</div>
       </div>
+    </div>
+
+    <!-- Panel 4: Questions Management -->
+    <div class="exam-tab-panel" id="panelExamQuestions" hidden>
+      <div class="card cell-wide">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+          <div>
+            <p class="eyebrow" style="margin:0;">Question Bank</p>
+            <h4 style="margin:0; font-size:1.1rem;">Questions &amp; Blueprint Configuration</h4>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button class="btn-sm btn-outline" id="btnManageQuestions" type="button">🧩 Manage Questions</button>
+            <button class="btn-sm btn-accent" id="btnOpenAddQuestions" type="button">+ Add / Import Questions</button>
+          </div>
+        </div>
+        <p class="muted small" style="margin-bottom:12px;">
+          Configure question blueprints, timing per item, points, options, and question quality enhancements.
+        </p>
+        <div class="questions-quick-bento" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-top:8px;">
+          <div style="background:var(--sunk); padding:12px; border-radius:var(--r-md); border:1px solid var(--edge);">
+            <div class="muted small">Total Questions in Bank</div>
+            <div id="overviewQuestionsCount" style="font-size:1.4rem; font-weight:700; color:var(--accent); margin-top:4px;">—</div>
+          </div>
+          <div style="background:var(--sunk); padding:12px; border-radius:var(--r-md); border:1px solid var(--edge);">
+            <div class="muted small">Exam Delivery Mode</div>
+            <div id="overviewTimerMode" style="font-size:0.95rem; font-weight:600; margin-top:6px;">Standard</div>
+          </div>
+          <div style="background:var(--sunk); padding:12px; border-radius:var(--r-md); border:1px solid var(--edge);">
+            <div class="muted small">AI Quality Assistant</div>
+            <div style="font-size:0.95rem; font-weight:600; margin-top:6px; color:var(--ok);">✨ Ready in Question Manager</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 5: Settings -->
+    <div class="exam-tab-panel" id="panelExamSettings" hidden>
+      <div class="card cell-wide">
+        <p class="eyebrow" style="margin:0;">Exam Configuration</p>
+        <h4 style="margin:0 0 14px; font-size:1.1rem;">Exam Preferences &amp; Access Controls</h4>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="font-weight:700; font-size:0.9rem;">⏰ Deadline &amp; Schedule</div>
+              <div class="muted small">Control when students can start or complete attempts for this exam.</div>
+            </div>
+            <button class="btn-sm btn-outline" id="btnSettingsDeadline" type="button">Set Deadline</button>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="font-weight:700; font-size:0.9rem;">🏷️ Usable EDP Codes</div>
+              <div class="muted small">Assign classes and EDP section codes permitted to access this exam.</div>
+            </div>
+            <button class="btn-sm btn-outline" id="btnSettingsEdp" type="button">Manage EDP Codes</button>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="font-weight:700; font-size:0.9rem;">🛡️ Proctoring &amp; Anti-Cheat Security</div>
+              <div class="muted small">Configure tab departure warnings, strict auto-submit, and proctoring parameters.</div>
+            </div>
+            <button class="btn-sm btn-outline" id="btnSettingsProctoring" type="button">Configure Proctoring</button>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:var(--sunk); border:1px solid var(--edge); border-radius:var(--r-md); flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="font-weight:700; font-size:0.9rem;">📋 Duplicate Exam</div>
+              <div class="muted small">Create a complete copy of this exam with questions into a new exam code.</div>
+            </div>
+            <button class="btn-sm btn-outline" id="btnSettingsDuplicate" type="button">Duplicate Exam</button>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:12px; background:var(--sunk); border:1px solid var(--bad-soft); border-radius:var(--r-md); flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="font-weight:700; font-size:0.9rem; color:var(--bad);">🗑️ Danger Zone: Delete Exam</div>
+              <div class="muted small">Permanently removes this exam and clears its records from the system.</div>
+            </div>
+            <button class="btn-sm btn-danger" id="btnSettingsDelete" type="button">Delete Exam</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Health Diagnostics Card -->
       <div class="card cell-wide" id="systemHealthCard" style="margin-top:16px;" hidden>
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
           <div>
@@ -661,13 +804,18 @@
         <button class="btn-sm btn-accent" id="btnAddStudents" type="button">+ Add</button>
       </div>
     </div>
-    <div class="filter-row">
+    <div class="filter-row" style="flex-wrap:wrap; gap:8px; align-items:center;">
+      <input class="field-sm" id="searchStudentQuery" placeholder="🔍 Search student name, ID, EDP, email…" aria-label="Search students" style="min-width:220px; flex:1;">
       <select class="field-sm" id="filterCourse" aria-label="Filter by course"><option value="">All courses</option></select>
       <select class="field-sm" id="filterSection" aria-label="Filter by section"><option value="">All sections</option></select>
       <select class="field-sm" id="filterEdp" aria-label="Filter by EDP code"><option value="">All EDP codes</option></select>
     </div>
-    <div id="studentCountSummary" class="text-subtle" style="font-size:0.875rem; color:var(--fg-3); margin:6px 0 10px 0;"></div>
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:8px 0 10px 0;">
+      <div id="studentCountSummary" class="text-subtle" style="font-size:0.875rem; color:var(--fg-3);"></div>
+      <div id="studentPaginationTop" class="roster-pagination-bar" style="display:flex; align-items:center; gap:6px;"></div>
+    </div>
     <div id="studentTable" class="stack" role="list" aria-label="Enrolled students"></div>
+    <div id="studentPaginationBottom" class="roster-pagination-bar" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:14px;"></div>
     <div class="modal-backdrop" id="addStudentsModal" hidden>
       <div class="modal-card">
         <div class="modal-header"><h3>Add students</h3><button class="close-btn" id="btnCloseAdd" type="button">✕</button></div>

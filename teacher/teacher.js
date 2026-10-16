@@ -314,7 +314,7 @@ const SCREEN_TAB = Object.fromEntries(
   Object.entries(TAB_SCREENS).map(([t, s]) => [s, t])
 );
 
-const BAR_HIDDEN = new Set(['scTLoading', 'scTSignIn', 'scTDenied', 'scTExamDetail']);
+const BAR_HIDDEN = new Set(['scTLoading', 'scTSignIn', 'scTDenied']);
 
 const SCREEN_NAME = {
   scTSignIn: 'Teacher sign-in', scTDenied: 'Access denied', scTDashboard: 'Dashboard',
@@ -332,10 +332,13 @@ function show(id) {
     scrollTo(0, 0);
   }
 
+  const isNavVisible = !BAR_HIDDEN.has(id);
+  document.body.classList.toggle('has-nav-rail', isNavVisible);
+
   const bar = $('tAppBar');
   if (!bar) return;
 
-  if (BAR_HIDDEN.has(id)) {
+  if (!isNavVisible) {
     bar.hidden = true;
     bar.style.setProperty('display', 'none', 'important');
     return;
@@ -343,7 +346,7 @@ function show(id) {
   bar.hidden = false;
   bar.style.removeProperty('display');
 
-  const tab = SCREEN_TAB[id] || null;
+  const tab = SCREEN_TAB[id] || (id === 'scTExamDetail' ? 'exams' : null);
   document.querySelectorAll('.appbar-tab').forEach(btn => {
     if (btn.dataset.tab === tab) btn.setAttribute('aria-current', 'page');
     else btn.removeAttribute('aria-current');
@@ -452,7 +455,7 @@ onAuthStateChanged(auth, async user => {
     // Paint initial screens from cache
     if (CACHE.dashboard) renderDashboard(CACHE.dashboard);
     if (CACHE.exams) { renderExamCards(CACHE.exams); populateResultsPicker(CACHE.exams); populateAddStudentEdpOptions(CACHE.exams); }
-    if (CACHE.students && CACHE.students.length) { populateStudentFilters(CACHE.students); renderStudentTable(CACHE.students); }
+    if (CACHE.students && CACHE.students.length) { populateStudentFilters(CACHE.students); }
 
     showTab('dashboard');
 
@@ -1050,11 +1053,63 @@ function renderLiveFlaggedAlerts(flaggedMap) {
   `;
 }
 
+function switchExamTab(tabName) {
+  const tabs = ['overview', 'results', 'live', 'questions', 'settings'];
+  tabs.forEach(t => {
+    const btn = $('tabExam' + t.charAt(0).toUpperCase() + t.slice(1));
+    const panel = $('panelExam' + t.charAt(0).toUpperCase() + t.slice(1));
+    const isActive = t === tabName;
+    if (btn) {
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+    }
+    if (panel) panel.hidden = !isActive;
+  });
+}
+
+// Wire Exam Workspace tab buttons once
+['overview', 'results', 'live', 'questions', 'settings'].forEach(t => {
+  const btn = $('tabExam' + t.charAt(0).toUpperCase() + t.slice(1));
+  if (btn) {
+    btn.onclick = () => {
+      feedback('tap', 8);
+      switchExamTab(t);
+    };
+  }
+});
+
+// Shortcut tiles on Overview panel
+if ($('cardShortcutResults')) $('cardShortcutResults').onclick = () => switchExamTab('results');
+if ($('cardShortcutLive')) $('cardShortcutLive').onclick = () => switchExamTab('live');
+if ($('cardShortcutQuestions')) $('cardShortcutQuestions').onclick = () => switchExamTab('questions');
+
+// Header More Menu dropdown
+if ($('btnExamMoreMenu')) {
+  $('btnExamMoreMenu').onclick = (e) => {
+    e.stopPropagation();
+    const dd = $('examMoreDropdown');
+    if (dd) {
+      dd.hidden = !dd.hidden;
+      $('btnExamMoreMenu').setAttribute('aria-expanded', String(!dd.hidden));
+    }
+  };
+}
+document.addEventListener('click', (e) => {
+  const dd = $('examMoreDropdown');
+  if (dd && !dd.hidden && !e.target.closest('.exam-more-menu-container')) {
+    dd.hidden = true;
+    if ($('btnExamMoreMenu')) $('btnExamMoreMenu').setAttribute('aria-expanded', 'false');
+  }
+});
+
 async function openExamDetail(ex) {
   _currentDetailExamCode = ex.code;
   _currentDetailExam = ex;
   $('detailCode').textContent = ex.code + (ex.title ? ' — ' + ex.title : '');
   updateDetailStatsAndControls(ex);
+  if ($('overviewQuestionsCount')) $('overviewQuestionsCount').textContent = ex.questions ?? '—';
+  if ($('overviewTimerMode')) $('overviewTimerMode').textContent = (ex.timerMode === 'per-question') ? 'Per-Question' : (ex.timerMode === 'per-section') ? 'Per-Section' : (ex.timerMode === 'untimed') ? 'Untimed' : 'Whole-Exam';
+  switchExamTab('overview');
   show('scTExamDetail');
   subscribeLiveExam(ex.code);
   await loadExamResults(ex.code);
@@ -1155,6 +1210,13 @@ function updateDetailStatsAndControls(ex) {
   if ($('btnDuplicateExamDetail')) $('btnDuplicateExamDetail').onclick = () => openDuplicateModal(ex);
   if ($('btnDeleteExamDetail')) $('btnDeleteExamDetail').onclick = () => openDeleteModal(ex);
   if ($('btnRefreshActiveAttempts')) $('btnRefreshActiveAttempts').onclick = () => loadActiveAttempts(ex.code);
+
+  // Settings tab action buttons
+  if ($('btnSettingsDeadline')) $('btnSettingsDeadline').onclick = () => openSetDeadlineModal(ex);
+  if ($('btnSettingsEdp')) $('btnSettingsEdp').onclick = () => openEdpModal(ex);
+  if ($('btnSettingsProctoring')) $('btnSettingsProctoring').onclick = () => openProctoringModal(ex);
+  if ($('btnSettingsDuplicate')) $('btnSettingsDuplicate').onclick = () => openDuplicateModal(ex);
+  if ($('btnSettingsDelete')) $('btnSettingsDelete').onclick = () => openDeleteModal(ex);
 }
 
 async function refreshReviewerAiStatus(code) {
@@ -4356,16 +4418,39 @@ function populateStudentFilters(students) {
   fill($('filterEdp'),     edps);
 }
 
+let _studentPage = 1;
+let _studentPageSize = 50;
+
 function renderStudentTable(students) {
   const course   = $('filterCourse')?.value || '';
   const section  = $('filterSection')?.value || '';
   const edp      = $('filterEdp')?.value || '';
+  const query    = ($('searchStudentQuery')?.value || '').trim().toLowerCase();
   const total    = (students || []).length;
-  const filtered = (students || []).filter(s =>
-    (!course  || s.course  === course) &&
-    (!section || String(s.section) === section) &&
-    (!edp     || String(s.edpCode || '').split(/[,;/]+/).map(x => x.trim()).includes(edp))
-  );
+  const filtered = (students || []).filter(s => {
+    if (course && s.course !== course) return false;
+    if (section && String(s.section) !== section) return false;
+    if (edp && !String(s.edpCode || '').split(/[,;/]+/).map(x => x.trim()).includes(edp)) return false;
+    if (query) {
+      const fn = String(s.firstName || '').toLowerCase();
+      const ln = String(s.lastName || '').toLowerCase();
+      const id = String(s.studentId || '').toLowerCase();
+      const em = String(s.email || '').toLowerCase();
+      const ed = String(s.edpCode || '').toLowerCase();
+      if (!fn.includes(query) && !ln.includes(query) && !id.includes(query) && !em.includes(query) && !ed.includes(query)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const totalFiltered = filtered.length;
+  const totalPages = Math.ceil(totalFiltered / _studentPageSize) || 1;
+  _studentPage = Math.max(1, Math.min(_studentPage, totalPages));
+
+  const startIdx = (_studentPage - 1) * _studentPageSize;
+  const pagedStudents = filtered.slice(startIdx, startIdx + _studentPageSize);
+
   const wrap = $('studentTable');
   wrap.replaceChildren();
 
@@ -4374,24 +4459,28 @@ function renderStudentTable(students) {
     if (!total) {
       countSummary.textContent = '0 students in roster';
     } else if (filtered.length === total) {
-      countSummary.innerHTML = `Showing all <b>${total}</b> student${total === 1 ? '' : 's'}`;
+      countSummary.innerHTML = `Showing all <b>${total}</b> student${total === 1 ? '' : 's'}` + (totalPages > 1 ? ` · Page ${_studentPage} of ${totalPages}` : '');
     } else {
-      countSummary.innerHTML = `Showing <b>${filtered.length}</b> of <b>${total}</b> student${total === 1 ? '' : 's'} (filtered)`;
+      countSummary.innerHTML = `Showing <b>${filtered.length}</b> of <b>${total}</b> student${total === 1 ? '' : 's'} (filtered)` + (totalPages > 1 ? ` · Page ${_studentPage} of ${totalPages}` : '');
     }
   }
+
+  // Render pagination bars
+  renderStudentPaginationBar($('studentPaginationTop'), totalFiltered, totalPages);
+  renderStudentPaginationBar($('studentPaginationBottom'), totalFiltered, totalPages);
 
   const announceText = (filtered.length === total)
     ? `Showing all ${total} students`
     : `Showing ${filtered.length} of ${total} students`;
   announce(announceText);
 
-  if (!filtered.length) {
+  if (!pagedStudents.length) {
     const p = document.createElement('p');
     p.className = 'muted small';
-    p.textContent = 'No students match the filter.';
+    p.textContent = query ? `No students matching "${query}".` : 'No students match the filter.';
     wrap.append(p); return;
   }
-  filtered.forEach(s => {
+  pagedStudents.forEach(s => {
     const row = document.createElement('div');
     row.className = 'student-card';
     row.setAttribute('role', 'listitem');
@@ -4451,6 +4540,62 @@ function renderStudentTable(students) {
     wrap.append(row);
   });
   revealIn(wrap, '.student-card');
+}
+
+function renderStudentPaginationBar(bar, totalFiltered, totalPages) {
+  if (!bar) return;
+  bar.replaceChildren();
+  if (totalFiltered <= _studentPageSize && totalPages <= 1) {
+    return;
+  }
+
+  const prevBtn = document.createElement('button');
+  prevBtn.type = 'button';
+  prevBtn.className = 'btn-sm btn-outline';
+  prevBtn.textContent = '‹ Prev';
+  prevBtn.disabled = _studentPage <= 1;
+  prevBtn.onclick = () => {
+    if (_studentPage > 1) {
+      _studentPage--;
+      renderStudentTable(CACHE.students || []);
+    }
+  };
+
+  const pageInfo = document.createElement('span');
+  pageInfo.className = 'muted small';
+  pageInfo.style.fontWeight = '600';
+  pageInfo.textContent = `Page ${_studentPage} of ${totalPages} (${totalFiltered} students)`;
+
+  const nextBtn = document.createElement('button');
+  nextBtn.type = 'button';
+  nextBtn.className = 'btn-sm btn-outline';
+  nextBtn.textContent = 'Next ›';
+  nextBtn.disabled = _studentPage >= totalPages;
+  nextBtn.onclick = () => {
+    if (_studentPage < totalPages) {
+      _studentPage++;
+      renderStudentTable(CACHE.students || []);
+    }
+  };
+
+  const sizeSelect = document.createElement('select');
+  sizeSelect.className = 'field-sm';
+  sizeSelect.style.fontSize = '0.75rem';
+  sizeSelect.style.padding = '2px 6px';
+  [25, 50, 100, 250].forEach(sz => {
+    const opt = document.createElement('option');
+    opt.value = String(sz);
+    opt.textContent = `${sz} / page`;
+    if (_studentPageSize === sz) opt.selected = true;
+    sizeSelect.append(opt);
+  });
+  sizeSelect.onchange = () => {
+    _studentPageSize = Number(sizeSelect.value) || 50;
+    _studentPage = 1;
+    renderStudentTable(CACHE.students || []);
+  };
+
+  bar.append(prevBtn, pageInfo, nextBtn, sizeSelect);
 }
 
 /* Edit & Unlink Student Handlers */
@@ -4633,12 +4778,20 @@ if ($('btnConfirmDeleteStudent')) {
 
 // Instant local filtering without network round-trips
 $('filterCourse').onchange = $('filterSection').onchange = () => {
+  _studentPage = 1;
   play('tap');
   renderStudentTable(CACHE.students || []);
 };
 if ($('filterEdp')) {
   $('filterEdp').onchange = () => {
+    _studentPage = 1;
     play('tap');
+    renderStudentTable(CACHE.students || []);
+  };
+}
+if ($('searchStudentQuery')) {
+  $('searchStudentQuery').oninput = () => {
+    _studentPage = 1;
     renderStudentTable(CACHE.students || []);
   };
 }
